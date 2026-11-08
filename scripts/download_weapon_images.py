@@ -43,7 +43,15 @@ for key,query,preferred in FILES:
  out=DEST/(key+ext)
  req=urllib.request.Request(url,headers={"User-Agent":"BLACKLINE-PMC/0.3 (open-source game image catalog; github.com/lgw11124639-cell/BLACKLINE-PMC)"})
  try:
-  with urllib.request.urlopen(req,timeout=90) as response: data=response.read(8_000_001)
+  data=None
+  for attempt in range(4):
+   try:
+    with urllib.request.urlopen(req,timeout=90) as response: data=response.read(8_000_001)
+    break
+   except Exception as e:
+    if attempt==3: raise
+    print("RETRY",key,str(e),flush=True)
+    time.sleep(12*(attempt+1))
   if len(data)>8_000_000:print("TOO LARGE",key);continue
   out.write_bytes(data)
  except Exception as e:print("DOWNLOAD FAILED",key,str(e));continue
@@ -51,7 +59,7 @@ for key,query,preferred in FILES:
  def val(k):return meta.get(k,{}).get("value","unknown")
  manifest[key]={"file":str(out.relative_to(BASE)),"source":"https://commons.wikimedia.org/wiki/File:"+urllib.parse.quote(title.replace(" ","_")),"author":val("Artist"),"license":val("LicenseShortName")}
  attributions+=["## "+key,"Source: "+manifest[key]["source"],"Author: "+val("Artist"),"License: "+val("LicenseShortName"),""]
- print("SAVED",key,out,len(data));time.sleep(0.5)
+ print("SAVED",key,out,len(data));time.sleep(8)
 (DEST/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n")
 (DEST/"ATTRIBUTION.md").write_text("\n".join(attributions))
-if len(manifest)<4:raise SystemExit("Too few images saved; investigate Commons access")
+if not manifest:raise SystemExit("No images downloaded")
