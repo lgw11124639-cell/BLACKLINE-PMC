@@ -48,7 +48,7 @@
     const death=(!success&&seed%100<Math.max(2,11-Math.floor(readiness/13)))||(m.risk>1&&seed%41===0);
     const used=Math.min(state.ammo,120+seed%180),medUsed=injury?1:0;
     const authorized=op.budget||0;const choices=[];let supportCost=0;
-    const consider=(name,cost,reason,needed,permitted=true)=>{if(!needed||!permitted||supportCost+cost>authorized)return false;supportCost+=cost;choices.push({name,cost,reason});return true};
+    const consider=(name,cost,reason,needed,permitted=true)=>{if(!needed||!permitted||supportCost+cost>authorized)return false;supportCost+=cost;choices.push({name,cost,reason,requestedAt:155+choices.length*22,eta:35+(seed%4)*15});return true};
     consider('현장 물자 재보급',1800000,'소모 물자 및 보급 상태 보완',state.ammo<500||seed%4===0);
     consider('추가 인력 지원',6000000,'현장 인력 보강 필요',m.risk>1&&members.length<4&&seed%3!==0);
     consider('긴급 의료 후송',8500000,'부상자 보호 및 의료 지원',injury);
@@ -76,9 +76,9 @@
     ];
     if(injuryName)logs.push({t:235,who:'의무 담당',msg:injuryName+' 부상 확인. 응급처치 및 후송 절차를 진행합니다.'},{t:255,who:leaderVoice,msg:'부상자 보호를 최우선으로 하겠습니다. 현장 임무 절차를 조정합니다.'});
     if(casualtyName)logs.push({t:250,who:'작전본부',msg:'중대한 인명 피해 보고를 접수했습니다. 관련 절차를 개시합니다.'});
-    choices.forEach((c,i)=>logs.push({t:155+i*22,who:leaderVoice,msg:c.name+'을(를) 현장 판단으로 요청합니다. 사전 승인된 작전 예산 범위 내 집행: '+money(c.cost)+'.'}));
+    choices.forEach((c,i)=>{logs.push({t:c.requestedAt,who:leaderVoice,msg:c.name+' 지원 요청. '+c.reason+'. 승인 예산 내 '+money(c.cost)+' 집행.'});logs.push({t:Math.min(355,c.requestedAt+c.eta),who:'작전지원본부',msg:c.name+' 지원 처리 완료. 현장지휘관에게 상태를 통보했습니다.'})});
     logs.push({t:390,who:leaderVoice,msg:'작전 종료를 보고합니다. 실제 지원비 '+money(supportCost)+', 미사용 승인 한도 '+money(Math.max(0,authorized-supportCost))+'. 상세 결과는 작전본부에 제출하겠습니다.'});logs.sort((a,b)=>a.t-b.t);
-    state.history.unshift({id:Date.now()+op.missionId,date:state.date,title:m.title,success,injury:!!injuryName,death:!!casualtyName,casualtyName,injuryName,used,medUsed,reward,supportCost,air:op.air,artillery:op.artillery,budget:op.budget,logs,day:state.day,team:members.map(p=>p.name),planId:op.id,method:op.method});
+    state.history.unshift({id:Date.now()+op.missionId,date:state.date,title:m.title,success,injury:!!injuryName,death:!!casualtyName,casualtyName,injuryName,used,medUsed,reward,supportCost,air:op.air,artillery:op.artillery,budget:op.budget,supportDecisions:choices,logs,day:state.day,team:members.map(p=>p.name),planId:op.id,method:op.method});
     op.status='작전 완료';op.completed=state.date;for(const p of members){p.fatigue=Math.min(100,(p.fatigue||0)+16+m.risk*9);if(p.dead||p.retired)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
     report('재무','작전 예산 집행 정산 · '+op.id,'승인 한도 '+money(authorized)+', 현장지휘관 실제 집행 '+money(supportCost)+', 미사용 한도 '+money(Math.max(0,authorized-supportCost))+'. 지출 내역: '+(choices.map(c=>c.name+' '+money(c.cost)).join(', ')||'추가 지원 없음')+'.',-supportCost);
     report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward);
