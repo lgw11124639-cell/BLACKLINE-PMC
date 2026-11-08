@@ -10,7 +10,7 @@
  policy.mode='autonomous';delete policy.pending;
  const active=()=>state.team.filter(p=>!p.dead&&!p.retired);
  const suitable=p=>/저격수|정밀사수/.test(p.role||'')?'Accuracy International AXMC':/정찰/.test(p.role||'')?'SIG MCX':/의무|통신/.test(p.role||'')?'M4A1':/지원/.test(p.role||'')?'FN SCAR-L':'HK416';
- const log=(title,body,amount)=>{state.reports.unshift({date:state.date,category:'군수',title,body,...(amount===undefined?{}:{amount})});state.reports=state.reports.slice(0,90)};
+ const log=(title,body,amount,detail)=>{state.reports.unshift({date:state.date,category:'군수',title,body,...(amount===undefined?{}:{amount}),...(detail?{detail}:{})});state.reports=state.reports.slice(0,90)};
  const availableFunds=()=>Math.max(0,state.cash-20000000);
  function review(){
   const notes=[];let spent=0,assigned=0,replaced=0,procured=0;
@@ -29,7 +29,7 @@
    p.loadout=p.loadout||{};p.loadout.primary=desired;assigned++;
    notes.push(p.name+' ('+p.role+'): '+(old==='미지급'?'신규 지급':old+' → '+desired+' 교체')+' · '+desired);
   }
-  if(notes.length)log('군수본부 자율 무장 운용 보고','군수본부 자체 검토로 '+assigned+'명 지급·교체, 신규 조달 '+procured+'정, 교체 '+replaced+'명. 총 지출 '+money(spent)+'. '+notes.slice(0,8).join('; ')+(notes.length>8?'; 외 '+(notes.length-8)+'명':''),-spent);
+  if(notes.length)log('군수본부 자율 무장 운용 보고','군수본부 자체 검토로 '+assigned+'명 지급·교체, 신규 조달 '+procured+'정, 교체 '+replaced+'명. 총 지출 '+money(spent)+'. '+notes.slice(0,8).join('; ')+(notes.length>8?'; 외 '+(notes.length-8)+'명':''),-spent,{summary:'군수본부가 인원별 역할과 재고를 확인하여 무장 지급 및 조달을 자체 집행했습니다.',metrics:[{label:'지급·교체',value:assigned+'명'},{label:'신규 조달',value:procured+'정'},{label:'총 집행액',value:money(spent)}],sections:[{title:'집행 결과',items:['신규 조달: '+procured+'정','기존 장비 교체: '+replaced+'명','총 지급·교체: '+assigned+'명','총 지출: '+money(spent)]},{title:'인원별 지급 내역',items:notes.slice(0,20)},{title:'재고 및 자금 처리',items:['보유 재고를 우선 사용하고 부족한 장비만 신규 조달했습니다.','교체된 기존 무장은 회사 창고로 회수했습니다.','회사 운영자금 보호선을 적용하여 지출을 제한했습니다.']} ]});
  }
  const original=logistics;
  logistics=function(){
