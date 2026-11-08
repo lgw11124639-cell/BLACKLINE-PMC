@@ -1,6 +1,6 @@
 /* In-place updates for installed BLACKLINE PMC. Never delete local game saves. */
 (function(){
-const CURRENT='2026.11.09.8';
+const CURRENT='2026.11.09.9';
 let checking=false,latest=null,applying=false;const AUTO_KEY='blackline_auto_updated_release';
 const root=document.createElement('div');root.id='blackline-update';(document.querySelector('header')||document.body).appendChild(root);
 function paint(){
