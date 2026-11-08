@@ -16,6 +16,9 @@
   send('인사','인사본부 편성 회신 · '+op.id,'팀장 '+op.leaderName+' 외 포함 총 '+assigned.length+'명 편성. '+(specialists.length?'정밀사격 전문 인력 '+specialists.map(p=>p.name).join(', ')+' 포함.':'저격수·정밀사수 미편성. 일반 인력으로 임무를 준비합니다.'));
   const unarmed=assigned.filter(p=>!p.loadout||p.loadout.primary==='미지급').length;
   send('군수','군수본부 준비 현황 회신 · '+op.id,'편성 인원 '+assigned.length+'명 중 주무장 미지급 '+unarmed+'명. 보유 탄약 '+state.ammo.toLocaleString('ko-KR')+'발, 의료물자 '+state.med+'개. 추가 구매 및 장비 지급은 군수 운영 절차에 따릅니다.');
+  const b=op.departmentBudget||{personnel:Math.round(op.budget*.22),logistics:Math.round(op.budget*.25),transport:Math.round(op.budget*.18),medical:Math.round(op.budget*.15),reserve:Math.round(op.budget*.20)};
+  send('재무','부서 합동 예산 검토 · '+op.id,'승인 예산 한도 '+money(op.budget)+'. 인사본부 '+money(b.personnel)+', 군수본부 '+money(b.logistics)+', 수송지원 '+money(b.transport)+', 의무지원 '+money(b.medical)+', 예비비 '+money(b.reserve)+'. 항목은 계획상 배분이며 실제 지출은 현장지휘관의 지원 요청에 따라 정산합니다.');
+  send('작전','작전본부 합동 협조회의 · '+op.id,'인사·군수·재무·의무 부서가 임무 지원 계획을 공유했습니다. 현장지휘관에게 승인 예산 한도와 지원 권한을 전달합니다. 추가 지원 요청은 해당 범위에서 자율 집행합니다.');
   send('작전','현장 팀장 임무 수령 · '+op.id,op.leaderName+' 팀장이 임무를 수령했습니다. 작전 브리핑과 사전 연습을 준비합니다. 전문 인력 배치 현황: '+op.precisionSupport.status+'.');
  }
  const oldApprove=window.approveScheduled;
