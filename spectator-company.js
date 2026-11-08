@@ -4,7 +4,7 @@
  const config=state.autonomousCompany;config.enabled=true;
  const originalMissions=missions,originalHome=home,originalNext=nextDay;
  const active=()=>state.team.filter(p=>!p.dead&&!p.retired&&!p.injured);
- const report=(category,title,body)=>{state.reports.unshift({date:state.date,category,title,body});state.reports=state.reports.slice(0,90)};
+ const report=(category,title,body,detail)=>{state.reports.unshift({date:state.date,category,title,body,...(detail?{detail}:{})});state.reports=state.reports.slice(0,90)};
  const addDays=(iso,n)=>{const d=new Date(iso+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
  function budgetFor(m){
   const team=active().length;
@@ -36,8 +36,8 @@
   for(const m of ordered){
    const op=plan(m);if(!op)continue;
    state.operations.unshift(op);
-   report('작전','작전본부 자율 수주 · '+m.title,'작전본부가 의뢰의 수익성과 위험도를 평가하여 자체 수주했습니다. '+op.leaderName+' 현장지휘관 배정. '+op.deployDate+' 투입 예정. 예산 상한 '+money(op.budget)+'.');
-   report('재무','재무본부 자율 예산 편성 · '+op.id,'총 한도 '+money(op.budget)+'. 인사 '+money(op.departmentBudget.personnel)+', 군수 '+money(op.departmentBudget.logistics)+', 수송 '+money(op.departmentBudget.transport)+', 의무 '+money(op.departmentBudget.medical)+', 예비비 '+money(op.departmentBudget.reserve)+'. 실제 비용은 작전 집행 후 정산합니다.');
+   report('작전','작전본부 자율 수주 · '+m.title,'작전본부가 의뢰의 수익성과 위험도를 평가하여 자체 수주했습니다. '+op.leaderName+' 현장지휘관 배정. '+op.deployDate+' 투입 예정. 예산 상한 '+money(op.budget)+'.',{summary:'작전본부가 위험도·계약 보수·투입 가능 인원을 종합 검토하여 자체 수주했습니다.',sections:[{title:'수주 검토',items:['의뢰명: '+m.title,'계약 보수: '+money(m.reward),'위험도: '+m.risk,'가용 인원: '+active().length+'명']},{title:'현장 운영 계획',items:['현장지휘관: '+op.leaderName,'사전 연습: '+op.rehearsalDate,'예정 투입일: '+op.deployDate,'작전 예산 상한: '+money(op.budget)]},{title:'운영 원칙',items:['현장지휘관이 작전 중 자율적으로 판단합니다.','투입 인원의 안전과 민간인 보호를 우선합니다.']}],metrics:[{label:'계약 보수',value:money(m.reward)},{label:'예산 상한',value:money(op.budget)},{label:'투입 예정',value:op.deployDate}]});
+   report('재무','재무본부 자율 예산 편성 · '+op.id,'총 한도 '+money(op.budget)+'. 인사 '+money(op.departmentBudget.personnel)+', 군수 '+money(op.departmentBudget.logistics)+', 수송 '+money(op.departmentBudget.transport)+', 의무 '+money(op.departmentBudget.medical)+', 예비비 '+money(op.departmentBudget.reserve)+'. 실제 비용은 작전 집행 후 정산합니다.',{summary:'재무본부가 회사 가용 자금과 계약 수익을 기준으로 작전 예산을 편성했습니다.',sections:[{title:'예산 배분 내역',items:[['인사',op.departmentBudget.personnel],['군수',op.departmentBudget.logistics],['수송',op.departmentBudget.transport],['의무',op.departmentBudget.medical],['예비비',op.departmentBudget.reserve]].map(([n,v])=>n+': '+money(v))},{title:'집행 및 통제',items:['예산은 사전 확정된 최대 집행 한도이며 즉시 지출되는 금액이 아닙니다.','현장 지원 요청은 예산 한도 내에서 자율 결정합니다.','실제 지출은 작전 종료 후 별도 정산 보고합니다.']}],metrics:[{label:'총 예산 한도',value:money(op.budget)},{label:'예비비',value:money(op.departmentBudget.reserve)}]});
    break;
   }
  }
