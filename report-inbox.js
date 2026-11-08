@@ -51,8 +51,25 @@ window.companyReportMove=offset=>{const next=opened+offset;if(next>=0&&next<repo
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&opened!==null)window.closeCompanyReport()});
 const baseHome=home,baseRender=render,baseGo=go;
 home=function(){
- let html=baseHome(),start=html.indexOf('<h2>부서별 보고서</h2>'),end=html.indexOf('<div class="card"><h3>운영 지침',start);
- if(start>=0&&end>start)html=html.slice(0,start)+'<div class="mail-heading"><div><small>COMPANY CORRESPONDENCE</small><h2>부서별 수신함</h2></div><span>'+reports().length+'건 수신</span></div><div id="company-inbox">'+rows()+'</div>'+html.slice(end);
+ let html=baseHome();
+ const heading='<h2>부서별 보고서</h2>';
+ const start=html.indexOf(heading);
+ if(start>=0){
+   // Remove the entire legacy report-card section, irrespective of wrapper/card layout.
+   const after=start+heading.length;
+   const end=html.indexOf('<h3>운영 지침</h3>',after);
+   if(end>=0){
+     const cardStart=html.lastIndexOf('<div class="card">',end);
+     const cut=cardStart>=after?cardStart:end;
+     html=html.slice(0,start)+html.slice(cut);
+   }else{
+     // Old report cards are at the end in older builds.
+     html=html.slice(0,start);
+   }
+ }
+ const inbox='<div class="mail-heading"><div><small>COMPANY CORRESPONDENCE</small><h2>부서별 수신함</h2></div><span>'+reports().length+'건 수신</span></div><div id="company-inbox">'+rows()+'</div>';
+ const anchor=html.indexOf('<div class="card"><h3>운영 지침');
+ html=anchor>=0?html.slice(0,anchor)+inbox+html.slice(anchor):html+inbox;
  return html.replace('오늘의 사장 결재함','회사 운영 현황').replace('작전 승인서 보기','작전 현황 보기').replace('사장님께서는 보고서를 검토하고 중요한 안건만 결재합니다.','사장은 각 부서의 자율 운영과 현장 작전을 관전합니다.').replace('인사·군수·작전 부서는 보고를 제출하고, 사장님은 승인과 예산 배정에 집중합니다.','각 부서가 자체적으로 운영하며 사장은 결과를 관찰합니다.');
 };
 render=function(){baseRender();if(opened!==null)mount()};
