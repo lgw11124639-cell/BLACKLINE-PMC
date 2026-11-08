@@ -68,7 +68,25 @@
    const roll=(fp.seed+stage*173+state.team.length*11+Math.floor(state.cash/1000000))%100;
    const riskShift=roll<20?7:roll<45?3:roll>86?-4:0;
    fp.riskShift+=riskShift;
-   if(stage===3&&roll<30)fp.lateRisk+=6;
+   if(stage===1)fp.situation=roll<25?'예상 밖의 현장 위험':roll<55?'현장 상황 변화':'계획 범위 내 상황';
+   if(stage===2){
+     const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(Boolean);
+     const readiness=teamReadiness(members);
+     const lead=members.find(p=>p.id===op.leaderId)||members[0];
+     const leadScore=lead?personnelEvaluation(lead).leadership:50;
+     fp.commandDecision=readiness-fp.riskShift-(state.missions.find(m=>m.id===op.missionId)?.risk||1)*9<36&&leadScore>=40?'철수':'계속';
+   }
+   if(stage===3){
+     if(roll<30)fp.lateRisk+=6;
+     const m=state.missions.find(x=>x.id===op.missionId);
+     const requests=[];
+     if(fp.commandDecision!=='철수'&&m){
+       const budget=Math.max(0,Number(op.budget)||0);
+       if(budget>=1800000&&(state.ammo<500||roll<35))requests.push({name:'현장 물자 재보급',cost:1800000,effect:4});
+       if(m.risk>1&&op.teamIds.length<4&&budget>=requests.reduce((a,x)=>a+x.cost,0)+6000000)requests.push({name:'추가 인력 지원',cost:6000000,effect:9});
+     }
+     fp.supportOrders=requests.map((r,i)=>({...r,requestedAt:155+i*22,eta:35+(fp.seed%4)*15}));
+   }
    const detail=roll<20?'예상 외 위험 증가':roll>86?'현장 상황 안정':stage===2?'지휘관 현장 판단 갱신':'현장 상황 점검 완료';
    fp.events.push({stage:stage+1,t:(stage+1)*80,phase:stageLabels[stage],detail,riskShift});
    fp.stage++;
@@ -94,11 +112,11 @@
     const phases=[];
     const baseScore=Math.max(10,Math.min(90,44+avg*.22+readiness*.16+preparationBonus+specialistBonus-fatiguePenalty-m.risk*12));
     const incident=(seed*37+state.day*11+m.risk*29)%100;
-    const situation=incident<19?'예상 밖의 현장 위험':incident<43?'현장 상황 변화':'계획 범위 내 상황';
+    const situation=op.fieldProgress?.situation||(incident<19?'예상 밖의 현장 위험':incident<43?'현장 상황 변화':'계획 범위 내 상황');
     const pressure=(situation==='예상 밖의 현장 위험'?19:situation==='현장 상황 변화'?9:0)+Math.round(avgFatigue/12)+Math.max(-10,Math.min(16,Number(op.fieldProgress?.riskShift)||0));
     const leadership=members.find(p=>p.id===op.leaderId)||members[0];
     const leaderScore=leadership?personnelEvaluation(leadership).leadership:50;
-    const retreat=baseScore-pressure<34&&leaderScore>=43;
+    const retreat=op.fieldProgress?.commandDecision?op.fieldProgress.commandDecision==='철수':baseScore-pressure<34&&leaderScore>=43;
     phases.push({t:80,phase:'현장 평가',detail:situation,score:Math.round(baseScore-pressure)});
     phases.push({t:145,phase:'지휘관 판단',detail:retreat?'인원 보호를 위한 조기 철수':'임무 계속 진행',score:Math.round(baseScore-pressure)});
     const consider=(name,cost,reason,needed,permitted=true,effect=0)=>{
@@ -107,12 +125,13 @@
       supportCost+=cost;choices.push({name,cost,reason,requestedAt,eta,effect});
       return true;
     };
-    if(!retreat){
+    if(!retreat&&!op.fieldProgress?.supportOrders){
       consider('현장 물자 재보급',1800000,'소모 물자 및 보급 상태 보완',state.ammo<500||seed%4===0,true,4);
       consider('추가 인력 지원',6000000,'현장 인력 보강 필요',m.risk>1&&members.length<4&&seed%3!==0,true,9);
       consider('승인된 공중 지원',14000000,'현장 안전 지원 요청',m.risk>1&&seed%5===0,op.air!=='off',8);
       consider('승인된 원거리 지원',11000000,'현장 위험 완화 지원 요청',m.risk>1&&seed%7===0,op.artillery!=='off',6);
     }
+    if(op.fieldProgress?.supportOrders){for(const order of op.fieldProgress.supportOrders){if(supportCost+order.cost<=authorized){choices.push({...order,reason:'현장 단계에서 지휘관 승인'});supportCost+=order.cost}}}
     // Resolve sequential checkpoints; late support cannot retroactively affect a completed phase.
     const effective=choices.filter(c=>c.requestedAt+c.eta<=220);
     const delayed=choices.filter(c=>c.requestedAt+c.eta>220);
@@ -136,7 +155,7 @@
     const medUsed=injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
     phases.push({t:330,phase:'인원 보호',detail:death?'중대한 인명 피해':injury?'부상자 발생':'인원 이상 없음',score:Math.round(exposure)});
-    op.resolution={version:4,fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
+    op.resolution={version:5,fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
     state.cash-=supportCost;op.actualSupportCost=supportCost;op.supportDecisions=choices;
     state.ammo-=used;state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*(withdrew?.08:.15));state.cash+=reward;
