@@ -1,6 +1,6 @@
 /* Lightweight release checker; never touches local game saves. */
 (function(){
-const CURRENT='2026.11.09.1';
+const CURRENT='2026.11.09.2';
 let checking=false,latest=null;
 const root=document.createElement('div');root.id='blackline-update';(document.querySelector('header')||document.body).appendChild(root);
 function paint(){root.innerHTML='<button type="button" id="blackline-check" aria-label="업데이트 확인">버전 '+CURRENT+' · 업데이트 확인</button>'+(latest&&latest!==CURRENT?'<div class="blackline-update-notice"><strong>새 버전 '+latest+' 이용 가능</strong><button type="button" id="blackline-apply">업데이트 적용</button></div>':'');const check=document.getElementById('blackline-check');if(check)check.onclick=()=>checkUpdate(true);const apply=document.getElementById('blackline-apply');if(apply)apply.onclick=()=>{const u=new URL(location.href);u.searchParams.set('release',latest);location.replace(u.toString())}}
