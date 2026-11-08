@@ -1,2 +1,21 @@
 .profile-sheet{height:94dvh;max-height:94dvh;display:flex;flex-direction:column;overflow:hidden;padding:0!important}.profile-top{padding:15px;background:#172832;flex-shrink:0}.profile-tabs{display:flex;overflow-x:auto;gap:6px;padding:10px;background:#101d24;flex-shrink:0}.profile-tabs button{white-space:nowrap;background:#243841;color:#c5d3d1;border:1px solid #35515a;border-radius:9px;padding:11px;font-size:12px}.profile-tabs button.active{background:#a6e2c1;color:#14291f;font-weight:bold}.profile-body{overflow:auto;flex:1;padding:10px 16px calc(40px + env(safe-area-inset-bottom))}.weapon-art{background:#22343b;border-radius:12px;padding:15px;margin:12px 0}.weapon-art svg{width:100%;height:160px}.equipment-card{background:#20323b;border:1px solid #39515b;border-radius:12px;padding:13px;margin:10px 0}.profile-close{float:none}.profile-sheet .avatar{width:62px;height:68px}.weapon-photo{height:180px;border-radius:13px;background:#e6e9e7;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:12px 0}.weapon-photo img{display:block;width:100%;height:100%;object-fit:contain}.photo-credit{font-size:11px;color:#a5b9bb;line-height:1.5}.photo-credit a{color:#a6e2c1}
 .eval-row{padding:12px 2px;border-bottom:1px solid #2d414a}.eval-row .line{margin-bottom:9px}.eval-row strong{font-size:13px}.eval-row span{font-size:12px;font-weight:700}.eval-track{height:9px;border-radius:99px;background:#30434c;overflow:hidden}.eval-fill{height:100%;border-radius:99px;transition:width .2s ease}
+
+/* Compact professional personnel dossier */
+.profile-tabs{gap:8px;padding:10px 14px;scrollbar-width:none}
+.profile-tabs::-webkit-scrollbar{display:none}
+.profile-tabs button{flex:1;min-width:0;padding:11px 8px;border-radius:8px;font-size:12px}
+.profile-body{padding:14px 17px calc(40px + env(safe-area-inset-bottom))}
+.dossier-section-label{font-size:11px;letter-spacing:1.1px;font-weight:800;color:#a6e2c1;margin:21px 0 10px;padding-bottom:8px;border-bottom:1px solid #354954}
+.dossier-section-label:first-child{margin-top:6px}
+.dossier-facts{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#30454d;border:1px solid #30454d;border-radius:12px;overflow:hidden}
+.dossier-fact{background:#1b2e37;padding:12px 11px;min-width:0}
+.dossier-fact span{display:block;font-size:11px;color:#9eb4b9;margin-bottom:7px}
+.dossier-fact strong{display:block;font-size:13px;overflow-wrap:anywhere;line-height:1.4}
+.dossier-report{background:#1a2b34;border:1px solid #30454d;border-radius:12px;padding:14px}
+.dossier-report p{font-size:13px;line-height:1.8;color:#cbd8d9;margin:8px 0}
+.dossier-mini-title{font-size:12px;font-weight:700;color:#afc4c6;margin-bottom:5px}
+.dossier-muted{font-size:11px!important;color:#91a9ac!important}
+.dossier-expand{display:block;width:100%;border:1px solid #4b6b6d;border-radius:9px;background:#263f46;color:#bce8d1;padding:11px;margin-top:14px;font-weight:700}
+.dossier-actions{margin-top:14px}
+.dossier-report .eval-row:last-child{border-bottom:0}
