@@ -3,7 +3,7 @@
 (function(){
  const addDays=(iso,n)=>{const d=new Date(iso+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
  const report=(category,title,body,amount)=>{state.reports.unshift({date:state.date,category,title,body,...(amount===undefined?{}:{amount})});state.reports=state.reports.slice(0,160)};
- const available=()=>state.team.filter(p=>!p.dead&&!p.injured&&!p.onMission);
+ const available=()=>state.team.filter(p=>!p.dead&&!p.retired&&!p.injured&&!p.onMission);
  const leader=()=>state.team.find(p=>p.id===state.leaderId&&!p.dead)||available()[0];
  const methodFor=(m)=>m.id===1?'지상 차량 이동':m.id===2?'항공 수송 후 도보 이동':'지상 차량 이동 및 현장 인수';
  const teamReadiness=members=>{if(!members.length)return 0;return Math.round(members.reduce((sum,p)=>{const e=personnelEvaluation(p);return sum+e.teamwork*.23+e.awareness*.22+e.endurance*.17+e.tactics*.20+e.leadership*.18},0)/members.length)};
@@ -16,7 +16,7 @@
  const oldNextDay=nextDay;
  function autoRecruit(){
   const policy=state.recruitPolicy;if(!policy.enabled)return;
-  const living=state.team.filter(p=>!p.dead);if(living.length>=policy.minTeam)return;
+  const living=state.team.filter(p=>!p.dead&&!p.retired);if(living.length>=policy.minTeam)return;
   const last=state.lastAutoRecruit||'0000-00';if(last===state.date.slice(0,7))return;
   const p=state.candidates.filter(p=>p.salary<=policy.maxAnnualSalary&&state.cash>=p.salary/12).sort((a,b)=>b.skill-a.skill)[0];if(!p)return;
   p.dead=false;p.injured=false;p.loadout={primary:'미지급',secondary:'미지급',armor:'미지급',helmet:'미지급',radio:'미지급'};
@@ -38,7 +38,7 @@
    if((op.status==='사전 연습 완료'||op.status==='작전 승인')&&state.date>=op.deployDate){
     const m=state.missions.find(x=>x.id===op.missionId);
     if(!m){op.status='작전 보류';continue}
-    const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.injured);
+    const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
     if(members.length<2){op.status='작전 보류';report('작전','작전 투입 보류 · '+op.id,'출동 가능한 인원이 부족합니다. 팀장에게 재편성 보고를 요청했습니다.');continue}
     if(state.ammo<120||state.med<1){op.status='작전 보류';report('군수','작전 투입 보류 · '+op.id,'탄약 또는 의료물자가 부족하여 투입을 중단했습니다.');continue}
     const seed=(state.day*7919+m.id*101+state.history.length*509+members.length*37)%997;
@@ -58,7 +58,7 @@
     if(casualtyName)logs.push({t:250,who:'작전통제',msg:'인명 피해 발생. 사망자 확인 및 유가족 통보 절차를 시작합니다.'});
     logs.push({t:390,who:'작전통제',msg:'작전 종료. 사후 보고서를 제출합니다.'});logs.sort((a,b)=>a.t-b.t);
     state.history.unshift({id:Date.now()+op.missionId,date:state.date,title:m.title,success,injury:!!injuryName,death:!!casualtyName,casualtyName,injuryName,used,medUsed,reward,supportCost,air:op.air,artillery:op.artillery,budget:op.budget,logs,day:state.day,team:members.map(p=>p.name),planId:op.id,method:op.method});
-    op.status='작전 완료';op.completed=state.date;for(const p of members){if(p.dead)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
+    op.status='작전 완료';op.completed=state.date;for(const p of members){if(p.dead||p.retired)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
     report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward);
     if(casualtyName)report('인사','긴급 인명 피해 보고 · '+casualtyName,casualtyName+' 용병이 '+m.title+' 수행 중 사망했습니다. 계약 종료 및 추모 기록에 반영했습니다.');
    }
