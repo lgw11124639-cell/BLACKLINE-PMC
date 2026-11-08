@@ -43,8 +43,8 @@
     if(state.ammo<120||state.med<1){op.status='작전 보류';report('군수','작전 투입 보류 · '+op.id,'탄약 또는 의료물자가 부족하여 투입을 중단했습니다.');continue}
     const seed=(state.day*7919+m.id*101+state.history.length*509+members.length*37)%997;
     const avg=members.reduce((a,p)=>a+p.skill,0)/members.length;
-    const readiness=teamReadiness(members);const preparationBonus=op.rehearsalQuality==='우수'?7:op.rehearsalQuality==='양호'?3:-4;const success=seed%100<Math.min(94,Math.max(25,44+avg*.22+readiness*.16+preparationBonus-m.risk*12));
-    const injury=(seed%100)<Math.max(3,17-Math.floor(readiness/10))||(!success&&seed%3===0);
+    const readiness=teamReadiness(members);const avgFatigue=members.reduce((a,p)=>a+(p.fatigue||0),0)/members.length;const fatiguePenalty=Math.round(avgFatigue/9);const sniper=members.filter(p=>/저격수|정밀사수/.test(p.role||''));const specialistBonus=sniper.length?Math.min(5,Math.round(sniper.reduce((a,p)=>a+personnelEvaluation(p).precision,0)/sniper.length/20)):0;const preparationBonus=op.rehearsalQuality==='우수'?7:op.rehearsalQuality==='양호'?3:-4;const success=seed%100<Math.min(94,Math.max(25,44+avg*.22+readiness*.16+preparationBonus+specialistBonus-fatiguePenalty-m.risk*12));
+    const injury=(seed%100)<Math.max(3,17-Math.floor(readiness/10)+Math.round(avgFatigue/14))||(!success&&seed%3===0);
     const death=(!success&&seed%100<Math.max(2,11-Math.floor(readiness/13)))||(m.risk>1&&seed%41===0);
     const used=Math.min(state.ammo,120+seed%180),supportCost=0,medUsed=injury?1:0;
     state.ammo-=used;state.med-=medUsed;
@@ -58,7 +58,7 @@
     if(casualtyName)logs.push({t:250,who:'작전통제',msg:'인명 피해 발생. 사망자 확인 및 유가족 통보 절차를 시작합니다.'});
     logs.push({t:390,who:'작전통제',msg:'작전 종료. 사후 보고서를 제출합니다.'});logs.sort((a,b)=>a.t-b.t);
     state.history.unshift({id:Date.now()+op.missionId,date:state.date,title:m.title,success,injury:!!injuryName,death:!!casualtyName,casualtyName,injuryName,used,medUsed,reward,supportCost,air:op.air,artillery:op.artillery,budget:op.budget,logs,day:state.day,team:members.map(p=>p.name),planId:op.id,method:op.method});
-    op.status='작전 완료';op.completed=state.date;for(const p of members){if(p.dead||p.retired)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
+    op.status='작전 완료';op.completed=state.date;for(const p of members){p.fatigue=Math.min(100,(p.fatigue||0)+16+m.risk*9);if(p.dead||p.retired)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
     report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward);
     if(casualtyName)report('인사','긴급 인명 피해 보고 · '+casualtyName,casualtyName+' 용병이 '+m.title+' 수행 중 사망했습니다. 계약 종료 및 추모 기록에 반영했습니다.');
    }
