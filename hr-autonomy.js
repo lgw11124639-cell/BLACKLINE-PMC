@@ -2,7 +2,7 @@
 (function(){
  const active=()=>state.team.filter(p=>!p.dead&&!p.retired);
  const fit=p=>{const e=personnelEvaluation(p);return e.teamwork*.25+e.tactics*.2+e.awareness*.2+e.endurance*.15+e.leadership*.2};
- const issue=(title,body)=>{state.reports.unshift({date:state.date,category:'인사',title,body});state.reports=state.reports.slice(0,160)};
+ const issue=(title,body,detail)=>{state.reports.unshift({date:state.date,category:'인사',title,body,...(detail?{detail}:{})});state.reports=state.reports.slice(0,160)};
  if(!state.hrDepartment)state.hrDepartment={lastReview:null,leaderId:null,teams:[],lastRecruitMonth:null};
  const hr=state.hrDepartment;
  // Retain earlier data; the director no longer makes personnel decisions.
@@ -16,7 +16,7 @@
   const start=state.date,d=new Date(start+'T12:00:00Z');d.setUTCFullYear(d.getUTCFullYear()+1);
   p.contractStart=start;p.contractEnd=d.toISOString().slice(0,10);
   state.team.push(p);state.candidates=state.candidates.filter(x=>x.id!==p.id);
-  issue('인사팀 신규 채용 보고',p.name+' 인원을 '+p.role+' 분야로 채용했습니다. 계약 연봉 '+money(p.salary)+', 계약 종료 예정 '+p.contractEnd+'. 인사팀이 경력과 급여 예산을 검토해 자체 결정했습니다.');
+  issue('인사팀 신규 채용 보고',p.name+' 인원을 '+p.role+' 분야로 채용했습니다. 계약 연봉 '+money(p.salary)+', 계약 종료 예정 '+p.contractEnd+'. 인사팀이 경력과 급여 예산을 검토해 자체 결정했습니다.',{summary:p.name+' 인원을 '+p.role+' 보직으로 신규 채용했습니다.',metrics:[{label:'계약 연봉',value:money(p.salary)},{label:'계약 만료',value:p.contractEnd}],sections:[{title:'채용 인원',items:['성명: '+p.name,'전문 보직: '+p.role,'이전 소속: '+(p.unit||'미기록')]},{title:'계약 조건',items:['계약 시작: '+p.contractStart,'계약 종료: '+p.contractEnd,'연봉: '+money(p.salary)]},{title:'인사본부 판단',items:['보직 적합성과 현재 가용 인력을 고려했습니다.','계약 체결 후 장비 지급은 군수본부에서 별도 관리합니다.']}]});
  }
  function organize(){
   const people=active().slice().sort((a,b)=>fit(b)-fit(a));
@@ -27,7 +27,7 @@
   for(let i=0;i<people.length;i+=4){const members=people.slice(i,i+4);squads.push({name:'작전 '+String(squads.length+1).padStart(2,'0')+'팀',leaderId:members[0]?.id,memberIds:members.map(p=>p.id)})}
   const before=JSON.stringify(hr.teams);
   hr.teams=squads;hr.leaderId=state.leaderId;
-  if(before!==JSON.stringify(squads)||previous!==state.leaderId)issue('인사팀 편제 및 지휘관 지정 보고',(leader?'총괄 팀장 '+leader.name+' 지정. ':'가용 인력 없음. ')+squads.map(t=>t.name+' '+t.memberIds.length+'명').join(', ')+'. 전문 역량과 현재 인력 상태를 고려해 편제했습니다.');
+  if(before!==JSON.stringify(squads)||previous!==state.leaderId)issue('인사팀 편제 및 지휘관 지정 보고',(leader?'총괄 팀장 '+leader.name+' 지정. ':'가용 인력 없음. ')+squads.map(t=>t.name+' '+t.memberIds.length+'명').join(', ')+'. 전문 역량과 현재 인력 상태를 고려해 편제했습니다.',{summary:(leader?leader.name+' 인원을 총괄 팀장으로 지정하고 ':'총괄 팀장 지정 없이 ')+squads.length+'개 팀을 편성했습니다.',metrics:[{label:'편성 팀',value:squads.length+'개'},{label:'가용 인원',value:people.length+'명'}],sections:[{title:'지휘 체계',items:[leader?'총괄 팀장: '+leader.name:'총괄 팀장: 미지정']},{title:'팀별 편성',items:squads.map(t=>t.name+' / '+t.memberIds.length+'명 / '+t.memberIds.map(id=>people.find(p=>p.id===id)?.name||'미확인').join(', '))},{title:'편성 기준',items:['역량 평가, 건강 상태, 현재 가용 인원을 기준으로 자동 편성했습니다.']}]});
  }
  function renew(){
   for(const p of active()){
@@ -38,7 +38,7 @@
    const good=age<58&&!p.dead&&state.cash>=p.salary/12&&((e.teamwork+e.tactics+e.awareness)/3>=58);
    if(!good)continue;
    const old=p.contractEnd,d=new Date(old+'T12:00:00Z');d.setUTCFullYear(d.getUTCFullYear()+1);p.contractEnd=d.toISOString().slice(0,10);
-   issue('인사팀 계약 갱신 보고',p.name+' 용병의 복무 성과와 건강·예산을 검토해 계약을 1년 연장했습니다. 갱신 종료일 '+p.contractEnd+'.');
+   issue('인사팀 계약 갱신 보고',p.name+' 용병의 복무 성과와 건강·예산을 검토해 계약을 1년 연장했습니다. 갱신 종료일 '+p.contractEnd+'.',{summary:p.name+' 인원의 계약을 1년 연장했습니다.',metrics:[{label:'연장 기간',value:'1년'},{label:'새 만료일',value:p.contractEnd}],sections:[{title:'계약 변경',items:['계약 인원: '+p.name,'기존 만료일: '+old,'갱신 만료일: '+p.contractEnd,'연봉: '+money(p.salary)]},{title:'갱신 판단',items:['복무 성과, 건강 상태 및 회사 가용 자금을 검토했습니다.']}]});
   }
  }
  function review(force=false){
