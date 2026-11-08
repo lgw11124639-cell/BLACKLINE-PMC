@@ -53,10 +53,22 @@
     if(death){const p=members[(seed+1)%members.length];p.dead=true;p.injured=false;p.dateOfDeath=state.date;p.causeOfDeath='작전 중 사망';casualtyName=p.name;state.fallen.unshift({id:p.id,name:p.name,date:state.date,mission:m.title});if(state.leaderId===p.id){const replacement=available().find(x=>x.id!==p.id);state.leaderId=replacement?.id||null}}
     if(injury){const alive=members.filter(p=>!p.dead);if(alive.length){const p=alive[seed%alive.length];p.injured=true;injuryName=p.name}}
     state.reputation=Math.max(0,Math.min(100,state.reputation+(success?3:-4)-(death?4:0)));
-    const logs=[{t:0,who:'작전통제',msg:'사전 승인된 작전이 예정일에 개시되었습니다.'},{t:30,who:op.leaderName,msg:'투입 방식: '+op.method+'. 인원과 장비 상태 확인 완료.'},{t:95,who:'현장팀',msg:'작전 목표 확인. 민간인 보호 기준을 준수합니다.'},{t:220,who:op.leaderName,msg:success?'주요 임무 목표 달성. 복귀를 준비합니다.':'상황 악화로 임무를 중단하고 철수합니다.'}];
-    if(injuryName)logs.push({t:235,who:'의무 담당',msg:injuryName+' 부상. 응급처치 및 후송 절차 진행.'});
-    if(casualtyName)logs.push({t:250,who:'작전통제',msg:'인명 피해 발생. 사망자 확인 및 유가족 통보 절차를 시작합니다.'});
-    logs.push({t:390,who:'작전통제',msg:'작전 종료. 사후 보고서를 제출합니다.'});logs.sort((a,b)=>a.t-b.t);
+    const leaderVoice=op.leaderName||'현장 작전지휘관';
+    const logs=[
+      {t:0,who:'작전본부',msg:'사전 승인된 임무가 개시되었습니다. 현장 지휘권을 작전지휘관에게 이양합니다.'},
+      {t:25,who:leaderVoice,msg:'현장 지휘권 인수. 팀원 전원 상태 보고 바랍니다.'},
+      {t:48,who:'현장 팀원',msg:'전원 확인했습니다. 현장 상황 확인을 시작합니다.'},
+      {t:80,who:leaderVoice,msg:'민간인 보호와 팀원 안전을 우선합니다. 각 담당자는 변화 사항을 즉시 보고하세요.'},
+      {t:118,who:'현장 팀원',msg:seed%3===0?'예상과 다른 현장 상황이 확인됐습니다. 추가 판단을 요청합니다.':'현재까지 특이사항 없습니다. 임무를 계속 진행할 수 있습니다.'},
+      {t:145,who:leaderVoice,msg:seed%3===0?'보고 확인. 위험을 재평가하고 임무 절차를 조정합니다.':'확인. 기존 임무 목표를 유지하며 진행합니다.'},
+      {t:185,who:'작전본부',msg:'현장 지휘관 상황 보고 접수. 본부는 관찰을 유지하며 현장 판단을 존중합니다.'},
+      {t:220,who:leaderVoice,msg:success?'주요 임무 목표를 달성했습니다. 전원 안전 확인 후 복귀를 준비합니다.':'현장 위험이 높아졌습니다. 임무 중단과 안전한 복귀를 결정합니다.'},
+      {t:275,who:'현장 팀원',msg:success?'목표 달성 확인. 인원 상태를 점검 중입니다.':'임무 중단 명령 확인. 인원 상태를 확인합니다.'},
+      {t:330,who:leaderVoice,msg:'팀원 상태 최종 확인 후 본부에 작전 종료를 보고하겠습니다.'}
+    ];
+    if(injuryName)logs.push({t:235,who:'의무 담당',msg:injuryName+' 부상 확인. 응급처치 및 후송 절차를 진행합니다.'},{t:255,who:leaderVoice,msg:'부상자 보호를 최우선으로 하겠습니다. 현장 임무 절차를 조정합니다.'});
+    if(casualtyName)logs.push({t:250,who:'작전본부',msg:'중대한 인명 피해 보고를 접수했습니다. 관련 절차를 개시합니다.'});
+    logs.push({t:390,who:leaderVoice,msg:'작전 종료를 보고합니다. 상세 결과는 작전본부에 제출하겠습니다.'});logs.sort((a,b)=>a.t-b.t);
     state.history.unshift({id:Date.now()+op.missionId,date:state.date,title:m.title,success,injury:!!injuryName,death:!!casualtyName,casualtyName,injuryName,used,medUsed,reward,supportCost,air:op.air,artillery:op.artillery,budget:op.budget,logs,day:state.day,team:members.map(p=>p.name),planId:op.id,method:op.method});
     op.status='작전 완료';op.completed=state.date;for(const p of members){p.fatigue=Math.min(100,(p.fatigue||0)+16+m.risk*9);if(p.dead||p.retired)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
     report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward);
