@@ -8,7 +8,7 @@ function initialize(p){if(!p.birthDate){const initial=27+p.id*3;const y=2030-ini
  if(!p.military){const duration=4+p.id*2;const discharged=2028-(p.id%3);p.military={start:(discharged-duration)+'-03-01',discharge:discharged+'-03-01',reason:p.id%5===0?'만기 전역':p.id%4===0?'개인 사유 전역':'정상 전역'};}
  if(p.contractStart&&!p.contractEnd)p.contractEnd=days(p.contractStart,365);
 }
-state.candidates.forEach(initialize);state.team.forEach(initialize);
+state.candidates.forEach(initialize);state.team.forEach(p=>{initialize(p);if(!p.contractStart&&!p.dead&&!p.retired){p.contractStart=state.date;p.contractEnd=days(state.date,365)}});
 if(!Array.isArray(state.alumni))state.alumni=[];
 function report(title,body){state.reports.unshift({date:state.date,category:'인사',title,body});state.reports=state.reports.slice(0,160)}
 function returnEquipment(p){const load=p.loadout||{};if(load.primary&&load.primary!=='미지급'&&Object.hasOwn(state.weapons,load.primary))state.weapons[load.primary]++;if(load.armor&&load.armor!=='미지급')state.gear++;p.loadout={primary:'미지급',secondary:'미지급',armor:'미지급',helmet:'미지급',radio:'미지급'}}
