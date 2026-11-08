@@ -1,6 +1,6 @@
 /* Sniper specialization and interdepartmental support reports. */
 (function(){
- if(!Object.hasOwn(state.weapons,'정밀사격 소총'))state.weapons['정밀사격 소총']=0;
+ if(!Object.hasOwn(state.weapons,'Accuracy International AXMC'))state.weapons['Accuracy International AXMC']=0;
  const specialistsCatalog=[{id:7,name:'이도현',country:'대한민국',unit:'육군 특수전사령부 (경력 주장)',rank:'중사',role:'저격수',skill:86,salary:108000000},{id:8,name:'Alex Morgan',country:'영국',unit:'Royal Marines (경력 주장)',rank:'하사(환산)',role:'정밀사수',skill:83,salary:104000000}];
  for(const p of specialistsCatalog){if(!state.team.some(x=>x.id===p.id)&&!state.candidates.some(x=>x.id===p.id)&&!(state.alumni||[]).some(x=>x.id===p.id)&&!(state.fallen||[]).some(x=>x.id===p.id)){state.candidates.push(p)}}
  const isPrecision=p=>/저격수|정밀사수/.test(p.role||'');
