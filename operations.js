@@ -6,8 +6,9 @@
  const available=()=>state.team.filter(p=>!p.dead&&!p.injured&&!p.onMission);
  const leader=()=>state.team.find(p=>p.id===state.leaderId&&!p.dead)||available()[0];
  const methodFor=(m)=>m.id===1?'지상 차량 이동':m.id===2?'항공 수송 후 도보 이동':'지상 차량 이동 및 현장 인수';
+ const teamReadiness=members=>{if(!members.length)return 0;return Math.round(members.reduce((sum,p)=>{const e=personnelEvaluation(p);return sum+e.teamwork*.23+e.awareness*.22+e.endurance*.17+e.tactics*.20+e.leadership*.18},0)/members.length)};
  const rehearsalFor=(m)=>m.id===1?'호송 절차 및 응급상황 대응 연습':m.id===2?'민간인 보호·구조 및 후송 모의훈련':'출입통제 및 시설 대피 모의훈련';
- const planFor=(m)=>({id:'OP-'+String(state.day).padStart(4,'0')+'-'+m.id,missionId:m.id,leaderId:leader()?.id,leaderName:leader()?.name||'미지정',teamIds:available().map(p=>p.id),created:state.date,deployDate:addDays(state.date,m.risk>1?4:3),rehearsalDate:addDays(state.date,1),method:methodFor(m),rehearsal:rehearsalFor(m),status:'계획 검토',briefing:'작전 목표와 인명 보호 기준을 최우선으로 합니다. 팀별 역할, 의뢰기관 연락체계, 현장 위험 요소, 비상 철수 기준을 사전에 확인합니다.',rules:'민간인 보호 및 안전 기준 준수. 현장 상황이 악화되면 팀장은 임무 중단 및 복귀를 결정할 수 있습니다.',air:'restricted',artillery:'off',budget:20000000});
+ const planFor=(m)=>({id:'OP-'+String(state.day).padStart(4,'0')+'-'+m.id,missionId:m.id,leaderId:leader()?.id,leaderName:leader()?.name||'미지정',teamIds:available().map(p=>p.id),created:state.date,deployDate:addDays(state.date,m.risk>1?4:3),rehearsalDate:addDays(state.date,1),method:methodFor(m),rehearsal:rehearsalFor(m),status:'계획 검토',briefing:'작전 목표와 인명 보호 기준을 최우선으로 합니다. 팀별 역할, 의뢰기관 연락체계, 현장 위험 요소, 비상 철수 기준을 사전에 확인합니다.',readiness:teamReadiness(available()),rehearsalQuality:null,rehearsalIssue:null,rules:'민간인 보호 및 안전 기준 준수. 현장 상황이 악화되면 팀장은 임무 중단 및 복귀를 결정할 수 있습니다.',air:'restricted',artillery:'off',budget:20000000});
  if(!Array.isArray(state.operations))state.operations=[];
  if(!state.recruitPolicy)state.recruitPolicy={enabled:false,minTeam:4,maxAnnualSalary:110000000,monthlyLimit:1};
  if(!Array.isArray(state.fallen))state.fallen=[];
@@ -26,9 +27,13 @@
  function runScheduled(){
   for(const op of state.operations){
    if(op.status==='작전 완료')continue;
-   if(op.status==='작전 승인'&&state.date>=op.rehearsalDate){
-    op.status='사전 연습 완료';op.rehearsalComplete=true;
-    report('작전','팀장 사전 연습 결과 보고 · '+op.id,op.leaderName+' 팀장이 '+op.rehearsal+'을 완료했습니다. 위험 요소 및 후송 절차를 점검했습니다.');
+   if((op.status==='작전 승인'||op.status==='추가 연습 필요')&&state.date>=op.rehearsalDate){
+    op.rehearsalComplete=true;
+    const roll=(state.day*13+op.missionId*17+op.teamIds.length*7)%100;
+    const readiness=teamReadiness(op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(Boolean));
+    op.readiness=readiness;op.rehearsalQuality=readiness>=82?'우수':readiness>=68?'양호':'보완 필요';
+    if(roll>readiness){op.rehearsalIssue='모의훈련에서 통신 및 현장 대응 절차의 보완 사항이 발견되었습니다.';op.status='추가 연습 필요';op.deployDate=addDays(op.deployDate,2);op.rehearsalDate=addDays(state.date,1);report('작전','사전 연습 문제점 보고 · '+op.id,op.leaderName+' 팀장: '+op.rehearsalIssue+' 작전 투입일을 '+op.deployDate+'로 연기했습니다.');}
+    else {op.status='사전 연습 완료';report('작전','팀장 사전 연습 결과 보고 · '+op.id,op.leaderName+' 팀장이 '+op.rehearsal+'을 완료했습니다. 평가: '+op.rehearsalQuality+'.');}
    }
    if((op.status==='사전 연습 완료'||op.status==='작전 승인')&&state.date>=op.deployDate){
     const m=state.missions.find(x=>x.id===op.missionId);
@@ -38,9 +43,9 @@
     if(state.ammo<120||state.med<1){op.status='작전 보류';report('군수','작전 투입 보류 · '+op.id,'탄약 또는 의료물자가 부족하여 투입을 중단했습니다.');continue}
     const seed=(state.day*7919+m.id*101+state.history.length*509+members.length*37)%997;
     const avg=members.reduce((a,p)=>a+p.skill,0)/members.length;
-    const success=seed%100<Math.min(94,Math.max(30,60+avg*.3-m.risk*12));
-    const injury=seed%7===0||(!success&&seed%3===0);
-    const death=(!success&&seed%11===0)||(m.risk>1&&seed%23===0);
+    const readiness=teamReadiness(members);const preparationBonus=op.rehearsalQuality==='우수'?7:op.rehearsalQuality==='양호'?3:-4;const success=seed%100<Math.min(94,Math.max(25,44+avg*.22+readiness*.16+preparationBonus-m.risk*12));
+    const injury=(seed%100)<Math.max(3,17-Math.floor(readiness/10))||(!success&&seed%3===0);
+    const death=(!success&&seed%100<Math.max(2,11-Math.floor(readiness/13)))||(m.risk>1&&seed%41===0);
     const used=Math.min(state.ammo,120+seed%180),supportCost=0,medUsed=injury?1:0;
     state.ammo-=used;state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*.15);state.cash+=reward;
@@ -53,7 +58,7 @@
     if(casualtyName)logs.push({t:250,who:'작전통제',msg:'인명 피해 발생. 사망자 확인 및 유가족 통보 절차를 시작합니다.'});
     logs.push({t:390,who:'작전통제',msg:'작전 종료. 사후 보고서를 제출합니다.'});logs.sort((a,b)=>a.t-b.t);
     state.history.unshift({id:Date.now()+op.missionId,date:state.date,title:m.title,success,injury:!!injuryName,death:!!casualtyName,casualtyName,injuryName,used,medUsed,reward,supportCost,air:op.air,artillery:op.artillery,budget:op.budget,logs,day:state.day,team:members.map(p=>p.name),planId:op.id,method:op.method});
-    op.status='작전 완료';op.completed=state.date;
+    op.status='작전 완료';op.completed=state.date;for(const p of members){if(p.dead)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
     report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward);
     if(casualtyName)report('인사','긴급 인명 피해 보고 · '+casualtyName,casualtyName+' 용병이 '+m.title+' 수행 중 사망했습니다. 계약 종료 및 추모 기록에 반영했습니다.');
    }
@@ -63,9 +68,9 @@
  const oldHire=hire;hire=function(id){oldHire(id);const p=state.team.find(x=>x.id===id);if(p)p.dead=false};
  const oldPrepare=prepare;prepare=function(id){if(available().length<2){alert('출동 가능한 용병이 최소 2명 필요합니다.');return}if(state.operations.some(x=>x.missionId===id&&x.status!=='작전 완료'&&x.status!=='작전 보류')){alert('이미 준비 중인 작전입니다.');return}const m=state.missions.find(x=>x.id===id);if(!m)return;state.pending={id,air:'restricted',artillery:'off',budget:20000000,plan:planFor(m)};save();render()};
  approval=function(){const op=state.pending?.plan;if(!op)return '<p class="empty">작전계획이 없습니다.</p>';const m=state.missions.find(x=>x.id===op.missionId);return '<h2>팀장 사전 작전계획서</h2><div class="card"><div class="muted">작전번호 '+op.id+' · 계획 제출 '+op.created+'</div><h2>'+escapeHTML(m.title)+'</h2><div class="line"><span>작전팀장</span><strong>'+escapeHTML(op.leaderName)+'</strong></div><div class="line"><span>투입 예정일</span><strong>'+op.deployDate+'</strong></div><div class="line"><span>사전 연습 예정일</span><strong>'+op.rehearsalDate+'</strong></div><div class="line"><span>투입 방식</span><strong>'+escapeHTML(op.method)+'</strong></div><div class="line"><span>투입 인원</span><strong>'+op.teamIds.length+'명</strong></div><h3>팀장 브리핑</h3><p class="empty">'+escapeHTML(op.briefing)+'</p><h3>사전 연습 계획</h3><p class="empty">'+escapeHTML(op.rehearsal)+'</p><h3>안전·교전 제한</h3><p class="empty">'+escapeHTML(op.rules)+'</p><label>공중 지원 제한<select id="air"><option value="off">금지</option><option value="restricted" selected>조건부 허용</option><option value="authorized">사전 승인 범위 내 허용</option></select></label><label>포병 지원 제한<select id="artillery"><option value="off" selected>금지</option><option value="restricted">조건부 허용</option><option value="authorized">사전 승인 범위 내 허용</option></select></label><label>지원 예산 상한 (원)<input id="budget" type="number" min="0" max="200000000" step="1000000" value="'+op.budget+'"></label><p class="empty">승인 후 즉시 전투하지 않습니다. 예정일에 사전 연습과 작전 투입이 진행됩니다.</p><div class="btnrow">'+btn('작전계획 승인 · 일정 등록','approveScheduled()')+btn('반려','cancel()','secondary')+'</div></div>'};
- function approveScheduled(){const op=state.pending?.plan;if(!op)return;const budget=Number(document.getElementById('budget').value);if(!Number.isFinite(budget)||budget<0||budget>200000000){alert('지원 예산을 확인하세요.');return}op.budget=budget;op.air=document.getElementById('air').value;op.artillery=document.getElementById('artillery').value;op.status='작전 승인';state.operations.unshift(op);state.pending=null;report('작전','팀장 작전계획 승인 보고 · '+op.id,op.leaderName+' 팀장 계획 승인. '+op.rehearsalDate+' 사전 연습, '+op.deployDate+' 작전 투입 예정.');save();render()}
+ function approveScheduled(){const op=state.pending?.plan;if(!op)return;const budget=Number(document.getElementById('budget').value);if(!Number.isFinite(budget)||budget<0||budget>200000000){alert('지원 예산을 확인하세요.');return}op.budget=budget;op.air=document.getElementById('air').value;op.artillery=document.getElementById('artillery').value;op.status='작전 승인';state.operations.unshift(op);state.pending=null;report('작전','팀장 작전계획 승인 보고 · '+op.id,op.leaderName+' 팀장 계획 승인. 팀 준비 평가 '+(op.readiness>=82?'우수':op.readiness>=68?'양호':'보완 필요')+'. '+op.rehearsalDate+' 사전 연습, '+op.deployDate+' 작전 투입 예정.');save();render()}
  window.approveScheduled=approveScheduled;
- const oldMissions=missions;missions=function(){let html='<h2>작전 운영 현황</h2>'+state.operations.filter(x=>x.status!=='작전 완료').map(op=>'<div class="card"><div class="line"><strong>'+escapeHTML(op.id)+'</strong><span class="tag">'+escapeHTML(op.status)+'</span></div><p class="empty">팀장 '+escapeHTML(op.leaderName)+' · 투입 '+op.deployDate+'<br>사전 연습 '+op.rehearsalDate+' · '+escapeHTML(op.rehearsal)+'<br>투입 방식 '+escapeHTML(op.method)+'</p></div>').join('');return html+oldMissions()};
+ const oldMissions=missions;missions=function(){let html='<h2>작전 운영 현황</h2>'+state.operations.filter(x=>x.status!=='작전 완료').map(op=>'<div class="card"><div class="line"><strong>'+escapeHTML(op.id)+'</strong><span class="tag">'+escapeHTML(op.status)+'</span></div><p class="empty">팀장 '+escapeHTML(op.leaderName)+' · 투입 '+op.deployDate+'<br>사전 연습 '+op.rehearsalDate+' · '+escapeHTML(op.rehearsal)+'<br>팀 준비 평가 '+(op.readiness>=82?'우수':op.readiness>=68?'양호':'보완 필요')+'<br>투입 방식 '+escapeHTML(op.method)+'</p></div>').join('');return html+oldMissions()};
  const oldHome=home;home=function(){const op=state.operations.filter(x=>x.status!=='작전 완료');return oldHome()+(op.length?'<h2>진행 중인 작전 일정</h2>'+op.map(x=>'<div class="card"><strong>'+escapeHTML(x.id)+'</strong><p class="empty">'+escapeHTML(x.status)+' · 연습 '+x.rehearsalDate+' · 투입 '+x.deployDate+'</p></div>').join(''):'')};
  const oldPeople=people;people=function(){return '<div class="card"><h3>인사팀 자율 채용 지침</h3><p class="empty">사장님이 채용 권한을 위임하면 인사팀은 매월 최대 1명까지 승인된 예산 범위에서 부족 인원을 자동 계약합니다.</p><label><input type="checkbox" id="autoRecruit" '+(state.recruitPolicy.enabled?'checked':'')+'> 인사팀 자동 계약 허용</label><label>최소 유지 인원<input type="number" id="minTeam" min="2" max="12" value="'+state.recruitPolicy.minTeam+'"></label><label>연봉 상한 (원)<input type="number" id="salaryCap" min="10000000" step="10000000" value="'+state.recruitPolicy.maxAnnualSalary+'"></label>'+btn('인사 위임 지침 저장','saveRecruitPolicy()')+'</div><h2>현직 인원 및 사망 기록</h2>'+(state.fallen.length?state.fallen.map(x=>'<div class="card"><strong>'+escapeHTML(x.name)+'</strong><p class="empty">사망일 '+x.date+' · '+escapeHTML(x.mission)+'</p></div>').join(''):'<p class="empty">사망 기록 없음</p>')+oldPeople()};
  function saveRecruitPolicy(){state.recruitPolicy.enabled=document.getElementById('autoRecruit').checked;state.recruitPolicy.minTeam=Math.max(2,Math.min(12,Number(document.getElementById('minTeam').value)||4));state.recruitPolicy.maxAnnualSalary=Math.max(10000000,Number(document.getElementById('salaryCap').value)||110000000);report('인사','인사팀 채용 위임 지침 변경','자동 채용 '+(state.recruitPolicy.enabled?'허용':'중지')+'. 최소 유지 인원 '+state.recruitPolicy.minTeam+'명.');save();render()}
