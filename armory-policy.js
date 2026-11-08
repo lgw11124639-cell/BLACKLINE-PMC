@@ -1,12 +1,15 @@
 /* Autonomous quartermaster: procurement, assignment, replacement, and returns. */
 (function(){
- const prices={'HK416':4500000,'M4A1':3700000,'SIG MCX':5100000,'FN SCAR-L':4900000,'HK G36':3900000,'HK MP7':4200000,'정밀사격 소총':7800000};
+ const prices={'HK416':4500000,'M4A1':3700000,'SIG MCX':5100000,'FN SCAR-L':4900000,'HK G36':3900000,'HK MP7':4200000,'Accuracy International AXMC':11800000,'Barrett MRAD':12500000,'Sako TRG 42':9800000};
  const fee=350000;
+ // Migrate old placeholder rifles without erasing the existing armory stock.
+ if(Object.hasOwn(state.weapons,'정밀사격 소총')){state.weapons['Accuracy International AXMC']=(state.weapons['Accuracy International AXMC']||0)+(state.weapons['정밀사격 소총']||0);delete state.weapons['정밀사격 소총']}
+ state.team.forEach(p=>{if(p.loadout?.primary==='정밀사격 소총')p.loadout.primary='Accuracy International AXMC'});
  if(!state.armoryPolicy||typeof state.armoryPolicy!=='object')state.armoryPolicy={};
  const policy=state.armoryPolicy;
  policy.mode='autonomous';delete policy.pending;
  const active=()=>state.team.filter(p=>!p.dead&&!p.retired);
- const suitable=p=>/저격수|정밀사수/.test(p.role||'')?'정밀사격 소총':/정찰/.test(p.role||'')?'SIG MCX':/의무|통신/.test(p.role||'')?'M4A1':/지원/.test(p.role||'')?'FN SCAR-L':'HK416';
+ const suitable=p=>/저격수|정밀사수/.test(p.role||'')?'Accuracy International AXMC':/정찰/.test(p.role||'')?'SIG MCX':/의무|통신/.test(p.role||'')?'M4A1':/지원/.test(p.role||'')?'FN SCAR-L':'HK416';
  const log=(title,body,amount)=>{state.reports.unshift({date:state.date,category:'군수',title,body,...(amount===undefined?{}:{amount})});state.reports=state.reports.slice(0,90)};
  const availableFunds=()=>Math.max(0,state.cash-20000000);
  function review(){
