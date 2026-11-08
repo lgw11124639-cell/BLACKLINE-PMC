@@ -53,5 +53,6 @@
  window.buyWeapon=function(){};
  window.approveStandardRifle=function(){};
  // Do not call review during initial load before all plugins have initialized.
- review(true);save();render();
+ // Existing saves and pending operations remain untouched on app launch.
+ render();
 })();
