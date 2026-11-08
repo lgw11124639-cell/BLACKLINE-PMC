@@ -53,6 +53,7 @@ const baseHome=home,baseRender=render,baseGo=go;
 home=function(){
  const all=reports(),active=(state.operations||[]).filter(o=>!['작전 완료','작전 보류'].includes(o.status));
  const stats='<div class="stats"><div class="stat"><small>현재 날짜</small><strong>'+esc(state.date)+'</strong></div><div class="stat"><small>가용 자금</small><strong>'+money(state.cash)+'</strong></div><div class="stat"><small>계약 인력</small><strong>'+(state.team||[]).filter(p=>!p.dead&&!p.retired).length+'명</strong></div></div>';
+ const advance='<div class="card daily-progress"><div class="line"><div><small>DAILY OPERATIONS</small><h3>일일 운영 진행</h3></div><span class="tag">'+esc(state.date)+'</span></div><p class="empty">하루를 진행하면 각 부서가 자율적으로 업무를 처리하고 새 보고서를 발송합니다.</p><button class="btn" type="button" onclick="nextDay()">다음 날 진행</button></div>';
  const ops='<h2>진행 중인 작전</h2>'+(active.length?active.slice(0,5).map(o=>'<div class="card"><div class="line"><strong>'+esc(o.id)+'</strong><span class="tag">'+esc(o.status)+'</span></div><p class="empty">현장지휘관 '+esc(o.leaderName||'미배정')+' · 투입 '+esc(o.deployDate||'미정')+'</p></div>').join(''):'<div class="card"><p class="empty">현재 진행 중인 작전이 없습니다.</p></div>');
  return '<div class="hero"><small>BLACKLINE PMC / EXECUTIVE OVERVIEW</small><h1>회사 운영 현황</h1><p>각 부서가 자율적으로 운영하며, 사장은 업무 보고와 작전 진행을 관전합니다.</p></div>'+stats+'<div class="mail-heading"><div><small>COMPANY CORRESPONDENCE</small><h2>부서별 수신함</h2></div><span>'+all.length+'건 수신</span></div><div id="company-inbox">'+rows()+'</div>'+ops;
 };
