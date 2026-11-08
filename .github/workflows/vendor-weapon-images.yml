@@ -1,0 +1,27 @@
+name: Vendor weapon reference photos
+on:
+  push:
+    paths:
+      - 'scripts/download_weapon_images.py'
+      - '.github/workflows/vendor-weapon-images.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/download_weapon_images.py
+      - name: Commit locally stored photos
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add images/weapons
+          if ! git diff --cached --quiet; then
+            git commit -m "Store firearm reference photos locally"
+            git push
+          fi
