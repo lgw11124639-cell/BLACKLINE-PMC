@@ -1,0 +1,38 @@
+{
+  "hk416": {
+    "file": "images/weapons/hk416.png",
+    "source": "https://commons.wikimedia.org/wiki/File:HK416N_noBG.png",
+    "author": "<a class=\"external free\" href=\"https://commons.wikimedia.org/w/index.php?title=User:Dybdal&amp;action=edit&amp;redlink=1\">https://commons.wikimedia.org/w/index.php?title=User:Dybdal&amp;action=edit&amp;redlink=1</a>",
+    "license": "CC BY-SA 4.0"
+  },
+  "m4a1": {
+    "file": "images/weapons/m4a1.png",
+    "source": "https://commons.wikimedia.org/wiki/File:M4A1-flattop.png",
+    "author": "Source: <a href=\"//commons.wikimedia.org/w/index.php?title=PEO_Soldier&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"PEO Soldier (page does not exist)\">PEO Soldier</a><br>Derivative: <a href=\"//commons.wikimedia.org/wiki/User:MathKnight\" title=\"User:MathKnight\">User:MathKnight</a>",
+    "license": "Public domain"
+  },
+  "sig-mcx": {
+    "file": "images/weapons/sig-mcx.png",
+    "source": "https://commons.wikimedia.org/wiki/File:SIG-MCX-Rifle-removebg-preview.png",
+    "author": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Green_Nor&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Green Nor (page does not exist)\">Green Nor</a>",
+    "license": "CC0"
+  },
+  "mp7": {
+    "file": "images/weapons/mp7.png",
+    "source": "https://commons.wikimedia.org/wiki/File:HK_MP7_Bundeswehr_noBG.png",
+    "author": "KrisfromGermany",
+    "license": "CC BY-SA 4.0"
+  },
+  "scar-l": {
+    "file": "images/weapons/scar-l.png",
+    "source": "https://commons.wikimedia.org/wiki/File:FN_SCAR-L_noBG.png",
+    "author": "Mitch Barrie from Costa Mesa, CA, USA",
+    "license": "CC BY-SA 4.0"
+  },
+  "g36": {
+    "file": "images/weapons/g36.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Gewehr_G36_noBG.png",
+    "author": "Quelle: \tDomoK       /   Freisteller, Erweiterung, Bildbearbeitung &amp; Retusche von <a href=\"//commons.wikimedia.org/wiki/User:Auge%3Dmit\" title=\"User:Auge=mit\">Auge=mit</a>",
+    "license": "CC BY-SA 4.0"
+  }
+}
