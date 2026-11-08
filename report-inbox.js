@@ -51,15 +51,10 @@ window.companyReportMove=offset=>{const next=opened+offset;if(next>=0&&next<repo
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&opened!==null)window.closeCompanyReport()});
 const baseHome=home,baseRender=render,baseGo=go;
 home=function(){
- let html=baseHome();
- const inbox='<div class="mail-heading"><div><small>COMPANY CORRESPONDENCE</small><h2>부서별 수신함</h2></div><span>'+reports().length+'건 수신</span></div><div id="company-inbox">'+rows()+'</div>';
- if(html.includes('<!-- COMPANY_INBOX -->'))html=html.replace('<!-- COMPANY_INBOX -->',inbox);
- else{
-  const heading='<h2>부서별 보고서</h2>',a=html.indexOf(heading),b=html.indexOf('<div class="card"><h3>운영 지침',a);
-  if(a>=0&&b>a)html=html.slice(0,a)+inbox+html.slice(b);
-  else if(!html.includes('id="company-inbox"'))html+=inbox;
- }
- return html.replace('오늘의 사장 결재함','회사 운영 현황').replace('작전 승인서 보기','작전 현황 보기').replace('사장님께서는 보고서를 검토하고 중요한 안건만 결재합니다.','사장은 각 부서의 자율 운영과 현장 작전을 관전합니다.').replace('인사·군수·작전 부서는 보고를 제출하고, 사장님은 승인과 예산 배정에 집중합니다.','각 부서가 자체적으로 운영하며 사장은 결과를 관찰합니다.');
+ const all=reports(),active=(state.operations||[]).filter(o=>!['작전 완료','작전 보류'].includes(o.status));
+ const stats='<div class="stats"><div class="stat"><small>현재 날짜</small><strong>'+esc(state.date)+'</strong></div><div class="stat"><small>가용 자금</small><strong>'+money(state.cash)+'</strong></div><div class="stat"><small>계약 인력</small><strong>'+(state.team||[]).filter(p=>!p.dead&&!p.retired).length+'명</strong></div></div>';
+ const ops='<h2>진행 중인 작전</h2>'+(active.length?active.slice(0,5).map(o=>'<div class="card"><div class="line"><strong>'+esc(o.id)+'</strong><span class="tag">'+esc(o.status)+'</span></div><p class="empty">현장지휘관 '+esc(o.leaderName||'미배정')+' · 투입 '+esc(o.deployDate||'미정')+'</p></div>').join(''):'<div class="card"><p class="empty">현재 진행 중인 작전이 없습니다.</p></div>');
+ return '<div class="hero"><small>BLACKLINE PMC / EXECUTIVE OVERVIEW</small><h1>회사 운영 현황</h1><p>각 부서가 자율적으로 운영하며, 사장은 업무 보고와 작전 진행을 관전합니다.</p></div>'+stats+'<div class="mail-heading"><div><small>COMPANY CORRESPONDENCE</small><h2>부서별 수신함</h2></div><span>'+all.length+'건 수신</span></div><div id="company-inbox">'+rows()+'</div>'+ops;
 };
 render=function(){baseRender();if(opened!==null)mount()};
 go=function(t){if(opened!==null)window.closeCompanyReport();baseGo(t)};
