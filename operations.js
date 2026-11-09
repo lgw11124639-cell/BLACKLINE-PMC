@@ -5,9 +5,9 @@
  const report=(category,title,body,amount,detail)=>{state.reports.unshift({date:state.date,category,title,body,...(amount===undefined?{}:{amount}),...(detail?{detail}:{})});state.reports=state.reports.slice(0,160)};
  const available=()=>state.team.filter(p=>!p.dead&&!p.retired&&!p.injured&&!p.onMission);
  const leader=()=>state.team.find(p=>p.id===state.leaderId&&!p.dead)||available()[0];
- const methodFor=(m)=>m.id===1?'지상 차량 이동':m.id===2?'항공 수송 후 도보 이동':'지상 차량 이동 및 현장 인수';
+ const methodFor=(m)=>(m.type==='호송'||m.id===1)?'지상 차량 이동':(m.type==='구조'||m.id===2)?'항공 수송 후 도보 이동':'지상 차량 이동 및 현장 인수';
  const teamReadiness=members=>{if(!members.length)return 0;return Math.round(members.reduce((sum,p)=>{const e=personnelEvaluation(p);return sum+e.teamwork*.23+e.awareness*.22+e.endurance*.17+e.tactics*.20+e.leadership*.18},0)/members.length)};
- const rehearsalFor=(m)=>m.id===1?'호송 절차 및 응급상황 대응 연습':m.id===2?'민간인 보호·구조 및 후송 모의훈련':'출입통제 및 시설 대피 모의훈련';
+ const rehearsalFor=(m)=>(m.type==='호송'||m.id===1)?'호송 절차 및 응급상황 대응 연습':(m.type==='구조'||m.id===2)?'민간인 보호·구조 및 후송 모의훈련':'출입통제 및 시설 대피 모의훈련';
  const planFor=(m)=>({id:'OP-'+String(state.day).padStart(4,'0')+'-'+m.id,missionId:m.id,leaderId:leader()?.id,leaderName:leader()?.name||'미지정',teamIds:available().map(p=>p.id),created:state.date,deployDate:addDays(state.date,m.risk>1?4:3),rehearsalDate:addDays(state.date,1),method:methodFor(m),rehearsal:rehearsalFor(m),status:'계획 검토',briefing:'작전 목표와 인명 보호 기준을 최우선으로 합니다. 팀별 역할, 의뢰기관 연락체계, 현장 위험 요소, 비상 철수 기준을 사전에 확인합니다.',readiness:teamReadiness(available()),rehearsalQuality:null,rehearsalIssue:null,rules:'민간인 보호 및 안전 기준 준수. 현장 상황이 악화되면 팀장은 임무 중단 및 복귀를 결정할 수 있습니다.',air:'restricted',artillery:'off',budget:20000000});
  if(!Array.isArray(state.operations))state.operations=[];
  if(!state.recruitPolicy)state.recruitPolicy={enabled:false,minTeam:4,maxAnnualSalary:110000000,monthlyLimit:1};
@@ -206,7 +206,7 @@
     phases.push({t:185,phase:'지원 상황',detail:effective.length?effective.map(c=>c.name).join(', ')+' 도착':'목표 판정 전 지원 도착 없음',score:supportBonus});
     if(medical?.injured)phases.push({t:200,phase:'인원 재배치',detail:'잔여 '+activeMembers.length+'명 재편성 · 수행 영향 '+reassignmentPenalty+'점',score:Math.round(activeReadiness)});
     phases.push({t:205,phase:'상황 재평가',detail:secondaryRetreat?'상황 악화로 현장 철수 결정':latePressure?'추가 위험 확인':'현장 안정 유지',score:Math.round(continuingScore)});
-    const missionType=m.id===1?'호송':m.id===2?'구조':'시설 보안';
+    const missionType=m.type||(m.id===1?'호송':m.id===2?'구조':'시설 보안');
     const objectiveDefs=missionType==='호송'
       ?[['이동 경로 안전 확보',0.94,2],['호송 대상 보호',1.04,3],['목적지 도착 확인',1.08,4]]
       :missionType==='구조'
@@ -225,11 +225,19 @@
     if(injury&&!op.fieldProgress?.medical&&state.cash>=8500000)consider('긴급 의료 후송',8500000,'부상자 보호 및 의료 지원',true,true,0);
     const evacuation=op.fieldProgress?.medical?!!op.fieldProgress.medical.evacuation:choices.some(c=>c.name==='긴급 의료 후송'&&c.requestedAt+c.eta<=330);
     const death=(seed*31+missionDay*19)%100<Math.max(1,Math.round(exposure/3)+(success?0:3)-(evacuation?7:0)-(withdrew?3:0));
+    // Hostile contact is simulated only when the mission encounters an armed threat.
+    const hostileContact=!withdrew&&m.risk>=2&&((seed*29+missionDay*11+m.id*17)%100)<Math.min(75,18+m.risk*15+Math.max(0,pressure));
+    const hostileCount=hostileContact?1+(seed%Math.max(2,m.risk+2)):0;
+    const neutralized=hostileContact?Math.min(hostileCount,Math.floor((seed*7+Math.round(finalScore))% (hostileCount+1))):0;
+    const hostileKilled=hostileContact?Math.min(neutralized,(seed*13+missionDay*3)% (neutralized+1)):0;
+    const hostileDetained=neutralized-hostileKilled;
+    const hostileRetreated=hostileCount-neutralized;
+    phases.push({t:210,phase:'위협 대응',detail:hostileContact?'적대 세력 '+hostileCount+'명 접촉 · 사살 '+hostileKilled+'명 · 제압·체포 '+hostileDetained+'명 · 이탈 '+hostileRetreated+'명':'적대 세력 접촉 없음',score:Math.round(finalScore)});
     const used=Math.min(state.ammo,Math.max(45,120+seed%180-(withdrew?80:0)));
     const medUsed=injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
     phases.push({t:330,phase:'인원 보호',detail:death?'중대한 인명 피해':injury?'부상자 발생':'인원 이상 없음',score:Math.round(exposure)});
-    op.resolution={version:12,missionType,objectives,completedObjectives,methodBonus,medicBonus,reconBonus,fieldReorganization:op.fieldProgress?.reorganization||null,activeTeamCount:activeMembers.length,reassignmentPenalty,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
+    op.resolution={version:13,hostileContact,hostileCount,hostileKilled,hostileDetained,hostileRetreated,missionType,objectives,completedObjectives,methodBonus,medicBonus,reconBonus,fieldReorganization:op.fieldProgress?.reorganization||null,activeTeamCount:activeMembers.length,reassignmentPenalty,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
     state.cash-=Math.max(0,supportCost-(Number(op.fieldProgress?.reservedSupportCost)||0));op.actualSupportCost=supportCost;op.supportDecisions=choices;
     state.ammo-=used;state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*(withdrew?.08:.15)+(!withdrew?m.reward*.12*completedObjectives:0));state.cash+=reward;
@@ -250,6 +258,7 @@
       {t:275,who:'현장 팀원',msg:success?'목표 달성 확인. 인원 상태를 점검 중입니다.':'임무 중단 명령 확인. 인원 상태를 확인합니다.'},
       {t:330,who:leaderVoice,msg:'팀원 상태 최종 확인 후 본부에 작전 종료를 보고하겠습니다.'}
     ];
+    if(hostileContact)logs.push({t:210,who:'현장 지휘관',msg:'적대 세력 접촉 '+hostileCount+'명. 사살 '+hostileKilled+'명, 제압·체포 '+hostileDetained+'명, 현장 이탈 '+hostileRetreated+'명으로 집계합니다.'});
     objectives.forEach((o,i)=>logs.push({t:155+i*28,who:'현장 작전팀',msg:o.name+' · '+(o.completed?'목표 달성 확인':'목표 미달성 보고')}));
     for(const event of op.fieldProgress?.events||[])logs.push({t:event.t,who:'현장 상황실',msg:event.phase+' · '+event.detail});
     if(op.fieldProgress?.commandDecision)logs.push({t:145,who:leaderVoice,msg:op.fieldProgress.commandDecision==='철수'?'현장 평가 후 철수를 명령합니다.':'현장 평가 후 임무 계속을 승인합니다.'});
@@ -264,7 +273,7 @@
     state.history.unshift({id:Date.now()+op.missionId,date:state.date,title:m.title,success,injury:!!injuryName,death:!!casualtyName,casualtyName,injuryName,used,medUsed,reward,supportCost,air:op.air,artillery:op.artillery,budget:op.budget,supportDecisions:choices,resolution:op.resolution,logs,day:state.day,team:members.map(p=>p.name),planId:op.id,method:op.method});
     op.status='작전 완료';op.completed=state.date;delete op.fieldProgress;for(const p of members){p.fatigue=Math.min(100,(p.fatigue||0)+16+m.risk*9);if(p.dead||p.retired)continue;const ev=personnelEvaluation(p);const k=['teamwork','awareness','endurance','tactics'][(seed+p.id)%4];ev[k]=Math.min(97,ev[k]+1)}
     report('재무','작전 예산 집행 정산 · '+op.id,'승인 한도 '+money(authorized)+', 현장지휘관 실제 집행 '+money(supportCost)+', 미사용 한도 '+money(Math.max(0,authorized-supportCost))+'. 지출 내역: '+(choices.map(c=>c.name+' '+money(c.cost)).join(', ')||'추가 지원 없음')+'.',-supportCost,{summary:'현장지휘관의 실제 지원 집행액은 '+money(supportCost)+'이며 미사용 한도는 '+money(Math.max(0,authorized-supportCost))+'입니다.',metrics:[{label:'예산 한도',value:money(authorized)},{label:'실제 지출',value:money(supportCost)},{label:'미사용 한도',value:money(Math.max(0,authorized-supportCost))}],sections:[{title:'집행 개요',items:['작전 식별자: '+op.id,'총 승인 한도: '+money(authorized),'실제 현장 지원비: '+money(supportCost),'미사용 한도: '+money(Math.max(0,authorized-supportCost))]},{title:'현장 지원별 지출',items:choices.length?choices.map(c=>c.name+' / '+money(c.cost)+' / '+c.reason):['추가 지원비 집행 없음']},{title:'정산 기준',items:['지원비는 실제 요청 및 처리된 항목만 집계합니다.','예산 한도 전액을 자동으로 지출하지 않습니다.']}]});
-    report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward,{summary:(success?'임무 목표 달성. ':'임무 목표 미달성. ')+(casualtyName?'사망자 1명 발생. ':'')+(injuryName?'부상자 1명 발생. ':'')+'현장지휘관의 종료 보고가 접수됐습니다.',metrics:[{label:'임무 결과',value:success?'성공':'실패'},{label:'계약 수입',value:money(reward)},{label:'지원비',value:money(supportCost)}],sections:[{title:'작전 기본 정보',items:['작전명: '+m.title,'작전번호: '+op.id,'현장지휘관: '+op.leaderName,'투입 방식: '+op.method,'투입 인원: '+members.length+'명']},{title:'임무 수행 결과',items:['최종 결과: '+(success?'임무 성공':'임무 실패'),'세부 목표 달성: '+completedObjectives+'/'+objectives.length,'계약 수입: '+money(reward),'탄약 사용량: '+used,'의료물자 사용량: '+medUsed]},{title:'인원 피해 현황',items:[casualtyName?'사망: '+casualtyName:'사망 보고 없음',injuryName?'부상: '+injuryName+' / '+(op.resolution.medical?.severity||'정도 미확인')+' / 회복 예상 '+(op.resolution.medical?.recoveryDays||'미정')+'일':'부상 보고 없음']},{title:'현장 지원 처리',items:choices.length?choices.map(c=>c.name+' / '+money(c.cost)):['추가 지원 요청 없음']},{title:'사후 처리',items:['현장 판단: '+(withdrew?'조기 철수':'임무 계속')+' / 제때 도착한 지원 효과 '+supportBonus+'점 / 최종 평가 '+Math.round(finalScore)+'점','현장 기록과 무전 로그는 작전 다시보기에서 열람할 수 있습니다.',injuryName?'부상자 제외 후 잔여 '+activeMembers.length+'명 재편성 / 작전 수행 영향 '+reassignmentPenalty+'점':'추가 인원 재배치 없음','인사 및 재무 변동은 각 부서 기록에 반영됩니다.']}]});
+    report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward,{summary:(success?'임무 목표 달성. ':'임무 목표 미달성. ')+(casualtyName?'사망자 1명 발생. ':'')+(injuryName?'부상자 1명 발생. ':'')+'현장지휘관의 종료 보고가 접수됐습니다.',metrics:[{label:'임무 결과',value:success?'성공':'실패'},{label:'계약 수입',value:money(reward)},{label:'지원비',value:money(supportCost)}],sections:[{title:'작전 기본 정보',items:['작전명: '+m.title,'작전번호: '+op.id,'현장지휘관: '+op.leaderName,'투입 방식: '+op.method,'투입 인원: '+members.length+'명']},{title:'임무 수행 결과',items:['최종 결과: '+(success?'임무 성공':'임무 실패'),'세부 목표 달성: '+completedObjectives+'/'+objectives.length,'적대 세력 접촉: '+hostileCount+'명 / 사살 '+hostileKilled+'명 / 제압·체포 '+hostileDetained+'명 / 이탈 '+hostileRetreated+'명','계약 수입: '+money(reward),'탄약 사용량: '+used,'의료물자 사용량: '+medUsed]},{title:'인원 피해 현황',items:[casualtyName?'사망: '+casualtyName:'사망 보고 없음',injuryName?'부상: '+injuryName+' / '+(op.resolution.medical?.severity||'정도 미확인')+' / 회복 예상 '+(op.resolution.medical?.recoveryDays||'미정')+'일':'부상 보고 없음']},{title:'현장 지원 처리',items:choices.length?choices.map(c=>c.name+' / '+money(c.cost)):['추가 지원 요청 없음']},{title:'사후 처리',items:['현장 판단: '+(withdrew?'조기 철수':'임무 계속')+' / 제때 도착한 지원 효과 '+supportBonus+'점 / 최종 평가 '+Math.round(finalScore)+'점','현장 기록과 무전 로그는 작전 다시보기에서 열람할 수 있습니다.',injuryName?'부상자 제외 후 잔여 '+activeMembers.length+'명 재편성 / 작전 수행 영향 '+reassignmentPenalty+'점':'추가 인원 재배치 없음','인사 및 재무 변동은 각 부서 기록에 반영됩니다.']}]});
     if(casualtyName)report('인사','긴급 인명 피해 보고 · '+casualtyName,casualtyName+' 용병이 '+m.title+' 수행 중 사망했습니다. 계약 종료 및 추모 기록에 반영했습니다.');
  }
  nextDay=function(){oldNextDay();autoRecruit();runScheduled();state.operations.filter(o=>o.status==='현장 진행 중').forEach(startField);save();render()};
