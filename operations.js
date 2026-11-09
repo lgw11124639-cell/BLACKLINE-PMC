@@ -61,7 +61,7 @@
      clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);
      const m=state.missions.find(x=>x.id===op.missionId);
      const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
-     if(!m||members.length<2){op.status='작전 보류';report('작전','작전 중단 보고 · '+op.id,'작전 진행 중 투입 가능 인원이 부족하거나 의뢰가 종료되어 작전을 보류했습니다.');save();render();return}
+     if(!m||members.length<2){if(op.fieldProgress?.reservedSupportCost){state.cash+=op.fieldProgress.reservedSupportCost;op.fieldProgress.reservedSupportCost=0;}op.status='작전 보류';report('작전','작전 중단 보고 · '+op.id,'작전 진행 중 투입 가능 인원이 부족하거나 의뢰가 종료되어 작전을 보류했습니다.');save();render();return}
      finalizeOperation(op,m,members);save();render();return;
    }
    // Each checkpoint is evaluated only when its timer fires, not before deployment.
@@ -85,7 +85,17 @@
        if(budget>=1800000&&(state.ammo<500||roll<35))requests.push({name:'현장 물자 재보급',cost:1800000,effect:4});
        if(m.risk>1&&op.teamIds.length<4&&budget>=requests.reduce((a,x)=>a+x.cost,0)+6000000)requests.push({name:'추가 인력 지원',cost:6000000,effect:9});
      }
-     fp.supportOrders=requests.map((r,i)=>({...r,requestedAt:155+i*22,eta:35+(fp.seed%4)*15}));
+     // Commit support expenses when the commander orders them; do not charge twice on completion.
+     fp.supportOrders=[];
+     fp.reservedSupportCost=Number(fp.reservedSupportCost)||0;
+     for(const [i,r] of requests.entries()){
+       if(fp.reservedSupportCost+r.cost>Math.max(0,Number(op.budget)||0)||state.cash<r.cost)continue;
+       state.cash-=r.cost;
+       fp.reservedSupportCost+=r.cost;
+       fp.supportOrders.push({...r,requestedAt:155+i*22,eta:35+(fp.seed%4)*15,charged:true,reason:'현장지휘관 승인 후 집행'});
+     }
+     fp.supportArrivals=fp.supportOrders.map(o=>({name:o.name,arrivalAt:o.requestedAt+o.eta,onTime:o.requestedAt+o.eta<=220}));
+     fp.events.push({stage:4,t:205,phase:'지원 도착 확인',detail:fp.supportArrivals.length?fp.supportArrivals.map(o=>o.name+(o.onTime?' · 판정 전 도착':' · 판정 후 도착')).join(', '):'지원 요청 없음',riskShift:0});
    }
    const detail=roll<20?'예상 외 위험 증가':roll>86?'현장 상황 안정':stage===2?'지휘관 현장 판단 갱신':'현장 상황 점검 완료';
    fp.events.push({stage:stage+1,t:(stage+1)*80,phase:stageLabels[stage],detail,riskShift});
@@ -148,15 +158,15 @@
     const success=!withdrew&&((seed*17+state.day*13+m.id*7)%100)<finalScore;
     const exposure=Math.max(2,Math.min(48,11+m.risk*5+pressure+latePressure-Math.round(readiness/13)-Math.round(supportBonus/2)-(withdrew?9:0)));
     const injury=(seed*23+state.day*7)%100<exposure;
-    if(injury)consider('긴급 의료 후송',8500000,'부상자 보호 및 의료 지원',true,true,0);
+    if(injury&&state.cash>=8500000)consider('긴급 의료 후송',8500000,'부상자 보호 및 의료 지원',true,true,0);
     const evacuation=choices.some(c=>c.name==='긴급 의료 후송'&&c.requestedAt+c.eta<=330);
     const death=(seed*31+state.day*19)%100<Math.max(1,Math.round(exposure/3)+(success?0:3)-(evacuation?7:0)-(withdrew?3:0));
     const used=Math.min(state.ammo,Math.max(45,120+seed%180-(withdrew?80:0)));
     const medUsed=injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
     phases.push({t:330,phase:'인원 보호',detail:death?'중대한 인명 피해':injury?'부상자 발생':'인원 이상 없음',score:Math.round(exposure)});
-    op.resolution={version:5,fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
-    state.cash-=supportCost;op.actualSupportCost=supportCost;op.supportDecisions=choices;
+    op.resolution={version:6,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
+    state.cash-=Math.max(0,supportCost-(Number(op.fieldProgress?.reservedSupportCost)||0));op.actualSupportCost=supportCost;op.supportDecisions=choices;
     state.ammo-=used;state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*(withdrew?.08:.15));state.cash+=reward;
     let casualtyName=null,injuryName=null;
