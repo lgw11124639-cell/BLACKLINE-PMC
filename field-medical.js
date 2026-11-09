@@ -1,16 +1,63 @@
-/* A wounded actor stops. Physical treatment determines return to duty or helicopter evacuation. */
-(function(){const api=window.fieldSimulation,{active,dist}=api.internals,baseTick=api.sceneTick,point=p=>({x:p[0],y:p[1]}),say=(s,msg)=>api.transmit(s,'의료 후송',msg,'medical',true);
- api.triageResult=function(s,p,medic){if(p.status==='dead')return;const cleared=(p.worstHP??p.hp)>=40&&p.hp>=60;p.fitForDuty=cleared;p.mobility=cleared?'limited':'immobile';p.requiresEvac=!cleared;p.status=cleared?'guarding':'evacuated';if(cleared)say(s,p.name+' 처치 후 제한 임무 가능. 재평가하며 이동한다.');else say(s,p.name+' 현장 임무 복귀 불가. 후송 요청, 환자는 이동하지 않는다.')};
- const originalTick=api.sceneTick;api.sceneTick=function(s,op){originalTick(s,op);if(!s.journey||s.version<3)return;const units=s.units.filter(u=>u.faction==='blackline');for(const p of units){if(p.status==='dead'||p.evacComplete||p.fitForDuty)continue;if(p.hp<=55||p.mobility==='immobile'){p.status=p.stabilized?'evacuated':'wounded';p.mobility='immobile';if(!p.stabilized&&(s.medUsed>=s.medicalBudget||!units.some(u=>active(u)&&u.tacticalRole==='medic')))p.requiresEvac=true;if(p.stabilized||p.road)p.requiresEvac=true}}
-  if(s.version<4)return;let pending=units.filter(p=>p.requiresEvac&&!p.evacComplete&&p.status!=='dead');const j=s.journey;const minimumActive=Math.max(3,Math.ceil((op.requiredStaffing?.minimum||6)*.6));if(['site','entry','interior','outdoor'].includes(j.stage)&&units.filter(active).length<minimumActive&&!s.retreat){s.retreat=true;say(s,'전투 가능 인원 부족. 현장 과업을 중단하고 부상자 우선 회수·철수를 실시한다.')}let flight=j.medevac;if(!pending.length&&(!flight||flight.stage==='complete'))return;
-  if(!flight||flight.stage==='complete'){const patients=pending.slice(0,6),cost=1500000,fp=op.fieldProgress;if(state.cash<cost||(Number(fp.reservedSupportCost)||0)+cost>Number(op.budget)){if(!j.medicalBudgetReported){j.medicalBudgetReported=true;say(s,'후송 항공 자원 부족. 현장 과업을 중단하고 지상 수송으로 환자를 우선 복귀시킨다.');s.retreat=true;}return}state.cash-=cost;fp.reservedSupportCost=(Number(fp.reservedSupportCost)||0)+cost;fp.supportOrders=fp.supportOrders||[];fp.supportOrders.push({name:'의료 헬기 후송',kind:'medevac',cost,effect:0,charged:true,requestedAt:s.time,eta:0,reason:'현장 처치 후 임무 불가 환자 회수'});const p=patients[0],scene=p.road&&j.stage==='outbound'?'regional':'site',map=scene==='regional'?j.transport.map:s.terrain,position=scene==='regional'?p.road:p,lz=api.projectToGround(map,[position.x-5,position.y+5]);flight=j.medevac={scene,stage:'inbound',patients:patients.map(p=>p.id),lz,path:[map.base.slice(),lz.slice()],distance:0,altitude:35,boarding:0,position:point(map.base),carriers:{}};say(s,'의료 헬기 출동. 환자 '+patients.length+'명, 착륙 지점 접근로와 사주 경계를 확보하라.')}
-  if(flight.stage==='complete')return;flight.staged=flight.staged||[];const patients=flight.patients.map(id=>units.find(p=>p.id===id)).filter(p=>p&&p.status!=='dead');for(const p of patients){if(p.inside||p.evacComplete||flight.staged.includes(p.id))continue;let carrier=units.find(u=>u.id===flight.carriers[p.id]&&active(u)&&!u.onRoof);if(!carrier)delete flight.carriers[p.id];if(!carrier){carrier=units.filter(u=>active(u)&&!u.onRoof&&!Object.values(flight.carriers).includes(u.id)).sort((a,b)=>(a.tacticalRole==='medic'?0:1)-(b.tacticalRole==='medic'?0:1)||dist(a,p)-dist(b,p))[0];if(carrier)flight.carriers[p.id]=carrier.id}if(!carrier)continue;
-   const scene=flight.scene||'site',location=scene==='regional'?p.road:p,carrierPosition=scene==='regional'?carrier.road:carrier;if(!location||!carrierPosition)continue;carrier.medicalOverride=s.time;carrier.status='medical-moving';if(dist(carrierPosition,location)>2){api.moveScene(s,carrier,[location.x,location.y],.5,scene);continue}p.carriedBy=carrier.id;carrier.carryPatient=p.id;carrier.status='carrying';api.moveScene(s,carrier,flight.lz,.28,scene);const current=scene==='regional'?carrier.road:carrier;location.x=current.x;location.y=current.y;if(dist(current,point(flight.lz))<2.2){flight.staged.push(p.id);p.carriedBy=null;carrier.carryPatient=null;delete flight.carriers[p.id];carrier.status='pickup-security';say(s,p.name+' 착륙 지점 인계. 회수 인원은 다음 환자를 확보한다.');}
+/* Saved medical flights: assigned patients wait for a carrier and remain at the landing zone. */
+(function(){
+ const api=window.fieldSimulation,{active,dist}=api.internals,baseTick=api.sceneTick,pt=p=>({x:p[0],y:p[1]});
+ const say=(s,msg)=>api.transmit(s,'의료 후송',msg,'medical',true);
+ api.triageResult=function(s,p){if(p.status==='dead')return;const cleared=(p.worstHP??p.hp)>=40&&p.hp>=60;p.fitForDuty=cleared;p.mobility=cleared?'limited':'immobile';p.requiresEvac=!cleared;p.status=cleared?'guarding':'evacuated';say(s,p.name+(cleared?' 처치 후 제한 임무 가능.':' 임무 복귀 불가. 후송한다.'))};
+ const location=(p,scene)=>scene==='regional'?p.road:p;
+ function wait(s,f,reason){f.waitReason=reason;if(f.lastWaitReason!==reason||s.time-(f.lastWaitReport||0)>=45){f.lastWaitReason=reason;f.lastWaitReport=s.time;say(s,reason)}}
+ function release(units,f,p){const carrier=units.find(u=>u.id===f.carriers[p.id]);if(carrier){carrier.carryPatient=null;carrier.status='pickup-security'}delete f.carriers[p.id];p.carriedBy=null;p.isBeingCarried=false;}
+ api.sceneTick=function(s,op){baseTick?.(s,op);if(!s.journey||s.version<3)return;const units=s.units.filter(u=>u.faction==='blackline'),j=s.journey;
+  for(const p of units){if(p.status==='dead'||p.evacComplete||p.fitForDuty)continue;if(p.hp<=55||p.mobility==='immobile'){p.status=p.stabilized?'evacuated':'wounded';p.mobility='immobile';if(p.stabilized||p.road||!units.some(u=>active(u)&&u.tacticalRole==='medic')||s.medUsed>=s.medicalBudget)p.requiresEvac=true}}
+  if(s.version<4)return;
+  const pending=units.filter(p=>p.requiresEvac&&!p.evacComplete&&!p.boarded&&p.status!=='dead');
+  if(['site','entry','interior','outdoor'].includes(j.stage)&&units.filter(active).length<Math.max(3,Math.ceil((op.requiredStaffing?.minimum||6)*.6))&&!s.retreat){s.retreat=true;say(s,'전투 가능 인원 부족. 과업을 중단하고 부상자 우선 회수·철수한다.')}
+  let f=j.medevac;if(!pending.length&&(!f||f.stage==='complete'))return;
+  if(!f||f.stage==='complete'){
+   const patients=pending.slice(0,6),cost=1500000,fp=op.fieldProgress;
+   if(j.stage==='outbound'&&patients.some(p=>!p.road)){
+    if(j.transport.kind==='helicopter'){s.retreat=true;j.transport.returnFrom=j.transport.progress;j.transport.returnDistance=0;api.journeyTools.stage(s,'homebound','기내 환자 응급 복귀');say(s,'기내 환자 발생. 탑승 중인 헬기로 의료 기지에 우선 복귀한다.');return}
+    j.roadStopped=true;for(const [i,u]of units.filter(u=>!u.evacComplete&&u.status!=='dead').entries())if(!u.road){const q=api.projectToGround(j.transport.map,[j.transport.vehicle.x+(i%3-1)*2,j.transport.vehicle.y+Math.floor(i/3)*2]);u.road={x:q[0],y:q[1],heading:j.transport.vehicle.heading};}
+    say(s,'차량 내 환자 발생. 현재 수송 위치에서 정차해 의료 헬기에 인계한다.');
+   }
+   if(state.cash<cost||(Number(fp.reservedSupportCost)||0)+cost>Number(op.budget)){if(!j.medicalBudgetReported){j.medicalBudgetReported=true;say(s,'항공 후송 자원 부족. 지상 수송으로 환자를 우선 복귀시킨다.');s.retreat=true}return}
+   state.cash-=cost;fp.reservedSupportCost=(fp.reservedSupportCost||0)+cost;fp.supportOrders=fp.supportOrders||[];fp.supportOrders.push({name:'의료 헬기 후송',kind:'medevac',cost,effect:0,charged:true,requestedAt:s.time,eta:0,reason:'실제 임무 불가 환자 회수'});
+   const first=patients[0],scene=first.road&&j.stage==='outbound'?'regional':'site',map=scene==='regional'?j.transport.map:s.terrain,p=location(first,scene),lz=api.projectToGround(map,[p.x-5,p.y+5]);
+   f=j.medevac={id:op.id+'-MED-'+s.time,scene,stage:'inbound',patients:patients.map(p=>p.id),loadedIds:[],lz,path:[map.base.slice(),lz.slice()],distance:0,altitude:35,boarding:0,position:pt(map.base),carriers:{},staged:[],loadProgress:{}};
+   say(s,'의료 헬기 출동. 환자 '+patients.length+'명. 착륙 지점 접근로와 사주 경계를 확보하라.');
   }
-  const length=api.journeyTools.measure(flight.path),unsafe=Object.entries(flight.scene==='regional'?j.roadContacts||{}:s.contacts).some(([id,c])=>c.visible&&c.identified!==false&&dist(c,point(flight.lz))<12&&s.units.some(u=>u.id===id&&active(u)&&(u.faction==='insurgent'||s.rival.hostile)));
-  if(flight.stage==='inbound'){flight.distance=Math.min(length,flight.distance+1.8);flight.position=api.journeyTools.along(flight.path,flight.distance/Math.max(1,length));if(flight.distance>=length&&!unsafe){flight.altitude=Math.max(0,flight.altitude-3);if(flight.altitude===0){flight.stage='landed';say(s,'의료 헬기 착륙. 환자 인계, 탑승 확인 요청.')}}}
-  if(flight.stage==='landed'&&patients.every(p=>!p.inside&&dist(flight.scene==='regional'?p.road||p:p,point(flight.lz))<3)){flight.boarding+=1;if(flight.boarding>=15){flight.stage='returning';flight.distance=length;patients.forEach(p=>{p.evacComplete=true;p.boarded=true;p.inside=false;p.status='medevac';p.carriedBy=null});for(const id of Object.values(flight.carriers)){const u=units.find(u=>u.id===id);if(u){u.carryPatient=null;u.status='guarding'}}say(s,'환자 탑승 완료. 의료 기지로 복귀한다. 잔여 팀은 전력 재평가 바란다.')}}
-  if(flight.stage==='returning'){flight.altitude=Math.min(35,flight.altitude+3);flight.distance=Math.max(0,flight.distance-2);flight.position=api.journeyTools.along(flight.path,flight.distance/Math.max(1,length));flight.position.heading+=Math.PI;if(flight.distance===0){flight.stage='complete';patients.forEach(p=>p.status='evac-home');say(s,'의료 기지 도착. 환자 인계 완료, 후송 기록을 본부로 전송한다.')}}
-  const able=units.filter(active).length,minimum=Math.max(3,Math.ceil((op.requiredStaffing?.minimum||6)*.6));if(able<minimum&&!s.retreat){s.retreat=true;say(s,'후송·부상으로 잔여 전력 '+able+'명. 최소 유지 전력 미달, 전원 철수한다.')}
+  if(f.stage==='complete')return;
+  f.carriers=f.carriers||{};f.staged=f.staged||[];f.loadedIds=f.loadedIds||[];f.loadProgress=f.loadProgress||{};
+  const scene=f.scene||'site',patients=f.patients.map(id=>units.find(p=>p.id===id)).filter(p=>p&&p.status!=='dead'),length=api.journeyTools.measure(f.path);
+  for(const p of patients){p.evacuationHold=true;p.target=null;p.interiorTarget=null;p.roadTarget=null;p.aimSince=null;if(p.evacComplete){if(!f.loadedIds.includes(p.id))f.loadedIds.push(p.id);continue}p.medicalOverride=s.time;
+   if(f.loadedIds.includes(p.id))continue;
+   const pos=location(p,scene);if(p.inside||!pos)continue;
+   if(f.staged.includes(p.id)&&dist(pos,pt(f.lz))>3)f.staged=f.staged.filter(id=>id!==p.id);
+   if(dist(pos,pt(f.lz))<2.2){if(!f.staged.includes(p.id))f.staged.push(p.id);release(units,f,p);p.status='medical-waiting';continue}
+   let carrier=units.find(u=>u.id===f.carriers[p.id]&&active(u)&&!u.onRoof&&!u.inside&&!f.patients.includes(u.id));
+   if(!carrier){delete f.carriers[p.id];carrier=units.filter(u=>active(u)&&!u.onRoof&&!u.inside&&!f.patients.includes(u.id)&&!Object.values(f.carriers).includes(u.id)).sort((a,b)=>(a.tacticalRole==='medic'?0:1)-(b.tacticalRole==='medic'?0:1)||dist(a,p)-dist(b,p))[0];if(carrier)f.carriers[p.id]=carrier.id}
+   if(!carrier)continue;const cp=location(carrier,scene);if(!cp)continue;carrier.medicalOverride=s.time;carrier.status='medical-moving';
+   if(!p.isBeingCarried&&dist(cp,pos)>2){api.moveScene(s,carrier,[pos.x,pos.y],.5,scene);continue}
+   p.carriedBy=carrier.id;p.isBeingCarried=true;carrier.carryPatient=p.id;carrier.status='carrying';api.moveScene(s,carrier,f.lz,.28,scene);const next=location(carrier,scene);pos.x=next.x;pos.y=next.y;
+   if(dist(pos,pt(f.lz))<2.2){if(!f.staged.includes(p.id))f.staged.push(p.id);release(units,f,p);p.status='medical-waiting';say(s,p.name+' 착륙 지점 인계. 환자는 탑승까지 대기한다.')}
+  }
+  if(!patients.length&&f.stage!=='returning'){f.stage='returning';say(s,'이송 가능한 생존 환자가 없어 의료 기지로 복귀한다.')}
+  const unsafe=Object.entries(scene==='regional'?j.roadContacts||{}:s.contacts||{}).some(([id,c])=>c.visible&&c.identified!==false&&dist(c,pt(f.lz))<12&&s.units.some(u=>u.id===id&&active(u)&&(u.faction==='insurgent'||u.faction==='pmc'&&s.rival.hostile)));
+  if(f.stage==='inbound'){
+   f.distance=Math.min(length,f.distance+1.8);f.position=api.journeyTools.along(f.path,f.distance/Math.max(1,length));f.waitReason='환자 위치로 비행 중';
+   if(f.distance>=length){if(unsafe)wait(s,f,'착륙 지점 위협 관측. 상공 대기 중.');else{f.altitude=Math.max(0,f.altitude-3);f.waitReason='착륙 중';if(!f.altitude){f.stage='landed';say(s,'의료 헬기 착륙. 환자별 탑승 확인을 시작한다.')}}}
+  }
+  if(f.stage==='landed'){
+   for(const p of patients){if(f.loadedIds.includes(p.id))continue;const pos=location(p,scene);if(p.inside||!pos||dist(pos,pt(f.lz))>=3)continue;
+    f.loadProgress[p.id]=(f.loadProgress[p.id]??(patients.length===1?f.boarding||0:0))+1;
+    if(f.loadProgress[p.id]>=15){f.loadedIds.push(p.id);p.evacComplete=true;p.boarded=true;p.inside=false;p.status='medevac';release(units,f,p);say(s,p.name+' 환자 탑승 확인.')}
+   }
+   f.boarding=patients.length?patients.reduce((n,p)=>n+(f.loadedIds.includes(p.id)?15:Math.min(15,f.loadProgress[p.id]||0)),0)/patients.length:0;
+   if(patients.every(p=>f.loadedIds.includes(p.id))){f.stage='returning';f.distance=length;f.waitReason='이륙 중';say(s,'환자 전원 탑승 확인. 즉시 이륙해 의료 기지로 복귀한다.')}else wait(s,f,patients.some(p=>p.inside)?'건물 내부 환자 회수 대기.':patients.some(p=>!f.staged.includes(p.id))?'환자 접근·운반 대기.':'환자 탑승 중.');
+  }
+  if(f.stage==='returning'){
+   if(f.distance>0&&f.altitude<35){f.altitude=Math.min(35,f.altitude+3);f.waitReason='이륙 중';}
+   else if(f.distance>0){const previous=f.position;f.distance=Math.max(0,f.distance-2);f.position=api.journeyTools.along(f.path,f.distance/Math.max(1,length));f.position.heading=Math.atan2(f.position.y-previous.y,f.position.x-previous.x);f.waitReason='의료 기지로 후송 비행 중';}
+   else{f.altitude=Math.max(0,f.altitude-3);f.waitReason='의료 기지 착륙 중';if(!f.altitude){f.stage='complete';f.waitReason='의무대 인계 완료';for(const p of patients.filter(p=>f.loadedIds.includes(p.id)))p.status='evac-home';say(s,'의료 기지 도착. 환자와 후송 기록을 의무대에 인계했다.');}}
+  }
  };
 })();

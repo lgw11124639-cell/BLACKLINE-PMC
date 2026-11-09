@@ -9,17 +9,17 @@
   if(progress!=null){label(c,Math.round(progress)+'%',19,-7,color);c.fillStyle='#dfe7f1';c.fillRect(19,-2,66,3);c.fillStyle=color;c.fillRect(19,-2,66*Math.min(100,progress)/100,3)}c.restore();
  }
  function vehicle(c,x,y,heading,size=62,jet=false){c.save();c.translate(x,y);c.rotate(heading);const ok=sprite(c,'images/operators/vehicles.webp',jet?2:0,2,2,0,size*.12,size,size*2/3);if(!ok){c.fillStyle=jet?'#4d6477':'#4e7093';c.beginPath();c.moveTo(size*.4,0);c.lineTo(-size*.3,-size*.16);c.lineTo(-size*.3,size*.16);c.closePath();c.fill()}c.restore()}
- function unit(c,u,v,x,y,size,t,selected=false,labels=true){const color=palette[u.faction]||palette.blackline,heading=v[5]||0,down=v[7]?v[7].d||v[7].f===false:v[2]<=0||['dead','wounded','evacuated'].includes(v[4]),wounded=v[7]?v[7].w.length>0||down:v[2]<=55||down,care=v[4]==='treating',carry=v[4]==='carrying';
-  if(v[4]==='boarded')return;
+ function unit(c,u,v,x,y,size,t,selected=false,labels=true){const color=palette[u.faction]||palette.blackline,heading=v[5]||0,down=v[7]?v[7].d||v[7].f===false:v[2]<=0||['dead','wounded','evacuated'].includes(v[4]),wounded=v[7]?v[7].w.length>0||down:v[2]<=55||down,treated=!!(v[7]?.w.length&&v[7].w.every(w=>w[2])&&!v[7].d),care=v[4]==='treating',carry=v[4]==='carrying';
+  if(v[4]==='boarded'||v[7]?.by||v[7]?.aboard)return;
   c.save();c.translate(x,y);c.fillStyle='#24394a20';c.beginPath();c.ellipse(0,4,size*.28,size*.09,0,0,Math.PI*2);c.fill();
   if(selected){c.strokeStyle=color;c.lineWidth=1.5;const d=size*.43;for(const [sx,sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){c.beginPath();c.moveTo(sx*d,sy*d*.7-sy*5);c.lineTo(sx*d,sy*d*.7);c.lineTo(sx*d-sx*6,sy*d*.7);c.stroke()}}
   let rendered=false;
-  if(u.faction==='blackline'&&(wounded||care||carry)){const vertical=Math.abs(Math.sin(heading))>.7,cell=carry?(vertical?7:6):care?(vertical?5:4):down?(vertical?3:2):(vertical?1:0);rendered=sprite(c,'images/operators/pmc-casualties.webp',cell,4,2,0,0,size*(care||carry?1.65:1.35),size*(care||carry?1.2:1.05))}
+  if(u.faction==='blackline'&&(wounded&&!treated||care||carry)){const vertical=Math.abs(Math.sin(heading))>.7,cell=carry?(vertical?7:6):care?(vertical?5:4):down?(vertical?3:2):(vertical?1:0);rendered=sprite(c,'images/operators/pmc-casualties.webp',cell,4,2,0,0,size*(care||carry?1.65:1.35),size*(care||carry?1.2:1.05))}
   if(!rendered&&['civilian','unknown'].includes(u.faction)){const direction=(Math.round(heading/(Math.PI/2))+4)%4;rendered=sprite(c,'images/operators/civilians.webp',direction,4,2,0,0,size,size*4/3)}
-  if(!rendered){c.save();if(down&&u.faction!=='blackline'){c.rotate(Math.PI*.45);c.globalAlpha=.6}const direction=(Math.round(heading/(Math.PI/4))+8)%8;rendered=sprite(c,u.faction==='insurgent'?'images/operators/hostile-directions.webp':'images/operators/pmc-directions.webp',direction,4,2,0,0,size,size*4/3);c.restore()}
+  if(!rendered){c.save();if(down&&!treated&&u.faction!=='blackline'){c.rotate(Math.PI*.45);c.globalAlpha=.6}const direction=(Math.round(heading/(Math.PI/4))+8)%8;rendered=sprite(c,u.faction==='insurgent'?'images/operators/hostile-directions.webp':'images/operators/pmc-directions.webp',direction,4,2,0,0,size,size*4/3);c.restore()}
   if(!rendered){c.fillStyle=color;c.fillRect(-3,-9,6,12)}
   c.fillStyle=color;c.beginPath();c.moveTo(-4,7);c.lineTo(4,7);c.lineTo(0,11);c.closePath();c.fill();
-  if(labels)smartLabel(c,u.name+(wounded?' · '+(v[4]==='dead'?'사망':down?'후송 필요':'부상'):''),size*.32,-size*.35,wounded?'#b36d4b':color);
+  if(labels)smartLabel(c,u.name+(wounded?' · '+(v[4]==='dead'?'사망':treated?(down?'후송 대기':'처치 완료'):down?'후송 필요':'부상'):''),size*.32,-size*.35,wounded?'#b36d4b':color);
   if(wounded){c.fillStyle='#c77555';c.font='bold 10px sans-serif';c.fillText('+',-3,20)}c.restore();
  }
  function aim(c,aims,toScreen,t){for(const a of aims||[]){const from=toScreen(...a.from),to=toScreen(...a.to),color=a.friendly?'42,205,174':'235,91,60';c.save();c.strokeStyle='rgba('+color+','+(.28+Math.sin(t*3)*.07)+')';c.lineWidth=4;c.beginPath();c.moveTo(...from);c.lineTo(...to);c.stroke();c.shadowColor='rgba('+color+',.8)';c.shadowBlur=5;c.strokeStyle='rgba('+color+',.95)';c.lineWidth=1.1;c.setLineDash([6,4]);c.lineDashOffset=-t*9;c.beginPath();c.moveTo(...from);c.lineTo(...to);c.stroke();c.setLineDash([]);c.shadowBlur=0;c.fillStyle='rgba('+color+',1)';const pulse=(t*.6)%1;c.beginPath();c.arc(from[0]+(to[0]-from[0])*pulse,from[1]+(to[1]-from[1])*pulse,1.8,0,Math.PI*2);c.fill();c.lineWidth=1.3;for(const [dx,dy]of [[-1,-1],[1,-1],[-1,1],[1,1]]){c.beginPath();c.moveTo(to[0]+dx*8,to[1]+dy*4);c.lineTo(to[0]+dx*8,to[1]+dy*8);c.lineTo(to[0]+dx*4,to[1]+dy*8);c.stroke()}c.restore()}}
@@ -44,6 +44,14 @@
   }
  }
  let occupied=[];function beginFrame(){occupied=[]}function smartLabel(c,text,x,y,color){c.font='600 9px -apple-system,sans-serif';const w=c.measureText(text).width;let chosen=[x,y];for(const [dx,dy]of [[0,0],[0,-17],[0,17],[-w-25,0],[-w-25,-17],[0,-34]]){const box={x:x+dx-5,y:y+dy-11,w:w+10,h:18};if(occupied.every(a=>box.x>a.x+a.w||box.x+box.w<a.x||box.y>a.y+a.h||box.y+box.h<a.y)){chosen=[x+dx,y+dy];occupied.push(box);break}}label(c,text,...chosen,color)}
- function helicopter(c,x,y,heading,size,t,altitude=30){c.save();c.translate(x,y);c.fillStyle='#253c4a28';c.beginPath();c.ellipse(altitude*.15,altitude*.2,size*.4,size*.18,heading,0,Math.PI*2);c.fill();c.rotate(heading);sprite(c,'images/operators/helicopters.webp',0,2,2,0,-altitude*.12,size,size*2/3);c.strokeStyle='#ebf2f690';c.lineWidth=2;c.beginPath();for(let i=0;i<4;i++){const a=t*28+i*Math.PI/2;c.moveTo(-size*.05,0);c.lineTo(Math.cos(a)*size*.39,Math.sin(a)*size*.28)}c.stroke();if(altitude<10){c.strokeStyle='#baa98a44';c.lineWidth=2;c.beginPath();c.ellipse(0,5,size*(.5+(t%1)*.15),size*.27,0,0,Math.PI*2);c.stroke()}c.restore()}
+ function helicopter(c,x,y,heading,size,t,altitude=30){
+  c.save();c.translate(x,y);c.fillStyle='#253c4a28';c.beginPath();c.ellipse(altitude*.15,altitude*.2,size*.4,size*.18,heading,0,Math.PI*2);c.fill();
+  if(altitude<10){c.strokeStyle='#baa98a44';c.lineWidth=2;c.beginPath();c.ellipse(0,5,size*(.5+(t%1)*.15),size*.27,0,0,Math.PI*2);c.stroke();}
+  c.translate(0,-altitude*.12);c.rotate(heading);
+  if(!sprite(c,'images/operators/helicopters.webp',0,2,2,0,0,size,size*2/3)){c.fillStyle='#647986';c.beginPath();c.ellipse(0,-size*.18,size*.25,size*.1,0,0,Math.PI*2);c.fill();}
+  // Rotor hub in atlas cell 0 is (472,211) in a 768x512 cell. Both share the aircraft transform.
+  c.translate(size*(472/768-.5),size*(2/3)*(211/512-.77));c.fillStyle='#dce7ed18';c.beginPath();c.ellipse(0,0,size*.34,size*.23,0,0,Math.PI*2);c.fill();c.strokeStyle='#ebf2f6a0';c.lineWidth=1.5;c.beginPath();
+  for(let i=0;i<4;i++){const a=t*28+i*Math.PI/2;c.moveTo(0,0);c.lineTo(Math.cos(a)*size*.34,Math.sin(a)*size*.23);}c.stroke();c.restore();
+ }
  window.FieldArt={image,label,marker,vehicle,helicopter,unit,aim,effects,palette,beginFrame,smartLabel};
 })();

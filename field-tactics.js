@@ -5,10 +5,10 @@
  const log=(s,who,msg,kind='radio')=>api.transmit?api.transmit(s,who,msg,kind):s.radio.push({t:s.time,who,msg,kind});
  const foes=(s,a,b)=>a.faction!==b.faction&&(a.faction==='insurgent'||b.faction==='insurgent'||s.rival.hostile);
  const visible=(s,a,b)=>!a.inside&&!b.inside&&!a.roadOnly&&!b.roadOnly&&dist(a,b)<=a.vision&&api.canSeeActor?.(s,a,b,'site')!==false&&api.clearLine(a,b,s.terrain||MAP);
- function snapshot(s){const frame={recovery:api.recoveryFrame?.(s),journey:api.journeyFrame?.(s),aims:s.units.filter(u=>u.target&&!u.inside&&(u.faction==='blackline'||s.contacts[u.id]?.visible)).flatMap(u=>{const target=s.units.find(v=>v.id===u.target);return target&&visible(s,u,target)?[{actor:u.id,target:target.id,from:[u.x,u.y],to:[target.x,target.y],friendly:u.faction==='blackline'}]:[]}),t:s.time,objective:Math.round(s.objective),retreat:s.retreat,phase:s.phase,contacts:Object.entries(s.contacts).map(([id,c])=>[id,+c.x.toFixed(2),+c.y.toFixed(2),c.lastSeen,c.visible,c.source||'ground',c.identified!==false,c.confidence??100]),units:s.units.map(u=>[+u.x.toFixed(2),+u.y.toFixed(2),u.hp,u.ammo,u.status,+u.heading.toFixed(2),+(u.elevation||0).toFixed(1),api.healthSnapshot?.(u)||null,api.weaponSnapshot?.(u)||null])};s.previousLiveFrame=s.liveFrame?.t===s.time?(s.previousLiveFrame||frame):(s.liveFrame||frame);s.liveFrame=frame;if(s.time%(s.journey?10:5)===0||s.done||s.units.some(u=>u.joinedAt===s.time)||s.journey&&s.frames.at(-1)?.journey?.stage!==s.journey.stage){if(s.frames.at(-1)?.t===s.time)s.frames[s.frames.length-1]=frame;else s.frames.push(frame)}}
+ function snapshot(s){const frame={healthRevision:s.healthRevision||0,recovery:api.recoveryFrame?.(s),journey:api.journeyFrame?.(s),aims:s.units.filter(u=>u.target&&!u.inside&&(u.faction==='blackline'||s.contacts[u.id]?.visible)).flatMap(u=>{const target=s.units.find(v=>v.id===u.target);return target&&visible(s,u,target)?[{actor:u.id,target:target.id,from:[u.x,u.y],to:[target.x,target.y],friendly:u.faction==='blackline'}]:[]}),t:s.time,objective:Math.round(s.objective),retreat:s.retreat,phase:s.phase,contacts:Object.entries(s.contacts).map(([id,c])=>[id,+c.x.toFixed(2),+c.y.toFixed(2),c.lastSeen,c.visible,c.source||'ground',c.identified!==false,c.confidence??100]),units:s.units.map(u=>[+u.x.toFixed(2),+u.y.toFixed(2),u.hp,u.ammo,u.status,+u.heading.toFixed(2),+(u.elevation||0).toFixed(1),api.healthSnapshot?.(u)||null,api.weaponSnapshot?.(u)||null])};s.previousLiveFrame=s.liveFrame?.t===s.time?(s.previousLiveFrame||frame):(s.liveFrame||frame);s.liveFrame=frame;if(s.time%(s.journey?10:5)===0||s.done||s.units.some(u=>u.joinedAt===s.time)||s.journey&&s.frames.at(-1)?.journey?.stage!==s.journey.stage){if(s.frames.at(-1)?.t===s.time)s.frames[s.frames.length-1]=frame;else s.frames.push(frame)}}
  api.create=function(op,m,members,ammoBudget,options={}){
   const s=legacyCreate(op,m,members,ammoBudget,options);
-  s.version=2;s.duration=900;s.plannedDuration=900;s.time=0;s.phase='접근';s.frames=[];s.events=[];s.radio=[];s.contacts={};s.searchStarted=null;s.securedAt=null;s.returnStarted=null;s.checkpoint=0;s.mutedLog=false;
+  s.version=2;s.duration=null;s.plannedDuration=null;s.time=0;s.phase='접근';s.frames=[];s.events=[];s.radio=[];s.contacts={};s.searchStarted=null;s.securedAt=null;s.returnStarted=null;s.checkpoint=0;s.mutedLog=false;
   s.terrain=JSON.parse(JSON.stringify(api.selectMap?.(m)||MAP));s.map=s.terrain.id||'factory';s.goal=s.terrain.goals[m.type]||s.terrain.goals['시설 보안'];s.medicalBudget=options.medicalBudget??Math.min(2,Number(state.med)||0);s.medUsed=0;
   const positions=(s.terrain.spawnPoints||[[48,29],[57,31],[60,34],[71,37],[84,28],[90,30],[92,39],[76,41]]).map(p=>p.slice());
   for(const [i,u] of s.units.entries()){
@@ -51,12 +51,12 @@
   const rounds=api.consumeRounds?api.consumeRounds(s,u):Math.min(u.ammo,/저격|정밀/.test(u.role)?1:3);if(!rounds){u.nextShot=s.time+1;return}if(!api.consumeRounds){u.ammo-=rounds;if(u.faction==='blackline')s.ammoUsed+=rounds;}
   const isObserved=u.faction==='blackline'||target.faction==='blackline'||s.contacts[u.id]?.visible;
   const hit=rand(s)<Math.max(.08,Math.min(.78,.30+u.skill*(u.health?.accuracyFactor??1)/160-dist(u,target)/60+(u.elevation||0)*.005-(suppressed?.12:0)-(api.coverValue?.(s,target,u)||0)*.35));
-  s.events.push({t:s.time,scene:'site',kind:'shot',actor:u.id,target:target.id,from:u.faction==='blackline'||s.contacts[u.id]?.visible?[u.x,u.y]:[target.x+(u.x-target.x)/Math.max(1,dist(u,target))*6,target.y+(u.y-target.y)/Math.max(1,dist(u,target))*6],to:[target.x,target.y],rounds,hit,visible:isObserved});
-  api.sceneShot?.(s,s.events.at(-1));s.mutedLog=!isObserved;const previous=target.hp;if(hit)damage(s,target,Math.round(10+rand(s)*16+(/저격|정밀/.test(u.role)?10:0)),u);s.mutedLog=false;
+  const shot={id:'shot-'+s.time+'-'+s.events.length,t:s.time,scene:'site',kind:'shot',actor:u.id,target:target.id,from:u.faction==='blackline'||s.contacts[u.id]?.visible?[u.x,u.y]:[target.x+(u.x-target.x)/Math.max(1,dist(u,target))*6,target.y+(u.y-target.y)/Math.max(1,dist(u,target))*6],to:[target.x,target.y],rounds,hit,visible:isObserved};s.events.push(shot);
+  api.sceneShot?.(s,shot);s.mutedLog=!isObserved;const previous=target.hp;if(hit)damage(s,target,Math.round(10+rand(s)*16+(/저격|정밀/.test(u.role)?10:0)),u,shot);s.mutedLog=false;
   if(target.faction==='blackline'&&target.hp<=55){target.woundedAt=target.woundedAt??s.time;target.worstHP=Math.min(target.worstHP??previous,target.hp)}
   if(u.tacticalRole==='support'){s.suppression[target.id]=s.time+9;if(s.time-(u.lastSuppressionReport||-100)>45){u.lastSuppressionReport=s.time;log(s,u.name,'측면 제압 사격. 아군 이동과 의무 접근을 엄호한다.','combat')}}
   if(u.faction==='blackline'&&!s.contact){s.contact=true;s.dismounted=true;log(s,u.name,'식별된 위협에 대응 사격. 무리한 추격 없이 엄폐 위치를 유지한다.','combat')}
-  if(target.faction==='blackline'&&!s.contact){s.contact=true;log(s,'현장지휘관','피격 보고 접수. 사격 방향은 확인 중이다. 인원 보호를 우선한다.','contact')}
+  if(target.faction==='blackline'&&!s.contact){s.contact=true;log(s,'현장지휘관','적 사격 감지. 엄폐 후 인원 상태와 사격 방향을 확인한다.','contact')}
   if(isObserved&&u.faction==='blackline'&&s.time-(u.lastRadio||0)>35){u.lastRadio=s.time;log(s,u.name,(hit?'명중 관측.':'상대 엄폐 중, 사격 간격 유지.')+' 잔탄 '+u.ammo+'발.','combat')}
   // Gunfire outside visual range is a direction cue, not a precise enemy marker.
   if(!isObserved&&s.units.some(b=>b.faction==='blackline'&&active(b)&&dist(b,u)<19)&&s.time-(s.lastSound||0)>40){s.lastSound=s.time;log(s,'정찰 담당','인근에서 총성 청취. 정확한 위치는 미확인이다. 경계를 강화한다.','contact')}
@@ -94,7 +94,7 @@
   if(s.phase==='수색'&&(s.journey?api.journeySearchReady(s):s.time-s.searchStarted>=150&&fit.some(u=>dist(u,{x:s.goal[0],y:s.goal[1]})<10))){s.phase=s.journey?'건물 진입':'과업';if(s.journey)api.journeyEntry(s);s.workStarted=s.time;log(s,'현장지휘관','수색 결과를 바탕으로 의뢰 구역 인수 절차에 들어간다. 잔여 위협을 경계한다.','objective')}
   const avg=fit.reduce((n,u)=>n+u.hp,0)/Math.max(1,fit.length),empty=fit.length&&fit.every(u=>!u.ammo);
   if(!s.retreat&&(fit.length<2||(s.contact&&(avg<35||empty)))){s.retreat=true;s.phase='복귀';s.returnStarted=s.time;log(s,'현장지휘관','전력 한계 확인. 목표보다 인원 보호를 우선하고 확인된 경로로 철수한다.','command')}
-  if(!s.journey&&(s.objective>=100||s.time>=900)&&s.phase!=='복귀'){s.phase='복귀';s.returnStarted=s.time;log(s,'현장지휘관',s.objective>=100?'임무 인계 완료. 본부로 복귀한다.':'작전 제한시간 도달. 미확인 구역 추격을 중단하고 복귀한다.','command')}
+  if(!s.journey&&s.objective>=100&&s.phase!=='복귀'){s.phase='복귀';s.returnStarted=s.time;log(s,'현장지휘관','임무 인계 완료. 본부로 복귀한다.','command')}
   for(const [index,u] of s.units.entries()){
    if(!active(u)||u.inside||u.roadOnly||u.medicalOverride===s.time)continue;if(api.agentAction?.(s,u,'site'))continue;
    const seen=s.units.filter(v=>active(v)&&foes(s,u,v)&&u.knowledge[v.id]&&s.time-u.knowledge[v.id].lastSeen<=4&&visible(s,u,v)).sort((a,b)=>dist(u,a)-dist(u,b));
@@ -135,7 +135,7 @@
    const threat=Object.entries(s.contacts).some(([id,c])=>c.visible&&s.units.some(u=>u.id===id&&active(u)&&(u.faction==='insurgent'||s.rival.hostile))&&Math.hypot(c.x-s.goal[0],c.y-s.goal[1])<15);
    if(!threat&&fit.some(u=>dist(u,{x:s.goal[0],y:s.goal[1]})<10))s.objective=Math.min(100,s.objective+100/150);
   }
-  if(!fit.length)finish(s);
+  if(!fit.length&&!s.journey)finish(s);
   else if(!s.journey&&s.phase==='복귀'&&(!s.legacyRecovery||s.legacyRecovery.stage==='complete')&&blue.filter(u=>u.status!=='dead'&&!u.evacComplete).every(u=>dist(u,{x:s.terrain.base[0],y:s.terrain.base[1]})<5))finish(s);
 
   snapshot(s);
@@ -147,12 +147,12 @@
  api.step=(s,op)=>s.version>=2?step(s,op):legacyStep(s,op);
  api.upgrade=function(op){
   const s=op.fieldProgress?.tactical;if(!s||s.version>=2||s.done)return;
-  op.fieldProgress.originalFieldVersion=1;const oldTime=s.time;s.version=2;s.time=Math.floor(oldTime/26);s.duration=900;s.plannedDuration=900;s.phase=s.units.some(u=>u.faction==='blackline'&&u.x>48)?'수색':'접근';s.searchStarted=s.phase==='수색'?s.time:null;s.contacts={};s.mutedLog=false;
+  op.fieldProgress.originalFieldVersion=1;const oldTime=s.time;s.version=2;s.time=Math.floor(oldTime/26);s.duration=null;s.plannedDuration=null;s.phase=s.units.some(u=>u.faction==='blackline'&&u.x>48)?'수색':'접근';s.searchStarted=s.phase==='수색'?s.time:null;s.contacts={};s.mutedLog=false;
   s.radio.forEach(r=>r.t=Math.floor(r.t/26));s.events.forEach(e=>{e.t=Math.floor(e.t/26);e.visible=e.actor?.startsWith('bl-')||e.target?.startsWith('bl-')||['artillery','airstrike'].includes(e.kind)});
   for(const u of s.units){u.vision=u.faction==='blackline'?(/정찰/.test(u.role)?15:10):11;u.range=/저격|정밀/.test(u.role)?18:10;u.heading=-Math.PI/2;u.knowledge={};u.recognition={};u.nextShot=s.time+8;u.aimSince=null;u.waitUntil=0;u.patrolIndex=0;u.routeIndex=u.x>40?2:0;u.spawn=[u.x,u.y]}
   s.frames.forEach(f=>{f.t=Math.floor(f.t/26);f.contacts=[]});delete s.liveFrame;delete s.previousLiveFrame;
   for(const o of op.fieldProgress.supportOrders||[]){o.requestedAt/=26;o.eta/=26}
-  log(s,'작전본부','진행 중인 현장의 인원·탄약·피해는 유지하고, 실시간 관측 및 약 15분 작전 시간으로 연결했다.','command');snapshot(s);
+  log(s,'작전본부','진행 중인 현장의 인원·탄약·피해는 유지하고, 실시간 관측과 목표 달성·실제 복귀에 따른 진행으로 연결했다.','command');snapshot(s);
  };
  for(const op of state.operations||[])api.upgrade(op);
  api.visibleAt=function(s,t){if(s.version<2)return null;let frame=s.frames[0];if(!s.done&&s.previousLiveFrame&&t>=s.previousLiveFrame.t)return (t>=s.liveFrame.t?s.liveFrame:s.previousLiveFrame).contacts||[];for(const f of s.frames){if(f.t>t)break;frame=f}return frame.contacts||[]};

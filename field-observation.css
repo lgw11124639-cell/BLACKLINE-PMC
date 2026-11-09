@@ -76,3 +76,5 @@ main[data-page=observation]>.workspace-breadcrumb,main[data-page=observation]>.d
  body.field-observing .field-legend,body.field-observing .field-kpis{display:none}
  body.field-observing .field-map-shell{min-height:0}
 }
+
+.field-transmission.correction{border-color:#c9a674;background:#fffaf2}.field-transmission.correction p{color:#8b754f}

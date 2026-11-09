@@ -7,7 +7,7 @@ with sync_playwright() as p:
  page.wait_for_timeout(1300)
  assert page.locator('.medical-unit-card').count()==8
  assert 'HP' not in page.locator('.field-console').inner_text()
- patient=page.locator('[data-unit="bl-104"]');assert '왼다리 처치' in patient.inner_text()
+ patient=page.locator('[data-unit="bl-104"]');assert '왼다리' in patient.inner_text() and '처치 완료' in patient.inner_text()
  assert '전투 불가' in patient.inner_text()
  assert '장전 29/30발' in page.locator('[data-unit="bl-101"]').inner_text()
  assert '장전 5/5발' in page.locator('[data-unit="bl-106"]').inner_text()
