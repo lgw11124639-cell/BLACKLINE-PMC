@@ -34,7 +34,7 @@
  const tools=header.querySelector('.header-tools');if(update)tools.appendChild(update);if(saveButton){saveButton.innerHTML=icon('save')+'저장 관리';saveButton.setAttribute('aria-label','시작 화면 및 저장 관리');tools.appendChild(saveButton)}
  tools.insertAdjacentHTML('beforeend','<span class="header-account" aria-label="사장 워크스페이스">BL</span>');
  document.addEventListener('keydown',event=>{
-  const dialog=document.querySelector('.start-panel')||document.querySelector('.report-dossier')||document.querySelector('.profile-sheet');
+  const dialog=document.querySelector('.start-panel')||document.querySelector('.report-dossier')||document.querySelector('#blackline-result-replay:not([hidden])')||document.querySelector('#field-recording-root')||document.querySelector('.profile-sheet');
   if(!dialog)return;
   if(event.key==='Escape'&&dialog.classList.contains('profile-sheet')){closeProfile();return}
   if(event.key!=='Tab')return;

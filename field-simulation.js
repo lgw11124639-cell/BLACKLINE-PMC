@@ -5,23 +5,26 @@
   goals:{'시설 보안':[88,27],'호송':[94,34],'구조':[58,29],'정밀 지원':[62,29],'무장세력 대응':[86,28]}};
  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
  const active=u=>u.hp>0&&!['captured','evacuated','retreated'].includes(u.status);
- const blocked=(x,y)=>x<1||x>99||y<1||y>65||MAP.buildings.some(b=>x>b[0]-.7&&x<b[2]+.7&&y>b[1]-.7&&y<b[3]+.7);
- function clearLine(a,b){for(let t=.05;t<1;t+=.05)if(blocked(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t))return false;return true}
- function pathTo(a,end){
-  const cols=50,rows=34,start=clamp(Math.round(a.y/2),0,33)*cols+clamp(Math.round(a.x/2),0,49),goal=clamp(Math.round(end[1]/2),0,33)*cols+clamp(Math.round(end[0]/2),0,49);
+ const blocked=(x,y,map=MAP)=>x<1||x>map.width-1||y<1||y>map.height-1||[...(map.buildings||[]),...(map.obstacles||[])].some(b=>x>b[0]-.7&&x<b[2]+.7&&y>b[1]-.7&&y<b[3]+.7);
+ function clearLine(a,b,map=MAP){const count=Math.max(20,Math.ceil(Math.hypot(a.x-b.x,a.y-b.y)));for(let i=1;i<count;i++){const t=i/count,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,eye=(a.elevation||0)+1.7+((b.elevation||0)-(a.elevation||0))*t;
+  if((map.buildings||[]).some(r=>x>r[0]&&x<r[2]&&y>r[1]&&y<r[3]&&eye<(r[4]??99)))return false;
+  if(window.fieldSimulation?.elevationAt&&window.fieldSimulation.elevationAt(map,{x,y})>eye+1)return false;
+ }return true}
+ function pathTo(a,end,map=MAP){
+  const grid=map.grid||2,cols=Math.floor(map.width/grid)+1,rows=Math.floor(map.height/grid)+1,start=clamp(Math.round(a.y/grid),0,rows-1)*cols+clamp(Math.round(a.x/grid),0,cols-1),goal=clamp(Math.round(end[1]/grid),0,rows-1)*cols+clamp(Math.round(end[0]/grid),0,cols-1);
   const visited=new Int16Array(cols*rows).fill(-1),queue=[start];visited[start]=start;let head=0,found=false;
   while(head<queue.length){const at=queue[head++];if(at===goal){found=true;break}const x=at%cols,y=Math.floor(at/cols);
    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){
-    const nx=x+dx,ny=y+dy,id=ny*cols+nx;if(nx<0||nx>=cols||ny<0||ny>=rows||visited[id]!==-1||blocked(nx*2,ny*2))continue;
-    if(dx&&dy&&(blocked(nx*2,y*2)||blocked(x*2,ny*2)))continue;
+    const nx=x+dx,ny=y+dy,id=ny*cols+nx;if(nx<0||nx>=cols||ny<0||ny>=rows||visited[id]!==-1||blocked(nx*grid,ny*grid,map))continue;
+    if(dx&&dy&&(blocked(nx*grid,y*grid,map)||blocked(x*grid,ny*grid,map)))continue;
     visited[id]=at;queue.push(id);
    }
   }
   if(!found)return [];
-  const path=[];let at=goal;while(at!==start){path.push([at%cols*2,Math.floor(at/cols)*2]);at=visited[at]}return path.reverse();
+  const path=[];let at=goal;while(at!==start){path.push([at%cols*grid,Math.floor(at/cols)*grid]);at=visited[at]}return path.reverse();
  }
  function rand(s){s.rng=(Math.imul(s.rng,1664525)+1013904223)>>>0;return s.rng/4294967296}
- function log(s,who,msg,kind='radio'){s.radio.push({t:s.time,who,msg,kind})}
+ function log(s,who,msg,kind='radio'){if(s.mutedLog)return;s.radio.push({t:s.time,who,msg,kind})}
  function event(s,e){s.events.push({t:s.time,...e})}
  function factions(){
   if(!Array.isArray(state.rivalPMCs))state.rivalPMCs=[
@@ -48,8 +51,9 @@
  }
  function hostile(s,a,b){if(a.faction===b.faction)return false;if(a.faction==='insurgent'||b.faction==='insurgent')return true;return s.rival.hostile}
  function move(s,u,target,amount){
+  if(window.fieldSimulation?.projectToGround)target=window.fieldSimulation.projectToGround(s.terrain||MAP,target);
   const destination=target.map(v=>Math.round(v/2)*2).join(',');
-  if(u.destination!==destination||!u.path.length){u.destination=destination;u.path=pathTo(u,target)}
+  if(u.destination!==destination||!u.path.length){u.destination=destination;u.path=pathTo(u,target,s.terrain||MAP)}
   let left=amount;
   while(left>0&&u.path.length){const p=u.path[0],d=Math.hypot(p[0]-u.x,p[1]-u.y);if(d<=left){u.x=p[0];u.y=p[1];u.path.shift();left-=d}else{u.x+=(p[0]-u.x)*left/d;u.y+=(p[1]-u.y)*left/d;left=0}}
  }
@@ -126,5 +130,5 @@
    casualties:s.units.filter(u=>u.faction==='blackline'&&(u.hp<=55||u.status==='dead')).map(u=>({id:u.personId,name:u.name,dead:u.status==='dead',hp:u.hp,severity:u.hp<=0?'중상':u.hp<30?'보통':'경상'}))};
  }
  function settleRelations(s){if(s.relationsSettled)return;s.relationsSettled=true;if(!s.rival.identified)return;const rival=factions().find(p=>p.id===s.rival.id);if(rival){rival.encounters++;rival.relation=clamp(rival.relation+(s.rival.hostile?-8:2),0,100)}}
- window.fieldSimulation={MAP,create,step,outcome,settleRelations,pathTo,clearLine};
+ window.fieldSimulation={MAP,create,step,outcome,settleRelations,pathTo,clearLine,internals:{rand,move,damage,active,dist}};
 })();
