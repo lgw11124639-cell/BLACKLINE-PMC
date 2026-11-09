@@ -4,14 +4,19 @@
   buildings:[[7,41,22,49],[23,51,30,59],[41,42,56,54],[9,19,20,28],[23,8,39,16],[23,18,39,27],[43,8,60,16],[43,18,60,27],[73,5,84,23],[84,5,94,15]],
   goals:{'시설 보안':[88,27],'호송':[94,34],'구조':[58,29],'정밀 지원':[62,29],'무장세력 대응':[86,28]}};
  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
- const active=u=>!u.evacuationHold&&(window.fieldSimulation?.actorOperational?.(u)??(u.hp>0&&!['captured','evacuated','retreated','wounded','medevac','evac-home'].includes(u.status)));
+ const active=u=>!u.evacuationHold&&(window.fieldSimulation?.actorOperational?.(u)??(u.hp>0&&!['dead','captured','evacuated','retreated','wounded','medevac','evac-home'].includes(u.status)));
  const blocked=(x,y,map=MAP)=>x<1||x>map.width-1||y<1||y>map.height-1||[...(map.buildings||[]),...(map.obstacles||[])].some(b=>x>b[0]-.7&&x<b[2]+.7&&y>b[1]-.7&&y<b[3]+.7);
  function clearLine(a,b,map=MAP){const count=Math.max(20,Math.ceil(Math.hypot(a.x-b.x,a.y-b.y)));for(let i=1;i<count;i++){const t=i/count,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,eye=(a.elevation||0)+1.7+((b.elevation||0)-(a.elevation||0))*t;
   if((map.buildings||[]).some(r=>x>r[0]&&x<r[2]&&y>r[1]&&y<r[3]&&eye<(r[4]??99)))return false;
   if(window.fieldSimulation?.elevationAt&&window.fieldSimulation.elevationAt(map,{x,y})>eye+1)return false;
  }return true}
+ const navigationCache=new WeakMap(),navigationStats={hits:0,builds:0};
  function pathTo(a,end,map=MAP){
-  const grid=map.grid||2,cols=Math.floor(map.width/grid)+1,rows=Math.floor(map.height/grid)+1,start=clamp(Math.round(a.y/grid),0,rows-1)*cols+clamp(Math.round(a.x/grid),0,cols-1),goal=clamp(Math.round(end[1]/grid),0,rows-1)*cols+clamp(Math.round(end[0]/grid),0,cols-1);
+  const grid=map.grid||2,cols=Math.floor(map.width/grid)+1,rows=Math.floor(map.height/grid)+1;
+  const cell=(x,y)=>{const gx=clamp(Math.round(x/grid),0,cols-1),gy=clamp(Math.round(y/grid),0,rows-1);if(!blocked(gx*grid,gy*grid,map))return gy*cols+gx;let best=-1,distance=Infinity;for(let r=1;r<=3;r++){for(let dx=-r;dx<=r;dx++)for(let dy=-r;dy<=r;dy++){if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;const xx=gx+dx,yy=gy+dy;if(xx<0||xx>=cols||yy<0||yy>=rows||blocked(xx*grid,yy*grid,map))continue;const d=Math.hypot(xx*grid-x,yy*grid-y);if(d<distance){distance=d;best=yy*cols+xx;}}if(best>=0)return best;}return -1;};
+  const start=cell(a.x,a.y),goal=cell(end[0],end[1]);if(start<0||goal<0)return [];
+  const geometry=[map.width,map.height,map.grid,...(map.buildings||[]).flat(),...(map.obstacles||[]).flat()].join(','),entry=navigationCache.get(map),cache=entry?.geometry===geometry?entry:{geometry,paths:new Map()};if(entry!==cache)navigationCache.set(map,cache);const key=start+':'+goal;if(cache.paths.has(key)){navigationStats.hits++;return cache.paths.get(key).map(p=>p.slice());}navigationStats.builds++;
+  const remember=result=>{if(cache.paths.size>=64)cache.paths.delete(cache.paths.keys().next().value);cache.paths.set(key,result.map(p=>p.slice()));return result;};
   const visited=new Int16Array(cols*rows).fill(-1),queue=[start];visited[start]=start;let head=0,found=false;
   while(head<queue.length){const at=queue[head++];if(at===goal){found=true;break}const x=at%cols,y=Math.floor(at/cols);
    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){
@@ -20,8 +25,8 @@
     visited[id]=at;queue.push(id);
    }
   }
-  if(!found)return [];
-  const path=[];let at=goal;while(at!==start){path.push([at%cols*grid,Math.floor(at/cols)*grid]);at=visited[at]}return path.reverse();
+  if(!found)return remember([]);
+  const path=[];let at=goal;while(at!==start){path.push([at%cols*grid,Math.floor(at/cols)*grid]);at=visited[at]}return remember(path.reverse());
  }
  function rand(s){s.rng=(Math.imul(s.rng,1664525)+1013904223)>>>0;return s.rng/4294967296}
  function log(s,who,msg,kind='radio'){if(s.mutedLog)return;if(window.fieldSimulation?.transmit)return window.fieldSimulation.transmit(s,who,msg,kind);s.radio.push({t:s.time,who,msg,kind})}
@@ -137,4 +142,5 @@
  }
  function settleRelations(s){if(s.relationsSettled)return;s.relationsSettled=true;if(!s.rival.identified)return;const rival=factions().find(p=>p.id===s.rival.id);if(rival){rival.encounters++;rival.relation=clamp(rival.relation+(s.rival.hostile?-8:2),0,100)}}
  window.fieldSimulation={MAP,create,step,outcome,settleRelations,pathTo,clearLine,internals:{rand,move,damage,active,dist}};
+ window.fieldSimulation.navigationStats=navigationStats;
 })();

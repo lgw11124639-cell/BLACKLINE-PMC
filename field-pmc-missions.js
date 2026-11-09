@@ -14,10 +14,10 @@
  }
  api.agentAction=function(s,u,scene){initialize(s);if(u.faction!=='pmc'||scene!=='site'||!s.rivalMission||!active(u)||u.inside||u.roadOnly)return agent(s,u,scene);
   const m=s.rivalMission,team=pmcs(s),average=team.reduce((n,p)=>n+(p.health?.canFight===false?0:p.hp),0)/Math.max(1,team.length);u.ai=u.ai||{};
-  if(average<35||team.every(p=>p.ammo<5))m.withdraw=true;
-  if(m.withdraw){m.stage='withdrawal';u.status='retreating';move(s,u,[s.terrain.width-3,s.terrain.height-3],.29);return true;}
+  m.originalStrength=m.originalStrength||s.units.filter(p=>p.faction==='pmc').length;if(average<35||team.length<Math.ceil(m.originalStrength*.5)||team.every(p=>p.ammo<5))m.withdraw=true;
+  if(m.withdraw){m.stage='withdrawal';u.status='retreating';const exit=api.projectToGround(s.terrain,[s.terrain.width-3,s.terrain.height-3]);move(s,u,exit,.29);if(dist(u,point(exit))<3){u.status='retreated';s.journey.impact.escaped=s.journey.impact.escaped||[];if(!s.journey.impact.escaped.some(p=>p.id===u.id))s.journey.impact.escaped.push({id:u.id,faction:'pmc',scene:'site'});}return true;}
   const threats=s.units.filter(v=>active(v)&&!v.inside&&!v.roadOnly&&v.faction!=='pmc'&&(v.faction==='insurgent'||v.faction==='blackline'&&s.rival.hostile)&&u.knowledge?.[v.id]&&s.time-u.knowledge[v.id].lastSeen<=6&&sees(s,u,v)).sort((a,b)=>dist(u,a)-dist(u,b));
-  if(threats.length){const v=threats[0];m.stage='engagement';u.heading=Math.atan2(v.y-u.y,v.x-u.x);u.target=v.id;
+  if(threats.length){const v=threats[0];m.stage='engagement';const cover=(s.terrain.coverObjects||[]).filter(c=>c.integrity>20&&dist(u,c)<9).sort((a,b)=>dist(u,a)-dist(u,b))[0];if(cover&&s.time-(u.contractCoverAt||-30)>18){const d=Math.max(1,dist(cover,v)),goal=api.projectToGround(s.terrain,[cover.x+(cover.x-v.x)/d*1.6,cover.y+(cover.y-v.y)/d*1.6]);if(dist(u,point(goal))>1.5){move(s,u,goal,.3);u.status='taking-cover';return true;}u.contractCoverAt=s.time;}u.heading=Math.atan2(v.y-u.y,v.x-u.x);u.target=v.id;
    if(u.contractRole==='flanker'&&dist(u,v)>6&&s.time%18<6){const a=u.heading+Math.PI/2;move(s,u,[u.x+Math.cos(a)*3,u.y+Math.sin(a)*3],.28);u.status='flanking';}
    else if(dist(u,v)<=u.range){u.status=u.contractRole==='overwatch'?'overwatch':'engaging';api.tacticalFire(s,u,v);}
    else{const k=u.knowledge[v.id];move(s,u,[k.x-4,k.y+3]);u.status='covering';}return true;

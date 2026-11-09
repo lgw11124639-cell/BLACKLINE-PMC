@@ -2,7 +2,7 @@
 (function(){
  const api=window.fieldSimulation;
  const unfinished=o=>!['작전 완료','작전 보류'].includes(o.status);
- function free(except){const used=new Set((state.operations||[]).filter(o=>o!==except&&unfinished(o)).flatMap(o=>[...(o.teamIds||[]),...(o.preRecon?.status==='진행'?o.preRecon.memberIds:[]),...(o.workflow?.reservedIds||[])]));return state.team.filter(p=>!p.dead&&!p.retired&&!p.injured&&!p.onMission&&!p.supportReservation&&!p.recoveryAssignment&&!used.has(p.id));}
+ function free(except){const used=new Set((state.operations||[]).filter(o=>o!==except&&unfinished(o)).flatMap(o=>[...(o.teamIds||[]),...(o.preRecon?.status==='진행'?o.preRecon.memberIds:[]),...(o.workflow?.reservedIds||[])]));return state.team.filter(p=>!p.dead&&!p.retired&&!p.injured&&!p.awaitingRecovery&&!p.onMission&&!p.supportReservation&&!p.recoveryAssignment&&!used.has(p.id));}
  window.blacklineAvailablePersonnel=()=>free();
  const say=(title,body)=>{state.reports.unshift({date:state.date,category:'작전',title,body});state.reports=state.reports.slice(0,160)};
  const rating=p=>{const e=personnelEvaluation(p);return (e.awareness||p.skill||50)+(e.tactics||p.skill||50)+(e.leadership||50)*.3};
@@ -18,15 +18,15 @@
   const child={id:op.id+'-RECON',leaderName:scouts[0].name,budget:op.budget,teamIds:scouts.map(p=>p.id),fieldProgress:{seed:op.reconSeed,supportOrders:[]}};
   const contract={...m,title:m.title+' · 사전 정찰',objectiveMode:'recon',preRecon:true,transport:'ground',mapId:'mountain',pinMap:true,reconPlan:op.reconPlan};
   if(window.blacklineReserveTransport&&!window.blacklineReserveTransport(child,'ground'))return false;
-  const tactical=api.create(child,contract,scouts,ammo,{medicalBudget:medical});child.fieldProgress.tactical=tactical;
+  child.contract=contract;child.fieldProgress.reservedTacticalAmmo=ammo;child.fieldProgress.reservedTacticalMed=medical;const tactical=api.create(child,contract,scouts,ammo,{medicalBudget:medical});child.fieldProgress.tactical=tactical;
   state.ammo-=ammo;state.med-=medical;op.preRecon={version:1,issuedAmmo:ammo,issuedMed:medical,status:'진행',memberIds:scouts.map(p=>p.id),operation:child,startedDate:state.date};
   op.teamIds=[];op.taskGroups=[];op.status='사전 정찰';if(op.workflow){op.workflow.stage='recon';op.workflow.since=now();op.workflow.dueAt=null;op.workflow.reservedIds=[];op.workflow.waitingReason='';op.workflow.history.push({stage:'recon',at:now()});}
   say('사전 정찰 출동 · '+m.title,scouts.map(p=>p.name).join(', ')+' 배정. 탄약 '+ammo+'발·의료물자 '+medical+'개 인수. 접근로와 관측 지점을 확인하고 복귀한 뒤 본대 편성을 결정합니다.');return true
  };
- function settleRecon(op){const r=op.preRecon,s=r.operation.fieldProgress.tactical;if(r.settled)return;r.settled=true;r.status=s.retreat?'철수 보고':'정찰 보고';r.finishedDate=state.date;
+ function settleRecon(op){const r=op.preRecon,s=r.operation.fieldProgress.tactical;if(r.settled)return;r.settled=true;r.status=s.retreat?'철수 보고':'정찰 보고';r.finishedDate=state.date;r.cost=Number(r.operation.fieldProgress.reservedSupportCost)||0;
   r.findings=Object.entries(s.contacts||{}).filter(([,v])=>v.identified!==false).map(([id,v])=>({id,x:v.x,y:v.y,lastSeen:v.lastSeen,source:v.source||'ground',hostile:s.units.some(u=>u.id===id&&(u.faction==='insurgent'||u.faction==='pmc'&&s.rival.hostile))}));
-  api.settleFieldEquipment?.(s,r.operation);const own=s.units.filter(u=>u.faction==='blackline');const ledger=api.ammoAccounting?.(s,r.operation);state.ammo+=ledger?ledger.returned:own.reduce((n,u)=>n+Math.max(0,u.ammo||0),0);if(ledger)r.ammunition=ledger;state.med+=Math.max(0,(r.issuedMed??1)-(s.medUsed||0));
-  for(const u of own){const p=state.team.find(p=>p.id===u.personId);if(!p)continue;if(u.status==='dead'){p.dead=true;p.injured=false}else if(u.hp<=55||u.evacComplete){p.injured=true;if(u.health?.wounds.length){p.medicalCase={operationId:op.id+'-RECON',admittedDate:state.date,status:'진료 대기',wounds:JSON.parse(JSON.stringify(u.health.wounds)),health:JSON.parse(JSON.stringify(u.health))};window.blacklineTreatAtBase?.(p);}p.injuryDetail='사전 정찰 중 부상 · 의무 복귀';}p.fatigue=Math.min(100,(p.fatigue||0)+12)}
+  api.settleFieldEquipment?.(s,r.operation);api.settleSupportResources?.(s,r.operation);const own=s.units.filter(u=>u.faction==='blackline');const ledger=api.ammoAccounting?.(s,r.operation);state.ammo+=ledger?ledger.returned:own.reduce((n,u)=>n+Math.max(0,u.ammo||0),0);if(ledger)r.ammunition=ledger;state.med+=Math.max(0,(r.operation.fieldProgress.reservedTacticalMed??r.issuedMed??1)-(s.medUsed||0));
+  for(const u of own){const p=state.team.find(p=>p.id===u.personId);if(!p)continue;if(u.health?.wounds.length&&api.recordReturnedCasualty){api.recordReturnedCasualty(s,r.operation,u,p);}else if(u.status==='dead'){p.dead=true;p.injured=false}else if(u.hp<=55||u.evacComplete){p.injured=true;if(u.health?.wounds.length){p.medicalCase={operationId:op.id+'-RECON',admittedDate:state.date,status:'진료 대기',wounds:JSON.parse(JSON.stringify(u.health.wounds)),health:JSON.parse(JSON.stringify(u.health))};window.blacklineTreatAtBase?.(p);}p.injuryDetail='사전 정찰 중 부상 · 의무 복귀';}p.fatigue=Math.min(100,(p.fatigue||0)+12)}
   op.status='정찰 보고 검토';if(!op.workflow)op.workflow=workflow('recon');enter(op,'debrief');say('정찰 결과 · '+(op.contract?.title||op.id),'식별된 접촉 '+r.findings.length+'건. '+(s.retreat?'위험으로 정찰을 중단했습니다. ':'관측 경로 확인 후 복귀했습니다. ')+'미관측 구역은 미확인 상태입니다. 작전본부가 편제와 투입 가능 여부를 재검토합니다.');
  }
  const now=()=>state.day*1440+Number(state.simClock?.minutes??480);
@@ -64,7 +64,7 @@
   else return false;return true;
  };
  window.blacklineReviewMissionPlans=function(){let changed=false;for(const op of state.operations||[])if(window.blacklineReviewOperationWorkflow(op))changed=true;if(changed){save();render();}};
- window.blacklineCanDeployWorkflow=function(op){if(!op.workflow)return true;const people=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured),check=window.blacklineCheckStaffing(op.contract||{},people);if(!check.ready){op.teamIds=[];enter(op,'mainPlan');return wait(op,'출동 인원 변동으로 편제를 다시 검토합니다.');}
+ window.blacklineCanDeployWorkflow=function(op){if(!op.workflow)return true;const freeIds=new Set(free(op).map(p=>p.id)),people=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&freeIds.has(p.id)),check=window.blacklineCheckStaffing(op.contract||{},people);if(!check.ready){op.teamIds=[];enter(op,'mainPlan');return wait(op,'출동 인원 변동으로 편제를 다시 검토합니다.');}
   window.blacklineReviewArmory?.();const missing=window.blacklineEquipmentReadiness?.(people)||[],ammo=api.ammoPlan?.(people).total||120;if(missing.length||state.ammo<ammo||state.med<1){wait(op,missing.join(' · ')||'출동 탄약·의료물자 확보 필요.');op.deployAt=now()+60;op.workflow.dueAt=op.deployAt;op.deployDate=stamp(op.deployAt).slice(0,10);return false;}
   if(window.blacklineReserveTransport&&!window.blacklineReserveTransport(op,api.chooseTransport(op,op.contract||{}))){wait(op,'수송 승무원·기체·급유 비용 확보 필요.');op.deployAt=now()+60;op.workflow.dueAt=op.deployAt;return false;}
   op.workflow.waitingReason='';return true;
