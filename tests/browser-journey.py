@@ -10,6 +10,8 @@ with sync_playwright() as p:
   assert page.locator('.field-map-shell').get_attribute('data-scene')==scene,(stage,scene)
   assert page.locator('.field-journey-panel').is_visible()
   assert page.locator('[data-unit]').count()==6
+  page.locator('[data-unit="bl-101"]').click()
+  assert '팀장' in page.locator('#field-unit-detail').inner_text()
   assert page.get_by_role('slider',name='작전 기록 시간 이동',exact=True).count()==0
   page.screenshot(path='/tmp/journey-'+stage+'.png',full_page=True)
   page.set_viewport_size({'width':390,'height':844});page.wait_for_timeout(150)

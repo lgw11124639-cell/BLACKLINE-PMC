@@ -101,7 +101,7 @@
   const radio=(s?.radio||r.logs||[]).filter(x=>x.t<=playhead),key=String(selected)+':'+radio.length;
   if(radioKey!==key){radioKey=key;const feed=fieldElement('field-radio');feed.innerHTML=radio.map(x=>'<div class="field-transmission '+esc(x.kind||'radio')+'"><small>'+clock(x.t)+' <span>'+esc(x.from?x.from+' → '+x.to:x.who)+'</span></small><p>'+esc(x.msg)+'</p></div>').join('')||'<p class="empty">첫 현장 무전을 기다리고 있습니다.</p>';feed.scrollTop=feed.scrollHeight}
   if(s){
-   const {a}=frameAt(s,playhead),blue=s.units.map((u,i)=>({...u,view:a.units[i]})).filter(u=>u.faction==='blackline');
+   const {a}=frameAt(s,playhead),sceneUnits=a.journey?[...a.journey.inside,...(a.journey.road||[])]:[],blue=s.units.map((u,i)=>{const scene=sceneUnits.find(v=>v.id===u.id),transport=a.journey&&['outbound','homebound','complete'].includes(a.journey.stage)&&!a.journey.transport.stopped?a.journey.transport:null;return {...u,view:scene?[scene.x,scene.y,scene.hp,scene.ammo,scene.status,scene.heading,0]:transport&&u.faction==='blackline'?[transport.x,transport.y,a.units[i][2],a.units[i][3],'transporting',transport.heading,0]:a.units[i]}}).filter(u=>u.faction==='blackline');
    fieldElement('field-objective').textContent=a.objective+'%'+(a.retreat?' · 철수':'');
    fieldElement('field-strength').textContent=blue.filter(u=>u.view[2]>0).length+' / '+blue.length+'명';
    const used=s.events.filter(e=>e.kind==='shot'&&e.actor.startsWith('bl')&&e.t<=playhead).reduce((n,e)=>n+e.rounds,0);fieldElement('field-ammo').textContent=used+'발';
