@@ -95,3 +95,23 @@ body .field-focus .field-radio-column{display:flex!important;grid-column:2;grid-
 #blackline-reset{color:#a94e43;border-color:#eedbd7}
 
 body .field-focus .medical-card-copy{min-width:0}body .field-focus #field-roster button{min-height:0!important}body .field-focus #field-roster .medical-card-copy small,body .field-focus #field-roster .medical-card-copy p{font-size:9px!important;line-height:1.4!important}
+
+/* iPhone: the map itself owns every viewport pixel; controls float over it. */
+@media(max-width:700px),(max-width:1000px) and (pointer:coarse){
+ body .field-console.field-focus{padding:0!important;background:#dce6db!important}
+ body .field-focus .field-console-head,body .field-focus .field-live-meta,body .field-focus .field-kpis{display:none!important}
+ body .field-focus .field-layout{display:block!important;position:absolute!important;inset:0!important;width:100%!important;height:100%!important}
+ body .field-focus .field-map-column{display:contents!important}
+ body .field-focus .field-map-shell{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;border:0!important}
+ body .field-focus .field-map-toolbar{position:absolute!important;z-index:5;top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));padding:0!important;pointer-events:none}
+ body .field-focus .field-map-toolbar>div{justify-content:flex-end;gap:4px;pointer-events:auto}
+ body .field-focus .field-map-toolbar button{height:36px!important;min-width:32px;background:#ffffffed!important;border:1px solid #dfe6f0;box-shadow:0 2px 10px #192d4520}
+ body .field-focus .field-mobile-panels{display:flex!important;position:absolute!important;z-index:6;bottom:max(10px,env(safe-area-inset-bottom));right:max(10px,env(safe-area-inset-right));width:auto;gap:4px;padding:4px!important;border:1px solid #dfe6f0;border-radius:10px;background:#fffffff2;box-shadow:0 3px 20px #192d4520}
+ body .field-focus .field-mobile-panels button{min-height:38px!important;min-width:54px;flex:none!important;font-size:11px!important}
+ body .field-focus .field-mobile-home{display:none!important}
+ body .field-focus #field-roster,body .field-focus .field-radio-column{display:none!important;position:absolute!important;z-index:4;top:calc(max(8px,env(safe-area-inset-top)) + 44px);bottom:calc(max(10px,env(safe-area-inset-bottom)) + 56px);right:max(8px,env(safe-area-inset-right));width:min(320px,85vw)!important;border:1px solid #dfe6f0;border-radius:12px;background:#fffffff5;box-shadow:0 5px 30px #192d4530;margin:0!important}
+ body .field-focus[data-mobile-panel=crew] #field-roster{display:grid!important}
+ body .field-focus[data-mobile-panel=radio] .field-radio-column{display:flex!important}
+ body .field-focus .field-map-stamp{top:auto;bottom:max(12px,env(safe-area-inset-bottom));left:max(8px,env(safe-area-inset-left))}
+ body .field-focus .field-map-scale{display:none!important}
+}
