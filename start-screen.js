@@ -25,16 +25,18 @@ async function restore(file){
 }
 window.blacklineExportSave=download;
 window.blacklineOpenStart=()=>show();
-function close(){shell.innerHTML='';document.body.classList.remove('start-visible')}
+function close(){shell.innerHTML='';document.body.classList.remove('start-visible');document.querySelectorAll('body>header,body>main,body>nav').forEach(el=>el.inert=false);document.querySelector('.save-management')?.focus({preventScroll:true})}
 function show(){
  document.body.classList.add('start-visible');
+ document.querySelectorAll('body>header,body>main,body>nav').forEach(el=>el.inert=true);
  const old=hasSave();
- shell.innerHTML='<div class="start-overlay"><section class="start-panel"><div class="start-logo">BLACKLINE <em>PMC</em></div><div class="start-sub">PRIVATE MILITARY COMPANY · OBSERVER MODE</div><div class="start-info"><small>COMPANY SAVE / 진행 현황</small><strong>'+esc(state.date)+' · '+Number(state.day||1)+'일차</strong><small>보유 자금 '+money(state.cash)+' · 계약 인력 '+(state.team||[]).length+'명</small></div>'+(saveRecoveryNotice?'<p class="start-warning">'+esc(saveRecoveryNotice)+'</p>':'')+'<button type="button" class="start-main" id="blackline-continue">'+(old?'이어하기':'시작하기')+'</button><button type="button" id="blackline-export">저장 데이터 백업하기</button><label for="blackline-import">백업 파일 불러오기<input id="blackline-import" type="file" accept=".json,application/json"></label><p class="start-foot">진행 기록은 현재 브라우저에 저장됩니다.<br>다른 브라우저·홈 화면 앱으로 이동할 때는 백업 파일을 옮겨야 할 수 있습니다.</p></section></div>';
+ shell.innerHTML='<div class="start-overlay"><section class="start-panel" role="dialog" aria-modal="true" aria-label="BLACKLINE PMC 시작 및 저장 관리"><div class="start-identity"><span class="brand-symbol" aria-hidden="true">B</span><div class="start-logo">BLACKLINE <em>PMC</em></div><div class="start-sub">PRIVATE MILITARY COMPANY</div><h1 class="start-title">큰 그림을 보고,<br>다음을 이끌다.</h1><p class="start-description">당신의 시선 아래 움직이는 하나의 회사.<br>사람과 자원, 현장의 흐름을 읽는<br>자율 경영 시뮬레이션.</p><div class="start-edition">THE EXECUTIVE EDITION</div></div><div class="start-info"><small>COMPANY SAVE / 진행 현황</small><strong>'+esc(state.date)+' · '+Number(state.day||1)+'일차</strong><small>보유 자금 '+money(state.cash)+' · 계약 인력 '+(state.team||[]).length+'명</small></div>'+(saveRecoveryNotice?'<p class="start-warning">'+esc(saveRecoveryNotice)+'</p>':'')+'<button type="button" class="start-main" id="blackline-continue">'+(old?'이어하기':'시작하기')+'</button><button type="button" id="blackline-export">저장 데이터 백업하기</button><label for="blackline-import">백업 파일 불러오기<input id="blackline-import" type="file" accept=".json,application/json"></label><p class="start-foot">진행 기록은 현재 브라우저에 저장됩니다.<br>다른 브라우저·홈 화면 앱으로 이동할 때는 백업 파일을 옮겨야 할 수 있습니다.</p></section></div>';
+ shell.querySelector('#blackline-continue').focus({preventScroll:true});
  shell.querySelector('#blackline-continue').onclick=()=>{close();render()};
  shell.querySelector('#blackline-export').onclick=download;
  shell.querySelector('#blackline-import').onchange=e=>restore(e.target.files?.[0]);
 }
 const nav=document.querySelector('header');
-if(nav){const button=document.createElement('button');button.type='button';button.textContent='시작 화면 · 저장 관리';button.style.cssText='margin-top:7px;border:1px solid #39544c;border-radius:7px;background:#1d302b;color:#b5dcc4;padding:6px 10px;font-size:11px';button.onclick=show;nav.appendChild(button)}
+if(nav){const button=document.createElement('button');button.type='button';button.textContent='저장 관리';button.className='save-management';button.onclick=show;nav.appendChild(button)}
 show();
 })();

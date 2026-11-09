@@ -19,19 +19,19 @@ function init(){
  clear();host=el;missionId=id;
  try{
   const w=Math.max(240,el.clientWidth),h=Math.max(180,el.clientHeight);
-  scene=new THREE.Scene();scene.background=new THREE.Color(0x1a3035);
+  scene=new THREE.Scene();scene.background=new THREE.Color(0xe8eef0);
   camera=new THREE.OrthographicCamera(-15,15,10,-10,.1,100);camera.position.set(20,24,24);camera.lookAt(0,0,0);
-  renderer=new THREE.WebGLRenderer(opts);renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25));renderer.setSize(w,h,false);renderer.setClearColor(0x1a3035);renderer.outputColorSpace=THREE.SRGBColorSpace||renderer.outputColorSpace;
+  renderer=new THREE.WebGLRenderer(opts);renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25));renderer.setSize(w,h,false);renderer.setClearColor(0xe8eef0);renderer.outputColorSpace=THREE.SRGBColorSpace||renderer.outputColorSpace;
   el.appendChild(renderer.domElement);
-  const hemi=new THREE.HemisphereLight(0xc4e2dc,0x3c5045,2);scene.add(hemi);
-  const sun=new THREE.DirectionalLight(0xffffff,1.25);sun.position.set(10,18,5);scene.add(sun);
-  cube(32,.2,22,0x344f49,0,-.2,0);
-  cube(32,.03,3.3,0x53656a,0,.02,0);cube(2.8,.04,22,0x53656a,4,.03,0);
-  for(let i=0;i<9;i++){const x=-12+(i%3)*9,z=-8+Math.floor(i/3)*8;if(Math.abs(x-4)<3||Math.abs(z)<2)continue;const height=2+(i%3)*1.25;cube(3.8,height,3.5,i%2?0x58716c:0x617b73,x,height/2,z);cube(4,.12,3.7,0x7b9186,x,height+.08,z)}
+  const hemi=new THREE.HemisphereLight(0xf2f7ff,0x899e92,.65);scene.add(hemi);
+  const sun=new THREE.DirectionalLight(0xffffff,.55);sun.position.set(10,18,5);scene.add(sun);
+  cube(32,.2,22,0xc8d9cd,0,-.2,0);
+  cube(32,.03,3.3,0xc0cbd2,0,.02,0);cube(2.8,.04,22,0xc0cbd2,4,.03,0);
+  for(let i=0;i<9;i++){const x=-12+(i%3)*9,z=-8+Math.floor(i/3)*8;if(Math.abs(x-4)<3||Math.abs(z)<2)continue;const height=2+(i%3)*1.25;cube(3.8,height,3.5,i%2?0xaebeb8:0xb9c8c3,x,height/2,z);cube(4,.12,3.7,0xdce5df,x,height+.08,z)}
   for(let i=0;i<8;i++){const x=-13+i*3.6;cube(1.2,.025,.12,0xa2afa4,x,.065,0)}
-  for(let i=0;i<4;i++){cylinder(.65,.2,0x47644c,-13+i*8,.04,-10);cylinder(.45,1.1,0x63846a,-13+i*8,.6,-10)}
+  for(let i=0;i<4;i++){cylinder(.65,.2,0x86a38a,-13+i*8,.04,-10);cylinder(.45,1.1,0x91b39b,-13+i*8,.6,-10)}
   const count=Math.min(8,Math.max(1,Number(el.dataset.team)||4));
-  for(let i=0;i<count;i++){const root=new THREE.Group();const body=new THREE.Mesh(new THREE.CylinderGeometry(.24,.29,.8,6),material(0x91c7a4));body.position.y=.52;root.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(.22,6,4),material(0xc7c4a6));head.position.y=1.08;root.add(head);const mark=new THREE.Mesh(new THREE.CylinderGeometry(.42,.42,.04,12),material(0x9fe4b6));mark.position.y=.04;root.add(mark);root.position.set(-11+i*1.1,0,2+(i%2)*1.2);scene.add(root);actors.push(root)}
+  for(let i=0;i<count;i++){const root=new THREE.Group();const body=new THREE.Mesh(new THREE.CylinderGeometry(.24,.29,.8,6),material(0x527bbe));body.position.y=.52;root.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(.22,6,4),material(0xc7c4a6));head.position.y=1.08;root.add(head);const mark=new THREE.Mesh(new THREE.CylinderGeometry(.42,.42,.04,12),material(0xaac4ed));mark.position.y=.04;root.add(mark);root.position.set(-11+i*1.1,0,2+(i%2)*1.2);scene.add(root);actors.push(root)}
   const car=cube(2.2,.7,1.15,0x829a87,-12,.45,-1.2);cube(1.1,.55,1,0x455e5b,-12,1.05,-1.2);vehicles.push(car);
   renderer.domElement.addEventListener('webglcontextlost',lost,{once:true});
   const fallback=document.getElementById('ops-3d-fallback');if(fallback)fallback.hidden=true;
