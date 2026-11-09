@@ -117,9 +117,10 @@
        else if(op.air!=='off'&&m.risk>=2&&budget>=spent+14000000)requests.push({name:'승인된 공중 지원',cost:14000000,effect:8});
      }
      // Commit support expenses when the commander orders them; do not charge twice on completion.
-     fp.supportOrders=(fp.supportOrders||[]).filter(o=>['drone','vehicle-recovery','medevac','reinforcement','resupply','ground-recovery'].includes(o.kind));
+     fp.supportOrders=(fp.supportOrders||[]).filter(o=>['drone','vehicle-recovery','medevac','reinforcement','resupply','ground-recovery','artillery','airstrike'].includes(o.kind));
      fp.reservedSupportCost=Number(fp.reservedSupportCost)||0;
      for(const [i,request] of requests.entries()){
+       if(fp.supportOrders.some(o=>o.name===request.name))continue;
        const r=window.fieldSimulation.reserveSupport?.(op,request);if(!r)continue;
        if(fp.reservedSupportCost+r.cost>Math.max(0,Number(op.budget)||0)||state.cash<r.cost)continue;
        state.cash-=r.cost;

@@ -1,13 +1,8 @@
-/* Only the operation map enters landscape focus; company pages remain unchanged. */
+/* Focus rotates only the map UI on a portrait phone. Company screens never rotate. */
 (function(){
- const landscape=matchMedia('(orientation:landscape)'),touch=matchMedia('(pointer:coarse)');
- let previousCanvas=null,previousLandscape=false;
- function sync(){
-  const canvas=typeof tab!=='undefined'&&tab==='observation'?document.querySelector('#app #field-canvas'):null;
-  const wide=touch.matches&&landscape.matches;
-  if(canvas&&wide&&(canvas!==previousCanvas||!previousLandscape)&&!canvas.closest('.field-focus'))window.fieldExpand?.();
-  previousCanvas=canvas;previousLandscape=wide;
- }
- const refresh=window.blacklineRefreshObservation;window.blacklineRefreshObservation=function(){refresh?.();sync()};
- landscape.addEventListener('change',sync);touch.addEventListener('change',sync);window.addEventListener('resize',sync);sync();
+ const touch=matchMedia('(pointer:coarse)'),portrait=matchMedia('(orientation:portrait)');
+ window.fieldSyncOrientation=function(){for(const root of document.querySelectorAll('.field-console')){const rotated=root.classList.contains('field-focus')&&touch.matches&&portrait.matches;root.classList.toggle('field-phone-landscape',rotated);}};
+ window.fieldPointerPosition=function(canvas,event){const b=canvas.getBoundingClientRect();return canvas.closest('.field-phone-landscape')?{x:(event.clientY-b.top)*canvas.clientWidth/b.height,y:(b.right-event.clientX)*canvas.clientHeight/b.width}:{x:(event.clientX-b.left)*canvas.clientWidth/b.width,y:(event.clientY-b.top)*canvas.clientHeight/b.height};};
+ const refresh=window.blacklineRefreshObservation;window.blacklineRefreshObservation=function(){refresh?.();window.fieldSyncOrientation()};
+ portrait.addEventListener('change',window.fieldSyncOrientation);touch.addEventListener('change',window.fieldSyncOrientation);window.addEventListener('resize',window.fieldSyncOrientation);window.fieldSyncOrientation();
 })();

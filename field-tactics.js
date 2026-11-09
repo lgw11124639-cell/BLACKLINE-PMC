@@ -70,10 +70,11 @@
   for(const [i,o] of (op.fieldProgress?.supportOrders||[]).entries()){
    if(['drone','vehicle-recovery','ground-recovery','medevac','reinforcement','resupply'].includes(o.kind))continue;
    const key=o.id||o.name+'-'+i;if(s.time<o.requestedAt+o.eta||s.supportArrived.includes(key))continue;
-   s.supportArrived.push(key);const kind=/공중/.test(o.name)?'airstrike':/원거리|포병/.test(o.name)?'artillery':null;
-   if(!kind){log(s,'작전지원본부',o.name+' 도착.');continue}
+   const kind=/공중/.test(o.name)?'airstrike':/원거리|포병/.test(o.name)?'artillery':null;
+   if(!kind){s.supportArrived.push(key);log(s,'작전지원본부',o.name+' 도착.');continue}
    const target=s.units.find(u=>!u.inside&&active(u)&&u.faction!=='blackline'&&(u.faction==='insurgent'||s.rival.hostile)&&s.contacts[u.id]?.visible&&s.contacts[u.id]?.identified!==false&&s.time-s.contacts[u.id].lastSeen<=5);
-   if(!target){log(s,'작전지원본부',o.name+' 타격 보류. 유효한 시각 표적 정보가 없다.','support');continue}
+   if(!target){s.supportWait=s.supportWait||{};if(s.supportWait[key]==null||s.time-s.supportWait[key]>=30){log(s,'작전지원본부',o.name+' 타격 보류. 유효한 시각 표적 정보가 없다. 표적 재식별까지 대기한다.','support');s.supportWait[key]=s.time;}continue}
+   s.supportArrived.push(key);
    const radius=kind==='airstrike'?8:6;
    if((s.civilians||[]).some(c=>c.found&&c.hp>0&&dist(c,target)<radius+3)||s.units.some(u=>active(u)&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,target)<radius+3)){log(s,'작전지원본부',o.name+' 취소. 아군·중립 인원과의 안전거리 미충족.','support');continue}
    const center={x:target.x,y:target.y};s.events.push({t:s.time,impactAt:s.time+6,scene:'site',kind,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','확인 좌표로 진입. 6초 후 타격, 현장조는 안전거리 유지 바란다.','support');
@@ -85,7 +86,7 @@
  function step(s,op){
   if(s.done)return;s.time++;api.sceneTick?.(s,op);
   if(!s.terrain)s.terrain=JSON.parse(JSON.stringify(api.maps?.factory||MAP));api.roles?.initialize(s,op);
-  for(const u of s.units){u.baseVision=u.baseVision??u.vision;u.baseRange=u.baseRange??u.range;u.elevation=u.onRoof?u.assignment.height:(api.elevationAt?.(s.terrain,u)||0);u.vision=(u.baseVision||u.vision)+u.elevation*.35+(u.tacticalRole==='sniper'?12:0);u.range=(u.baseRange||u.range)+u.elevation*.2+(u.tacticalRole==='sniper'?12:0)}
+  for(const u of s.units){u.baseVision=u.baseVision??u.vision;u.baseRange=u.baseRange??u.range;u.elevation=u.onRoof?u.assignment.height:(api.elevationAt?.(s.terrain,u)||0);u.vision=api.observationRange?api.observationRange(s,u):(u.baseVision||u.vision)+u.elevation*.35+(u.tacticalRole==='sniper'?12:0);u.range=(u.baseRange||u.range)+u.elevation*.2+(u.tacticalRole==='sniper'?12:0)}
   const blue=s.units.filter(u=>u.faction==='blackline'),fit=blue.filter(active);
   perceive(s);api.journeyDrone?.(s,op);supports(s,op);
   const approach=[...(s.terrain.approach||[[34,58],[36,36]]),s.terrain.approachFinal||[Math.max(10,s.goal[0]-16),s.goal[1]+7]];

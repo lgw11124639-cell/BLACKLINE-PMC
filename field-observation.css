@@ -126,3 +126,8 @@ body .field-focus .field-map-toolbar button,body .field-focus .field-mobile-pane
 
 body .field-focus .field-map-toolbar{display:flex!important}
 body .field-console.field-focus,body .field-focus .field-layout{overflow:clip!important}
+/* Rotate the game surface, including controls and drawers, rather than relying on iOS orientation lock. */
+body .field-console.field-focus.field-phone-landscape{inset:auto!important;left:50%!important;top:50%!important;width:100dvh!important;height:100dvw!important;max-height:none!important;max-width:none!important;min-height:0!important;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center;}
+body .field-phone-landscape .field-map-toolbar{top:max(8px,env(safe-area-inset-right))!important;left:max(8px,env(safe-area-inset-top))!important;right:max(8px,env(safe-area-inset-bottom))!important}
+body .field-phone-landscape .field-mobile-panels{bottom:max(10px,env(safe-area-inset-left))!important;right:max(10px,env(safe-area-inset-bottom))!important}
+body .field-phone-landscape #field-roster,body .field-phone-landscape .field-radio-column{top:calc(max(8px,env(safe-area-inset-right)) + 44px)!important;bottom:calc(max(10px,env(safe-area-inset-left)) + 56px)!important;right:max(8px,env(safe-area-inset-bottom))!important;width:min(320px,50dvh)!important}

@@ -16,7 +16,7 @@
  window.blacklinePrepareRecon=function(op,m){window.blacklineReviewArmory?.();const pool=free();if(pool.length<4||state.med<1)return false;const scouts=roster(pool,4),ammo=api.ammoPlan?.(scouts).total||180,medical=Math.min(state.med,scouts.length+2);if(window.blacklineReviewArmory&&scouts.some(p=>!p.loadout?.primary||p.loadout.primary==='미지급'))return false;if(state.ammo<ammo){window.blacklineReviewMunitions?.();if(state.ammo<ammo)return false}if(!scouts.some(p=>/정찰|수색|저격/.test(p.role||''))||!scouts.some(p=>/의무|의료|구급/.test(p.role||'')))return false;
   op.reconSeed=(state.day*7919+Number(m.id||1)*101+37*4)%997;
   const child={id:op.id+'-RECON',leaderName:scouts[0].name,budget:op.budget,teamIds:scouts.map(p=>p.id),fieldProgress:{seed:op.reconSeed,supportOrders:[]}};
-  const contract={...m,title:m.title+' · 사전 정찰',objectiveMode:'recon'};
+  const contract={...m,title:m.title+' · 사전 정찰',objectiveMode:'recon',preRecon:true,mapId:'regional',pinMap:true};
   const tactical=api.create(child,contract,scouts,ammo,{medicalBudget:medical});child.fieldProgress.tactical=tactical;
   state.ammo-=ammo;state.med-=medical;op.preRecon={version:1,issuedAmmo:ammo,issuedMed:medical,status:'진행',memberIds:scouts.map(p=>p.id),operation:child,startedDate:state.date};
   op.teamIds=[];op.taskGroups=[];op.status='사전 정찰';
