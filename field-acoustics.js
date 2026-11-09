@@ -1,0 +1,21 @@
+/* Physical nearby actors investigate an approximate audible source, never a magical enemy contact. */
+(function(){const api=window.fieldSimulation,{active,dist}=api.internals,shot=api.sceneShot,agent=api.agentAction;
+ const point=p=>({x:p[0],y:p[1]}),position=(u,scene)=>scene==='interior'?u.interior:scene==='regional'?u.road:u;
+ api.shotSoundOrigin=function(s,e,source,listener){if((e.scene||'site')==='interior'&&listener&&!listener.inside)return point(s.journey.building.entrance);return position(source,e.scene||'site')||point(e.from)};
+ api.audibleShotRange=function(s,e,source,listener){const precision=api.isPrecisionWeapon?.(source),silenced=/소음|suppress/i.test(JSON.stringify(source.loadout?.attachments||[])),scene=e.scene||'site',cross=scene==='interior'&&!listener.inside,map=cross?s.terrain:scene==='interior'?s.journey.interior.map:scene==='regional'?s.journey.transport.map:s.terrain,p=cross?listener:position(listener,scene),origin=api.shotSoundOrigin(s,e,source,listener);return (precision?60:46)*(silenced ? .45 : 1)*(cross?.75:1)*(p&&!api.clearLine(p,origin,map)?.65:1);};
+ function inScene(u,scene){return active(u)&&(scene==='interior'?u.inside:scene==='regional'?!!u.road:!u.inside&&!u.roadOnly&&!u.boarded)}
+ api.sceneShot=function(s,e){shot?.(s,e);if(!e||e.kind!=='shot'||!s.journey)return;const source=s.units.find(u=>u.id===e.actor);if(!source)return;const scene=e.scene||'site',precision=api.isPrecisionWeapon?.(source),silenced=/소음|suppress/i.test(JSON.stringify(source.loadout?.attachments||[])),radius=(precision?60:46)*(silenced ? .45 : 1),physical=position(source,scene)||point(e.from),origin=[physical.x,physical.y],coarse=[Math.round(origin[0]/6)*6,Math.round(origin[1]/6)*6];
+  const heard=[];for(const u of s.units){if(u.id===source.id||u.faction==='blackline'||!inScene(u,scene))continue;const p=position(u,scene),map=scene==='interior'?s.journey.interior.map:scene==='regional'?s.journey.transport.map:s.terrain,blocked=!api.clearLine(p,point(origin),map),range=radius*(blocked?.65:1);if(dist(p,point(origin))>range)continue;
+   u.ai=u.ai||{};u.ai.heard={x:coarse[0],y:coarse[1],at:s.time};u.ai.alert=true;u.ai.soundResponse={scene,origin:coarse.slice(),heardAt:s.time,until:s.time+Math.min(240,Math.ceil(dist(p,point(coarse))/.25)+30),source:'audible-direction'};heard.push(u);
+  }
+  // A nearby allied patrol may relay a direction, not an identified shooter or exact position.
+  for(const u of heard)for(const ally of s.units.filter(v=>v.id!==u.id&&v.id!==source.id&&v.faction===u.faction&&inScene(v,scene)&&dist(position(u,scene),position(v,scene))<18)){if(ally.ai?.soundResponse?.heardAt===s.time)continue;ally.ai=ally.ai||{};ally.ai.alert=true;ally.ai.soundResponse={...u.ai.soundResponse,origin:coarse.slice(),relayed:true};}
+  if(scene==='interior')for(const u of s.units.filter(v=>v.faction!=='blackline'&&inScene(v,'site')&&dist(v,point(s.journey.building.entrance))<Math.min(35,api.audibleShotRange(s,e,source,v)))){u.ai=u.ai||{};u.ai.heardBuilding=true;u.ai.heard={...point(s.journey.building.entrance),at:s.time};}
+ };
+ api.agentAction=function(s,u,scene){const response=u.ai?.soundResponse;if(u.faction==='blackline'||!response||response.scene!==scene||s.time>response.until||!inScene(u,scene)||u.ai?.fleeing)return agent(s,u,scene);
+  const map=scene==='interior'?s.journey.interior.map:scene==='regional'?s.journey.transport.map:s.terrain,p=position(u,scene),visibleEnemy=s.units.some(v=>v.faction!==u.faction&&(v.faction==='insurgent'||u.faction==='insurgent'||s.rival.hostile)&&inScene(v,scene)&&dist(p,position(v,scene))<=u.vision&&api.canSeeActor(s,u,v,scene)&&api.clearLine(p,position(v,scene),map));
+  if(visibleEnemy)return agent(s,u,scene);if(u.ai.heardBuilding&&scene==='site')return agent(s,u,scene);
+  const index=s.units.filter(v=>v.faction===u.faction).findIndex(v=>v.id===u.id),angle=index*2.4,spread=2.5+index%3,goal=api.projectToGround(map,[response.origin[0]+Math.cos(angle)*spread,response.origin[1]+Math.sin(angle)*spread]);
+  if(dist(p,point(goal))>3){api.moveScene(s,u,goal,.25,scene);u.status='sound-investigating';}else{u.status='sound-searching';p.heading=(p.heading||0)+.045;if(scene==='site')u.heading=p.heading;}return true;
+ };
+})();

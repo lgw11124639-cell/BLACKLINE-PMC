@@ -50,7 +50,7 @@
   u.nextShot=s.time+(/저격|정밀/.test(u.role)?(api.consumeRounds?7:13):((api.consumeRounds?3:8)+Math.floor(rand(s)*5))*(suppressed?1.7:1));
   const rounds=api.consumeRounds?api.consumeRounds(s,u):Math.min(u.ammo,/저격|정밀/.test(u.role)?1:3);if(!rounds){u.nextShot=s.time+1;return}if(!api.consumeRounds){u.ammo-=rounds;if(u.faction==='blackline')s.ammoUsed+=rounds;}
   const isObserved=u.faction==='blackline'||target.faction==='blackline'||s.contacts[u.id]?.visible;
-  const hit=rand(s)<Math.max(.08,Math.min(.78,.30+u.skill*(u.health?.accuracyFactor??1)/160-dist(u,target)/60+(u.elevation||0)*.005-(suppressed?.12:0)-(api.coverValue?.(s,target,u)||0)*.35));
+  const precision=api.isPrecisionWeapon?.(u),distanceLoss=precision?dist(u,target)/Math.max(20,u.range)*.34:dist(u,target)/60,hit=rand(s)<Math.max(.08,Math.min(precision ? .86 : .78,.30+u.skill*(u.health?.accuracyFactor??1)/160-distanceLoss+(u.elevation||0)*.005-(suppressed?.12:0)-(api.coverValue?.(s,target,u)||0)*.35));
   const shot={id:'shot-'+s.time+'-'+s.events.length,t:s.time,scene:'site',kind:'shot',actor:u.id,target:target.id,from:u.faction==='blackline'||s.contacts[u.id]?.visible?[u.x,u.y]:[target.x+(u.x-target.x)/Math.max(1,dist(u,target))*6,target.y+(u.y-target.y)/Math.max(1,dist(u,target))*6],to:[target.x,target.y],rounds,hit,visible:isObserved};s.events.push(shot);
   api.sceneShot?.(s,shot);s.mutedLog=!isObserved;const previous=target.hp;if(hit)damage(s,target,Math.round(10+rand(s)*16+(/저격|정밀/.test(u.role)?10:0)),u,shot);s.mutedLog=false;
   if(target.faction==='blackline'&&target.hp<=55){target.woundedAt=target.woundedAt??s.time;target.worstHP=Math.min(target.worstHP??previous,target.hp)}
@@ -72,12 +72,12 @@
    const key=o.id||o.name+'-'+i;if(s.time<o.requestedAt+o.eta||s.supportArrived.includes(key))continue;
    const kind=/공중/.test(o.name)?'airstrike':/원거리|포병/.test(o.name)?'artillery':null;
    if(!kind){s.supportArrived.push(key);log(s,'작전지원본부',o.name+' 도착.');continue}
-   const target=s.units.find(u=>!u.inside&&active(u)&&u.faction!=='blackline'&&(u.faction==='insurgent'||s.rival.hostile)&&s.contacts[u.id]?.visible&&s.contacts[u.id]?.identified!==false&&s.time-s.contacts[u.id].lastSeen<=5);
+   const target=s.units.find(u=>(!o.targetId||u.id===o.targetId)&&!u.inside&&active(u)&&u.faction!=='blackline'&&(u.faction==='insurgent'||s.rival.hostile)&&s.contacts[u.id]?.visible&&s.contacts[u.id]?.identified!==false&&s.time-s.contacts[u.id].lastSeen<=5);
    if(!target){s.supportWait=s.supportWait||{};if(s.supportWait[key]==null||s.time-s.supportWait[key]>=30){log(s,'작전지원본부',o.name+' 타격 보류. 유효한 시각 표적 정보가 없다. 표적 재식별까지 대기한다.','support');s.supportWait[key]=s.time;}continue}
    s.supportArrived.push(key);
    const radius=kind==='airstrike'?8:6;
    if((s.civilians||[]).some(c=>c.found&&c.hp>0&&dist(c,target)<radius+3)||s.units.some(u=>active(u)&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,target)<radius+3)){log(s,'작전지원본부',o.name+' 취소. 아군·중립 인원과의 안전거리 미충족.','support');continue}
-   const center={x:target.x,y:target.y};s.events.push({t:s.time,impactAt:s.time+6,scene:'site',kind,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','확인 좌표로 진입. 6초 후 타격, 현장조는 안전거리 유지 바란다.','support');
+   const center={x:target.x,y:target.y};s.events.push({t:s.time,impactAt:s.time+6,scene:'site',kind,target:target.id,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','확인 좌표로 진입. 6초 후 타격, 현장조는 안전거리 유지 바란다.','support');
 
   }
  }
@@ -86,7 +86,7 @@
  function step(s,op){
   if(s.done)return;s.time++;api.sceneTick?.(s,op);
   if(!s.terrain)s.terrain=JSON.parse(JSON.stringify(api.maps?.factory||MAP));api.roles?.initialize(s,op);
-  for(const u of s.units){u.baseVision=u.baseVision??u.vision;u.baseRange=u.baseRange??u.range;u.elevation=u.onRoof?u.assignment.height:(api.elevationAt?.(s.terrain,u)||0);u.vision=api.observationRange?api.observationRange(s,u):(u.baseVision||u.vision)+u.elevation*.35+(u.tacticalRole==='sniper'?12:0);u.range=(u.baseRange||u.range)+u.elevation*.2+(u.tacticalRole==='sniper'?12:0)}
+  for(const u of s.units){u.baseVision=u.baseVision??u.vision;u.baseRange=u.baseRange??u.range;u.elevation=u.onRoof?u.assignment.height:(api.elevationAt?.(s.terrain,u)||0);u.vision=api.observationRange?api.observationRange(s,u):(u.baseVision||u.vision)+u.elevation*.35+(u.tacticalRole==='sniper'?12:0);u.range=api.effectiveRange?api.effectiveRange(s,u):(u.baseRange||u.range)+u.elevation*.2+(u.tacticalRole==='sniper'?12:0)}
   const blue=s.units.filter(u=>u.faction==='blackline'),fit=blue.filter(active);
   perceive(s);api.journeyDrone?.(s,op);supports(s,op);
   const approach=[...(s.terrain.approach||[[34,58],[36,36]]),s.terrain.approachFinal||[Math.max(10,s.goal[0]-16),s.goal[1]+7]];
@@ -99,7 +99,7 @@
   for(const [index,u] of s.units.entries()){
    if(!active(u)||u.inside||u.roadOnly||u.medicalOverride===s.time)continue;if(api.agentAction?.(s,u,'site'))continue;
    const seen=s.units.filter(v=>active(v)&&foes(s,u,v)&&u.knowledge[v.id]&&s.time-u.knowledge[v.id].lastSeen<=4&&visible(s,u,v)).sort((a,b)=>dist(u,a)-dist(u,b));
-   const target=seen[0];
+   const target=api.chooseSniperTarget?api.chooseSniperTarget(s,u,seen):seen[0];
    if(u.faction==='blackline'&&!target&&api.journeyMove?.(s,u,op))continue;
    if(u.faction==='blackline'&&u.tacticalRole==='medic'&&api.roles?.handle(s,u,op))continue;
    if(u.faction==='blackline'&&u.tacticalRole==='sniper'&&!u.positionReported&&s.phase!=='접근'&&s.phase!=='복귀'&&(!target||dist(u,target)>6)&&api.roles?.handle(s,u,op))continue;
@@ -142,7 +142,7 @@
   snapshot(s);
   if(!s.journey&&s.time%60===0&&!s.done)log(s,'현장지휘관',s.phase+' 진행 중. 인원·통신 확인, 확인되지 않은 위치를 단정하지 않는다.','radio');
  }
- api.defendExtraction=function(s,op){perceive(s);api.journeyDrone?.(s,op);supports(s,op);for(const u of s.units){u.target=null;if(!active(u)||u.inside||u.roadOnly||u.boarded)continue;if(api.agentAction?.(s,u,'site'))continue;const target=s.units.filter(v=>active(v)&&!v.inside&&!v.roadOnly&&!v.boarded&&foes(s,u,v)&&u.knowledge[v.id]&&s.time-u.knowledge[v.id].lastSeen<=4&&visible(s,u,v)&&dist(u,v)<=u.range).sort((a,b)=>dist(u,a)-dist(u,b))[0];if(target&&u.ammo>0){u.target=target.id;u.heading=Math.atan2(target.y-u.y,target.x-u.x);fire(s,u,target)}else if(u.faction!=='blackline'){const memory=Object.entries(u.knowledge).find(([id,k])=>s.time-k.lastSeen<25&&s.units.some(v=>v.id===id&&foes(s,u,v)));if(memory)headingMove(s,u,[memory[1].x,memory[1].y],.14)}}};
+ api.defendExtraction=function(s,op){perceive(s);api.journeyDrone?.(s,op);supports(s,op);for(const u of s.units){u.target=null;if(!active(u)||u.inside||u.roadOnly||u.boarded)continue;if(api.agentAction?.(s,u,'site'))continue;const eligible=s.units.filter(v=>active(v)&&!v.inside&&!v.roadOnly&&!v.boarded&&foes(s,u,v)&&u.knowledge[v.id]&&s.time-u.knowledge[v.id].lastSeen<=4&&visible(s,u,v)&&dist(u,v)<=u.range).sort((a,b)=>dist(u,a)-dist(u,b)),target=api.chooseSniperTarget?api.chooseSniperTarget(s,u,eligible):eligible[0];if(target&&u.ammo>0){u.target=target.id;u.heading=Math.atan2(target.y-u.y,target.x-u.x);fire(s,u,target)}else if(u.faction!=='blackline'){const memory=Object.entries(u.knowledge).find(([id,k])=>s.time-k.lastSeen<25&&s.units.some(v=>v.id===id&&foes(s,u,v)));if(memory)headingMove(s,u,[memory[1].x,memory[1].y],.14)}}};
  api.processSupports=supports;api.captureFrame=snapshot;api.tacticalFire=fire;
  const originalOutcome=api.outcome;api.outcome=function(s){const result=originalOutcome(s);if(s.version>=4)result.hostileRetreated=(s.journey.impact.escaped||[]).filter(e=>e.faction==='insurgent').length;if(s.version>=2){result.usedMed=s.medUsed||0;result.casualties=s.units.filter(u=>u.faction==='blackline'&&(u.woundedAt!=null||u.hp<=55||u.status==='dead')).map(u=>({id:u.personId,name:u.name,dead:u.status==='dead',hp:u.hp,stabilized:!!u.stabilized,severity:(u.worstHP??u.hp)<=0?'중상':(u.worstHP??u.hp)<30?'보통':'경상'}))}return result};
  api.step=(s,op)=>s.version>=2?step(s,op):legacyStep(s,op);
