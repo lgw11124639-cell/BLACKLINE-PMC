@@ -322,7 +322,7 @@
    for(let i=0;i<slots;i++){
      const eligible=templates.filter(m=>!state.missions.some(x=>x.id===m.id)&&Number(state.reputation||0)>=(m.risk>=4?48:m.risk>=3?25:0));
      if(!eligible.length)break;
-     const weighted=eligible.map(m=>({m,weight:Math.max(1,10+Math.floor(Number(state.reputation||0)/12)-(m.risk*2)+(state.history||[]).some(h=>h.success&&h.title===m.title)?4:0)}));
+     const weighted=eligible.map(m=>({m,weight:Math.max(1,10+Math.floor(Number(state.reputation||0)/12)-(m.risk*2) + ((state.history||[]).some(h=>h.success&&h.title===m.title)?4:0))}));
      const total=weighted.reduce((a,x)=>a+x.weight,0);
      let pick=(state.day*37+i*61+Number(state.reputation||0)*13)%total;
      const selected=weighted.find(x=>(pick-=x.weight)<0)?.m||eligible[0];
