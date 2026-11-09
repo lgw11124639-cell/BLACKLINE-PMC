@@ -95,6 +95,23 @@
        fp.supportOrders.push({...r,requestedAt:155+i*22,eta:35+(fp.seed%4)*15,charged:true,reason:'현장지휘관 승인 후 집행'});
      }
      fp.supportArrivals=fp.supportOrders.map(o=>({name:o.name,arrivalAt:o.requestedAt+o.eta,onTime:o.requestedAt+o.eta<=220}));
+     // Determine injuries at the field checkpoint; commit the medical response immediately.
+     const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
+     const readiness=teamReadiness(members);
+     const missionRisk=Number(m?.risk)||1;
+     const exposure=Math.max(2,Math.min(48,11+missionRisk*5+Math.max(0,fp.riskShift)+fp.lateRisk-Math.round(readiness/13)-(fp.commandDecision==='철수'?9:0)));
+     const injured=(fp.seed*23+state.day*7)%100<exposure;
+     fp.medical={injured,exposure,personId:injured&&members.length?members[fp.seed%members.length].id:null,evacuation:false,medicalCost:0,medUsed:injured?1:0};
+     if(injured){
+       const remaining=Math.max(0,Number(op.budget)||0)-fp.reservedSupportCost;
+       if(remaining>=8500000&&state.cash>=8500000){
+         state.cash-=8500000;fp.reservedSupportCost+=8500000;
+         fp.medical.evacuation=true;fp.medical.medicalCost=8500000;
+         fp.supportOrders.push({name:'긴급 의료 후송',cost:8500000,effect:0,requestedAt:235,eta:45,charged:true,reason:'현장 의무 담당 긴급 요청'});
+       }
+       fp.events.push({stage:4,t:235,phase:'의료 대응',detail:fp.medical.evacuation?'부상 확인 · 의료 후송 승인':'부상 확인 · 현장 응급처치',riskShift:0});
+     }
+
      fp.events.push({stage:4,t:205,phase:'지원 도착 확인',detail:fp.supportArrivals.length?fp.supportArrivals.map(o=>o.name+(o.onTime?' · 판정 전 도착':' · 판정 후 도착')).join(', '):'지원 요청 없음',riskShift:0});
    }
    const detail=roll<20?'예상 외 위험 증가':roll>86?'현장 상황 안정':stage===2?'지휘관 현장 판단 갱신':'현장 상황 점검 완료';
@@ -157,21 +174,21 @@
     phases.push({t:205,phase:'상황 재평가',detail:secondaryRetreat?'상황 악화로 현장 철수 결정':latePressure?'추가 위험 확인':'현장 안정 유지',score:Math.round(continuingScore)});
     const success=!withdrew&&((seed*17+state.day*13+m.id*7)%100)<finalScore;
     const exposure=Math.max(2,Math.min(48,11+m.risk*5+pressure+latePressure-Math.round(readiness/13)-Math.round(supportBonus/2)-(withdrew?9:0)));
-    const injury=(seed*23+state.day*7)%100<exposure;
-    if(injury&&state.cash>=8500000)consider('긴급 의료 후송',8500000,'부상자 보호 및 의료 지원',true,true,0);
-    const evacuation=choices.some(c=>c.name==='긴급 의료 후송'&&c.requestedAt+c.eta<=330);
+    const injury=op.fieldProgress?.medical?!!op.fieldProgress.medical.injured:(seed*23+state.day*7)%100<exposure;
+    if(injury&&!op.fieldProgress?.medical&&state.cash>=8500000)consider('긴급 의료 후송',8500000,'부상자 보호 및 의료 지원',true,true,0);
+    const evacuation=op.fieldProgress?.medical?!!op.fieldProgress.medical.evacuation:choices.some(c=>c.name==='긴급 의료 후송'&&c.requestedAt+c.eta<=330);
     const death=(seed*31+state.day*19)%100<Math.max(1,Math.round(exposure/3)+(success?0:3)-(evacuation?7:0)-(withdrew?3:0));
     const used=Math.min(state.ammo,Math.max(45,120+seed%180-(withdrew?80:0)));
     const medUsed=injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
     phases.push({t:330,phase:'인원 보호',detail:death?'중대한 인명 피해':injury?'부상자 발생':'인원 이상 없음',score:Math.round(exposure)});
-    op.resolution={version:6,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
+    op.resolution={version:7,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
     state.cash-=Math.max(0,supportCost-(Number(op.fieldProgress?.reservedSupportCost)||0));op.actualSupportCost=supportCost;op.supportDecisions=choices;
     state.ammo-=used;state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*(withdrew?.08:.15));state.cash+=reward;
     let casualtyName=null,injuryName=null;
     if(death){const p=members[(seed+1)%members.length];p.dead=true;p.injured=false;p.dateOfDeath=state.date;p.causeOfDeath='작전 중 사망';casualtyName=p.name;state.fallen.unshift({id:p.id,name:p.name,date:state.date,mission:m.title});if(state.leaderId===p.id){const replacement=available().find(x=>x.id!==p.id);state.leaderId=replacement?.id||null}}
-    if(injury){const alive=members.filter(p=>!p.dead);if(alive.length){const p=alive[seed%alive.length];p.injured=true;injuryName=p.name}}
+    if(injury){const alive=members.filter(p=>!p.dead);if(alive.length){const p=alive.find(p=>p.id===op.resolution.medical?.personId)||alive[seed%alive.length];p.injured=true;injuryName=p.name}}
     state.reputation=Math.max(0,Math.min(100,state.reputation+(success?3:-4)-(death?4:0)));
     const leaderVoice=op.leaderName||'현장 작전지휘관';
     const logs=[
