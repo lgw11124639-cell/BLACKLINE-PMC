@@ -47,12 +47,12 @@
  function fire(s,u,target){
   if(s.time<u.nextShot)return;
   const suppressed=(s.suppression?.[u.id]||0)>s.time;
-  u.nextShot=s.time+(/저격|정밀/.test(u.role)?(api.consumeRounds?7:13):((api.consumeRounds?3:8)+Math.floor(rand(s)*5))*(suppressed?1.7:1));
+  u.nextShot=s.time+(api.weaponCycle?.(u)||(/저격|정밀/.test(u.role)?(api.consumeRounds?7:13):((api.consumeRounds?3:8)+Math.floor(rand(s)*5))*(suppressed?1.7:1)));
   const rounds=api.consumeRounds?api.consumeRounds(s,u):Math.min(u.ammo,/저격|정밀/.test(u.role)?1:3);if(!rounds){u.nextShot=s.time+1;return}if(!api.consumeRounds){u.ammo-=rounds;if(u.faction==='blackline')s.ammoUsed+=rounds;}
   const isObserved=u.faction==='blackline'||target.faction==='blackline'||s.contacts[u.id]?.visible;
-  const precision=api.isPrecisionWeapon?.(u),distanceLoss=precision?dist(u,target)/Math.max(20,u.range)*.34:dist(u,target)/60,hit=rand(s)<Math.max(.08,Math.min(precision ? .86 : .78,.30+u.skill*(u.health?.accuracyFactor??1)/160-distanceLoss+(u.elevation||0)*.005-(suppressed?.12:0)-(api.coverValue?.(s,target,u)||0)*.35));
+  const precision=api.isPrecisionWeapon?.(u),distanceLoss=precision?dist(u,target)/Math.max(20,u.range)*.34:dist(u,target)/60,hit=rand(s)<Math.max(.08,Math.min(precision ? .86 : .78,.30+u.skill*(u.health?.accuracyFactor??1)/160-distanceLoss+(api.weaponAccuracyBonus?.(s,u)||0)+(u.elevation||0)*.005-(suppressed?.12:0)-(api.coverValue?.(s,target,u)||0)*.35));
   const shot={id:'shot-'+s.time+'-'+s.events.length,t:s.time,scene:'site',kind:'shot',actor:u.id,target:target.id,from:u.faction==='blackline'||s.contacts[u.id]?.visible?[u.x,u.y]:[target.x+(u.x-target.x)/Math.max(1,dist(u,target))*6,target.y+(u.y-target.y)/Math.max(1,dist(u,target))*6],to:[target.x,target.y],rounds,hit,visible:isObserved};s.events.push(shot);
-  api.sceneShot?.(s,shot);s.mutedLog=!isObserved;const previous=target.hp;if(hit)damage(s,target,Math.round(10+rand(s)*16+(/저격|정밀/.test(u.role)?10:0)),u,shot);s.mutedLog=false;
+  api.sceneShot?.(s,shot);s.mutedLog=!isObserved;const previous=target.hp;if(hit)damage(s,target,Math.round(10+rand(s)*16+((api.isPrecisionWeapon?api.isPrecisionWeapon(u):/저격|정밀/.test(u.role))?10:0)),u,shot);s.mutedLog=false;
   if(target.faction==='blackline'&&target.hp<=55){target.woundedAt=target.woundedAt??s.time;target.worstHP=Math.min(target.worstHP??previous,target.hp)}
   if(u.tacticalRole==='support'){s.suppression[target.id]=s.time+9;if(s.time-(u.lastSuppressionReport||-100)>45){u.lastSuppressionReport=s.time;log(s,u.name,'측면 제압 사격. 아군 이동과 의무 접근을 엄호한다.','combat')}}
   if(u.faction==='blackline'&&!s.contact){s.contact=true;s.dismounted=true;log(s,u.name,'식별된 위협에 대응 사격. 무리한 추격 없이 엄폐 위치를 유지한다.','combat')}

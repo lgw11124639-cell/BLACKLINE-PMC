@@ -42,3 +42,9 @@ nav#tabs{background:#ffffffed;border-color:var(--line);box-shadow:0 -4px 25px #1
 @media(max-width:700px){.field-roster{grid-template-columns:1fr!important}.field-roster .medical-unit-card{min-height:136px}}
 
 .field-roster .medical-unit-card .medical-card-copy>strong{margin:0;align-self:flex-start}
+/* Keep issued equipment readable in a short landscape phone viewport. */
+@media(orientation:landscape) and (max-height:500px){
+ .profile-sheet .profile-top{padding:7px 12px!important}.profile-sheet .profile-top>.line{min-height:24px!important}.profile-sheet .profile-top .muted{display:none!important}
+ .profile-sheet .profile-head{margin:3px 0 0!important;gap:8px!important}.profile-sheet .profile-head .avatar{width:32px!important;height:34px!important;font-size:18px!important}.profile-sheet .profile-head h2{font-size:16px!important}.profile-sheet .profile-head p,.profile-sheet .profile-head .tag{display:none!important}
+ .profile-sheet .profile-close{padding:5px 10px!important;min-height:30px!important}.profile-sheet .profile-tabs{padding:4px 8px!important;min-height:0!important}.profile-sheet .profile-tabs button{padding:6px!important;min-height:32px!important;font-size:11px!important}.profile-sheet .profile-body{padding:10px 12px!important;min-height:0;overflow:auto!important}
+}

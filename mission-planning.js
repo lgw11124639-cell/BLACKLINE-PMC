@@ -13,7 +13,7 @@
   if(observers.length)result.push({name:'오버워치 · 관측',purpose:'선행 관측·원거리 엄호',memberIds:observers.map(p=>p.id)});
   for(const t of result){t.leaderId=members.filter(p=>t.memberIds.includes(p.id)).sort((a,b)=>rating(b)-rating(a))[0]?.id;t.operationId=op.id}return result.filter(t=>t.memberIds.length)
  }
- window.blacklinePrepareRecon=function(op,m){window.blacklineReviewArmory?.();const pool=free();if(pool.length<4||state.med<1)return false;const scouts=roster(pool,4),ammo=api.ammoPlan?.(scouts).total||180,medical=Math.min(state.med,scouts.length+2);if(window.blacklineReviewArmory&&scouts.some(p=>!p.loadout?.primary||p.loadout.primary==='미지급'))return false;if(state.ammo<ammo){window.blacklineReviewMunitions?.();if(state.ammo<ammo)return false}if(!scouts.some(p=>/정찰|수색|저격/.test(p.role||''))||!scouts.some(p=>/의무|의료|구급/.test(p.role||'')))return false;
+ window.blacklinePrepareRecon=function(op,m){window.blacklineReviewArmory?.();const pool=free();if(pool.length<4||state.med<1)return false;const scouts=roster(pool,4);if(window.blacklineEquipmentReadiness?.(scouts).length)return false;const ammo=api.ammoPlan?.(scouts).total||180,medical=Math.min(state.med,scouts.length+2);if(window.blacklineReviewArmory&&scouts.some(p=>!p.loadout?.primary||p.loadout.primary==='미지급'))return false;if(state.ammo<ammo){window.blacklineReviewMunitions?.();if(state.ammo<ammo)return false}if(!scouts.some(p=>/정찰|수색|저격/.test(p.role||''))||!scouts.some(p=>/의무|의료|구급/.test(p.role||'')))return false;
   op.reconSeed=(state.day*7919+Number(m.id||1)*101+37*4)%997;
   const child={id:op.id+'-RECON',leaderName:scouts[0].name,budget:op.budget,teamIds:scouts.map(p=>p.id),fieldProgress:{seed:op.reconSeed,supportOrders:[]}};
   const contract={...m,title:m.title+' · 사전 정찰',objectiveMode:'recon',preRecon:true,mapId:'regional',pinMap:true};
@@ -24,7 +24,7 @@
  };
  function settleRecon(op){const r=op.preRecon,s=r.operation.fieldProgress.tactical;if(r.settled)return;r.settled=true;r.status=s.retreat?'철수 보고':'정찰 보고';r.finishedDate=state.date;
   r.findings=Object.entries(s.contacts||{}).filter(([,v])=>v.identified!==false).map(([id,v])=>({id,x:v.x,y:v.y,lastSeen:v.lastSeen,source:v.source||'ground',hostile:s.units.some(u=>u.id===id&&(u.faction==='insurgent'||u.faction==='pmc'&&s.rival.hostile))}));
-  const own=s.units.filter(u=>u.faction==='blackline');state.ammo+=own.reduce((n,u)=>n+Math.max(0,u.ammo||0),0);state.med+=Math.max(0,(r.issuedMed??1)-(s.medUsed||0));
+  api.settleFieldEquipment?.(s,r.operation);const own=s.units.filter(u=>u.faction==='blackline');const ledger=api.ammoAccounting?.(s,r.operation);state.ammo+=ledger?ledger.returned:own.reduce((n,u)=>n+Math.max(0,u.ammo||0),0);if(ledger)r.ammunition=ledger;state.med+=Math.max(0,(r.issuedMed??1)-(s.medUsed||0));
   for(const u of own){const p=state.team.find(p=>p.id===u.personId);if(!p)continue;if(u.status==='dead'){p.dead=true;p.injured=false}else if(u.hp<=55||u.evacComplete){p.injured=true;if(u.health?.wounds.length){p.medicalCase={operationId:op.id+'-RECON',admittedDate:state.date,status:'진료 대기',wounds:JSON.parse(JSON.stringify(u.health.wounds)),health:JSON.parse(JSON.stringify(u.health))};window.blacklineTreatAtBase?.(p);}p.injuryDetail='사전 정찰 중 부상 · 의무 복귀';}p.fatigue=Math.min(100,(p.fatigue||0)+12)}
   op.status='정찰 후 편성';say('정찰 결과 · '+(op.contract?.title||op.id),'식별된 접촉 '+r.findings.length+'건. '+(s.retreat?'위험으로 정찰을 중단했습니다. ':'관측 경로 확인 후 복귀했습니다. ')+'미관측 구역은 미확인 상태입니다. 작전본부가 편제와 투입 가능 여부를 재검토합니다.');
  }

@@ -2,7 +2,7 @@
 (function(){const api=window.fieldSimulation,{active,dist}=api.internals,tick=api.sceneTick,handle=api.roles.handle;
  const point=p=>({x:p[0],y:p[1]}),same=(a,b)=>a&&b&&Math.hypot(a.x-b.x,a.y-b.y)<.5&&!!a.roof===!!b.roof;
  const body=u=>/저격|정밀사수|지정사수/.test(u.role||'')||u.tacticalRole==='sniper';
- api.isPrecisionWeapon=function(u){const name=u.weaponState?.weapon||u.loadout?.primary;return name?/AXMC|MRAD|TRG|정밀소총/.test(name):body(u)};
+ api.isPrecisionWeapon=function(u){const name=(api.activeWeaponState?.(u)||u.weaponState)?.weapon||u.loadout?.primary;return name?/AXMC|MRAD|TRG|정밀소총/.test(name):body(u)};
  api.effectiveRange=function(s,u){const name=u.weaponState?.weapon||u.loadout?.primary||'',high=u.onRoof||u.elevation>=4;if(api.isPrecisionWeapon(u)){const base=/MRAD/.test(name)?62:/TRG/.test(name)?56:58;return Math.min(82,base+(high?14:0));}return (u.baseRange??u.range??10)+(u.elevation||0)*.2+(body(u)?12:0);};
  const observation=api.observationRange;api.observationRange=function(s,u){const current=observation?observation(s,u):(u.baseVision||u.vision||10)+(u.elevation||0)*.35;if(!api.isPrecisionWeapon(u))return current;return Math.max(current,u.onRoof||u.elevation>=4?Math.min(95,76+(u.elevation||0)*.3):58);};
  api.chooseSniperTarget=function(s,u,candidates){if(!body(u))return candidates[0]||null;
