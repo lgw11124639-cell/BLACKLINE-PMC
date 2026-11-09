@@ -12,3 +12,67 @@ main[data-page=observation]>.workspace-breadcrumb,main[data-page=observation]>.d
 /* Journey stages and discovered-object interactions. */
 .field-journey-panel{margin:0 0 16px;border:1px solid #e3eaf3;border-radius:11px;background:linear-gradient(125deg,#f8faff,#fff);overflow:hidden}.journey-steps{display:flex;list-style:none;padding:12px 14px;margin:0;gap:8px;border-bottom:1px solid #e8edf6;justify-content:space-between}.journey-steps li{display:flex;align-items:center;gap:6px;font-size:9px;color:#a1aec1;white-space:nowrap}.journey-steps li span{font-size:8px;color:#a8b5c9;letter-spacing:.5px}.journey-steps .current{color:#416ec2;font-weight:700}.journey-steps .current span{color:#416ec2}.journey-steps .done,.journey-steps .done span{color:#649285}.journey-current{padding:15px 17px 12px;display:flex;align-items:center;justify-content:space-between;gap:15px}.journey-current small{font-size:7px;letter-spacing:1.1px;color:#91a3bf}.journey-current strong{display:block;color:#3b547c;font-size:15px;margin:5px 0 0;letter-spacing:-.4px}.journey-current p{font-size:9px;color:#8c9db7;margin:6px 0 0;line-height:1.6}.journey-current>b{font-size:29px;font-weight:450;color:#557bb5;letter-spacing:-1px;font-variant-numeric:tabular-nums}.journey-current em{font-style:normal;font-size:11px;margin-left:3px;color:#9aaecb}.journey-progress{height:3px;background:#eaf0f7}.journey-progress i{display:block;height:100%;background:linear-gradient(90deg,#7594ca,#78b9b0);transition:width .65s linear}.journey-intel{font-size:9px;color:#5c8f9d;padding:9px 17px;border-top:1px solid #e3edf0;background:#f1f8f8}.scene-arrival{animation:sceneArrival .6s ease-out}@keyframes sceneArrival{from{opacity:.4;filter:brightness(1.16)}to{opacity:1;filter:brightness(1)}}.field-transmission.ack{border-color:#b6cdbf}.field-transmission.ack p{color:#769083}.field-transmission.command{border-color:#8ea9d2}.field-transmission.support{border-color:#c6aa72}
 @media(max-width:700px){.journey-steps{gap:6px;padding:10px;flex-wrap:wrap;justify-content:flex-start}.journey-steps li{font-size:8px;gap:4px;padding-right:8px}.journey-current{padding:12px}.journey-current strong{font-size:13px}.journey-current p{font-size:8px}.journey-current>b{font-size:24px}.field-journey-panel{margin-bottom:12px}.journey-intel{font-size:8px;padding:8px 12px}}@media(prefers-reduced-motion:reduce){.scene-arrival{animation:none}.journey-progress i{transition:none}}
+/* Phone observation occupies its own viewport; secondary information lives in switchable panes. */
+.field-mobile-panels{display:none}
+@media(max-width:700px), (max-width:1000px) and (max-height:500px){
+ body.field-observing{height:100dvh;overflow:hidden}
+ body.field-observing>header{height:calc(70px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+ body.field-observing nav#tabs{display:none!important}
+ body.field-observing main[data-page=observation]{padding:8px max(10px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));max-width:none;width:100%;margin:0}
+ body.field-observing .field-console.live-only{height:calc(100dvh - 86px - env(safe-area-inset-top) - env(safe-area-inset-bottom));min-height:360px;display:flex;flex-direction:column;overflow:hidden;border-radius:14px}
+ body.field-observing .field-console-head{padding:12px 14px;gap:10px;flex:none;min-height:50px}
+ body.field-observing .field-console-head h2{font-size:17px;margin:0;line-height:1.4}
+ body.field-observing .field-console-head small,body.field-observing .field-console-head p{display:none}
+ body.field-observing .field-mode{font-size:8px;padding:5px 7px}
+ body.field-observing .field-live-meta{flex:none;padding:9px 12px;min-height:34px}
+ body.field-observing .field-mobile-panels{display:flex;gap:4px;flex:none;padding:5px 8px;border-bottom:1px solid #e7edf5;background:#fff}
+ .field-mobile-panels button{flex:1;min-height:38px;border:0;border-radius:7px;background:#f4f6fb;color:#7889a5;font-size:12px;font-weight:600}
+ .field-mobile-panels button[aria-pressed=true]{background:#eaf0ff;color:#3e65c5}
+ .field-mobile-panels .field-mobile-home{flex:0 0 64px;background:white;font-size:11px}
+ body.field-observing .field-layout{display:flex;flex:1;min-height:0;overflow:hidden}
+ body.field-observing .field-map-column{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;padding:9px;overflow:auto;overscroll-behavior:contain}
+ body.field-observing .field-journey-panel{display:none}
+ body.field-observing .field-map-toolbar{flex:none;margin:0 0 7px}
+ body.field-observing .field-map-toolbar>span{display:none}
+ body.field-observing .field-map-toolbar>div{width:100%;justify-content:space-between}
+ body.field-observing .field-map-toolbar button{height:38px;min-width:36px;padding:4px 9px;font-size:11px}
+ body.field-observing .field-map-shell{flex:1;min-height:120px;aspect-ratio:auto;max-height:none;height:auto}
+ body.field-observing .field-map-stamp{display:none}
+ body.field-observing .field-legend{flex:none;font-size:7px;gap:10px;padding:7px 0}
+ body.field-observing .field-map-hint{display:none}
+ body.field-observing .field-kpis{flex:none;margin-top:6px;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
+ body.field-observing .field-kpis>div{padding:8px 5px;min-width:0}
+ body.field-observing .field-kpis small{font-size:7px}
+ body.field-observing .field-kpis strong{font-size:9px;line-height:1.4;overflow-wrap:anywhere}
+ body.field-observing .field-console[data-mobile-panel=map] #field-roster,
+ body.field-observing .field-console[data-mobile-panel=map] #field-unit-detail,
+ body.field-observing .field-console[data-mobile-panel=map] .field-radio-column{display:none}
+ body.field-observing .field-console[data-mobile-panel=crew] .field-map-toolbar,
+ body.field-observing .field-console[data-mobile-panel=crew] .field-map-shell,
+ body.field-observing .field-console[data-mobile-panel=crew] .field-legend,
+ body.field-observing .field-console[data-mobile-panel=crew] .field-kpis,
+ body.field-observing .field-console[data-mobile-panel=crew] .field-radio-column{display:none}
+ body.field-observing .field-console[data-mobile-panel=crew] #field-roster{margin:0;flex:none}
+ body.field-observing .field-console[data-mobile-panel=radio] .field-map-column{display:none}
+ body.field-observing .field-console[data-mobile-panel=radio] .field-radio-column{display:flex;flex:1;min-height:0;width:100%;overflow:hidden}
+ body.field-observing .field-radio-title{flex:none;padding:12px 15px}
+ body.field-observing .field-radio-title h3{margin:0;font-size:14px}
+ body.field-observing .field-radio-title small{display:none}
+ body.field-observing .field-radio{height:auto;max-height:none;min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px 12px}
+ body.field-observing .field-after-action{display:none}
+ body.field-observing .field-console.field-focus{height:100dvh;max-height:100dvh;min-height:0;inset:0;border-radius:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+ body.field-observing .field-standby{min-height:0;flex:1;padding:12px}
+}
+
+@media(max-width:1000px) and (max-height:500px){
+ body.field-observing>header{display:none}
+ body.field-observing .field-console.live-only{height:calc(100dvh - 16px - env(safe-area-inset-bottom));min-height:0}
+ body.field-observing .field-console-head{min-height:0;padding:7px 12px}
+ body.field-observing .field-console-head h2{font-size:14px}
+ body.field-observing .field-live-meta{min-height:26px;padding:5px 12px}
+ body.field-observing .field-mobile-panels{padding:3px 8px}
+ body.field-observing .field-mobile-panels button{min-height:32px}
+ body.field-observing .field-map-toolbar button{height:32px}
+ body.field-observing .field-legend,body.field-observing .field-kpis{display:none}
+ body.field-observing .field-map-shell{min-height:0}
+}

@@ -14,7 +14,7 @@ with sync_playwright() as p:
  assert '차량 이동' not in page.locator('.field-roster').inner_text()
  assert patient.locator('svg').count()==1
  page.screenshot(path='/tmp/blackline-v41-anatomy-ammo-desktop.png',full_page=True)
- page.set_viewport_size({'width':390,'height':844});page.wait_for_timeout(200)
+ page.set_viewport_size({'width':390,'height':844});page.evaluate("fieldMobilePanel('crew')");page.wait_for_timeout(200)
  assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
  page.screenshot(path='/tmp/blackline-v41-anatomy-ammo-mobile.png',full_page=True)
  page.evaluate("state.candidates.push({id:999,name:'오지훈 99',role:'소총수',skill:75,salary:60000000});save()")

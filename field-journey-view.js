@@ -6,16 +6,16 @@
  const phaseName={outbound:'작전지 이동',site:'작전지역 수색',entry:'목표 건물 진입',interior:'건물 내부 수색',exit:'건물 이탈',extraction:'복귀 집결지 이동',boarding:'차량 탑승',homebound:'본부 복귀',complete:'복귀 완료'};
  function draw(canvas,r,t,options){const s=r.tactical,j=s.journey,{a,b,p}=options.frameAt(s,t),f=a.journey||s.liveFrame.journey,next=b.journey||f;if(!f)return;
   const regional=['outbound','homebound','complete'].includes(f.stage),inside=!regional&&['entry','interior','exit'].includes(f.stage)&&f.inside.some(u=>u.faction==='blackline'),scene=regional?'regional':inside?'interior':'site',map=regional?j.transport.map:inside?j.interior.map:s.terrain;
-  const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio||1,1.5),z=options.zoom;
+  const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(devicePixelRatio||1,1.5),z=options.zoom,baseScale=Math.max(w/map.width,h/map.height);
   if(!w||!h)return;if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)}
   const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);c.fillStyle='#e7e8e2';c.fillRect(0,0,w,h);
   const camera=window.fieldCameraState||{follow:true};let cx=map.width/2,cy=map.height/2;
   const positions=regional?(f.road.length?f.road.filter(u=>u.faction==='blackline'):[{id:'vehicle',...f.transport}]):inside?f.inside.filter(u=>u.faction==='blackline'&&u.hp>0):s.units.filter(u=>u.faction==='blackline'&&(u.joinedAt||0)<=t).map(u=>{const i=s.units.indexOf(u);return {id:u.id,x:a.units[i][0],y:a.units[i][1]}}),focus=positions.find(u=>u.id===options.selectedUnit),main=positions.filter(u=>j.team.includes(u.id)),team=main.length?main:positions;
   const desired=focus||regional&&!f.transport.stopped?focus||f.transport:team.length?{x:team.reduce((n,u)=>n+u.x,0)/team.length,y:team.reduce((n,u)=>n+u.y,0)/team.length}:{x:cx,y:cy};
   if(camera.follow){cx=desired.x;cy=desired.y;if(camera.scene===scene&&camera.x!=null){cx=camera.x+(cx-camera.x)*.18;cy=camera.y+(cy-camera.y)*.18}}else if(camera.scene===scene&&camera.x!=null){cx=camera.x;cy=camera.y}
-  cx=Math.max(map.width/2/z,Math.min(map.width-map.width/2/z,cx));cy=Math.max(map.height/2/z,Math.min(map.height-map.height/2/z,cy));Object.assign(camera,{x:cx,y:cy,width:map.width,height:map.height,scene});art.beginFrame?.();
-  const screen=(x,y)=>[(x-cx)*z/map.width*w+w/2,(y-cy)*z/map.height*h+h/2],scale=w/map.width*z;
-  const im=art.image(map.image);c.save();c.translate(w/2,h/2);c.scale(z,z);c.translate(-cx/map.width*w,-cy/map.height*h);if(im.complete&&im.naturalWidth){if(map.mirrorX){c.translate(w,0);c.scale(-1,1)}c.drawImage(im,0,0,w,h);}c.restore();
+  const halfW=w/baseScale/z/2,halfH=h/baseScale/z/2;cx=halfW>=map.width/2?map.width/2:Math.max(halfW,Math.min(map.width-halfW,cx));cy=halfH>=map.height/2?map.height/2:Math.max(halfH,Math.min(map.height-halfH,cy));Object.assign(camera,{x:cx,y:cy,width:w/baseScale,height:h/baseScale,scene});art.beginFrame?.();
+  const screen=(x,y)=>[(x-cx)*z*baseScale+w/2,(y-cy)*z*baseScale+h/2],scale=baseScale*z;
+  const im=art.image(map.image);c.save();c.translate(w/2,h/2);c.scale(z,z);c.translate(-cx*baseScale,-cy*baseScale);if(im.complete&&im.naturalWidth){if(map.mirrorX){c.translate(map.width*baseScale,0);c.scale(-1,1)}c.drawImage(im,0,0,map.width*baseScale,map.height*baseScale);}c.restore();
   const root=canvas.closest('.field-console'),shell=canvas.parentElement,key=r.id+':'+scene;
   if(sceneKey!==key||shell.dataset.scene!==scene){sceneKey=key;shell.dataset.scene=scene;shell.classList.remove('scene-arrival');void shell.offsetWidth;shell.classList.add('scene-arrival')}
   const toolbar=root.querySelector('.field-map-toolbar>span');if(toolbar){const text=regional?'REGIONAL / '+(f.stage==='homebound'?'본부 복귀 경로':'작전지 이동 경로'):inside?'INTERIOR / '+j.building.name+' 상세':s.terrain.label;if(toolbar.textContent!==text)toolbar.textContent=text}

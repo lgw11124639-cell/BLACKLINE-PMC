@@ -1,9 +1,11 @@
 /* One observation surface for live coordinate simulation, saved replays and explicitly separate training. */
 (function(){
  const esc=x=>escapeHTML(String(x??'')),clock=t=>String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+ let mobilePanel='map';
  let replayMode=false,expanded=false,savedView=null;try{savedView=JSON.parse(sessionStorage.getItem('blackline_field_view')||'null')}catch(e){}
- let selected=savedView?.open?savedView.id:null,demo=null,playhead=savedView?.time||0,playing=true,follow=true,speed=1,zoom=1.8,cameraX=50,cameraY=33.333,mapWidth=100,mapHeight=66.667,labels=true,selectedUnit=null,raf=null,last=0,painted=0,radioKey='',rosterKey='',lastTime=-1,changedAt=0,lastPersist=0;
+ let selected=savedView?.open?savedView.id:null,demo=null,playhead=savedView?.time||0,playing=true,follow=true,speed=1,zoom=1.8,cameraX=50,cameraY=33.333,mapScale=1,mapWidth=100,mapHeight=66.667,labels=true,selectedUnit=null,raf=null,last=0,painted=0,radioKey='',rosterKey='',lastTime=-1,changedAt=0,lastPersist=0;
  window.fieldCameraState={follow:true,x:null,y:null,width:100,height:66.667,dragged:false};
+ for(const op of state.operations||[])for(const s of [op.fieldProgress?.tactical,op.preRecon?.operation.fieldProgress.tactical])if(s&&!s.done)window.fieldSimulation.captureFrame(s);
  const viewRoot=()=>replayMode?document.getElementById('field-recording-root'):app;
  const fieldElement=id=>viewRoot()?.querySelector('#'+id);
  const operatorImage=new Image();operatorImage.src='images/operators/pmc-directions.webp';
@@ -35,9 +37,10 @@
   const mode=replayMode,old=selected;replayMode=false;
   const session=record()?.id||'standby';const template=document.createElement('template');template.innerHTML=archiveMarkup();replayMode=mode;if(mode)selected=old;
   template.content.querySelector('.field-sessionbar')?.remove();
-  const consoleEl=template.content.querySelector('.field-console');consoleEl.classList.add('live-only');consoleEl.dataset.session=String(session);
+  const consoleEl=template.content.querySelector('.field-console');consoleEl.classList.add('live-only');consoleEl.dataset.session=String(session);consoleEl.dataset.mobilePanel=mobilePanel;
   template.content.querySelectorAll('.field-playback').forEach(el=>el.hidden=true);
   template.content.querySelector('.field-console-head').insertAdjacentHTML('afterend','<div class="field-live-meta"><span>REAL TIME / 시각 확인 기반</span><strong data-live-field-time>00:00 / 현장 진행</strong><span data-live-field-phase>출동 대기</span></div>');
+  template.content.querySelector('.field-live-meta').insertAdjacentHTML('afterend','<nav class="field-mobile-panels" aria-label="작전 화면 전환">'+[['map','지도'],['crew','대원'],['radio','무전']].map(([id,title])=>'<button type="button" data-mobile-panel="'+id+'" aria-pressed="'+(mobilePanel===id)+'" onclick="fieldMobilePanel(\''+id+'\')">'+title+'</button>').join('')+'<button type="button" class="field-mobile-home" onclick="go(\'home\')" aria-label="본부 메뉴로 이동">본부 ↗</button></nav>');
   const empty=template.content.querySelector('.field-empty');
   if(empty){empty.className='field-standby';empty.innerHTML='<div><span>LIVE FIELD / STANDBY</span><h3>실시간 현장 연결 대기</h3><p data-live-departure>준비를 마친 팀이 출발하면 현재 작전만 표시됩니다.</p></div>'}
   const info=template.content.querySelector('.field-console-head p');if(info&&record())info.textContent='출동부터 내부 수색·과업·차량 복귀까지 · 완료 시간은 실제 현장 진행에 따라 달라집니다.';
@@ -57,6 +60,7 @@
   app.querySelectorAll('[id^="field-"]').forEach(el=>el.id='background-'+el.id);app.inert=true;document.getElementById('tabs').inert=true;document.body.classList.add('field-recording-open');overlay.querySelector('button')?.focus({preventScroll:true});start();
  };
  window.closeFieldReplay=function(){document.getElementById('field-recording-root')?.remove();replayMode=false;playing=true;follow=true;selected=activeOps()[0]?.id||null;expanded=false;app.inert=false;document.getElementById('tabs').inert=false;document.body.classList.remove('field-recording-open','field-focus-open');render()};
+ window.fieldMobilePanel=function(panel){if(!['map','crew','radio'].includes(panel))return;const previousPanel=mobilePanel;mobilePanel=panel;const root=viewRoot();root?.querySelector('.field-console')?.setAttribute('data-mobile-panel',panel);root?.querySelectorAll('[data-mobile-panel]').forEach(button=>{if(button.tagName==='BUTTON')button.setAttribute('aria-pressed',String(button.dataset.mobilePanel===panel))});update();if(panel==='radio'&&previousPanel!=='radio')requestAnimationFrame(()=>{const feed=fieldElement('field-radio');if(feed)feed.scrollTop=feed.scrollHeight});};
  window.fieldToggle=()=>{if(!replayMode)return;playing=!playing;if(record()?.live)follow=playing;update()};
  window.fieldSeek=v=>{if(!replayMode)return;playhead=Math.max(0,Number(v)||0);playing=false;follow=false;update()};
  window.fieldRestart=()=>{if(!replayMode)return;playhead=0;follow=false;playing=true;radioKey='';update()};
@@ -64,24 +68,24 @@
  window.fieldFollow=()=>{follow=true;playing=true;update()};
  window.fieldExpand=()=>{expanded=!expanded;viewRoot()?.querySelector('.field-console')?.classList.toggle('field-focus',expanded);document.body.classList.toggle('field-focus-open',expanded);const b=viewRoot()?.querySelector('[onclick="fieldExpand()"]');if(b)b.textContent=expanded?'닫기':'크게'};
  window.fieldCameraToggle=()=>{const camera=window.fieldCameraState;camera.follow=!camera.follow;viewRoot()?.querySelectorAll('[data-camera-toggle]').forEach(b=>{b.textContent=camera.follow?'추적 고정':'자유 시점';b.setAttribute('aria-pressed',String(camera.follow))});const canvas=fieldElement('field-canvas');if(canvas)canvas.style.touchAction=camera.follow?'pan-y':'none';update()};
- window.fieldZoom=d=>{zoom=Math.max(1,Math.min(4,zoom+d))};
+ window.fieldZoom=d=>{zoom=Math.max(matchMedia('(max-width:700px), (max-width:1000px) and (max-height:500px)').matches ? .25 : 1,Math.min(4,zoom+d))};
  window.fieldLabels=()=>{labels=!labels;const b=viewRoot()?.querySelector('[onclick="fieldLabels()"]');if(b)b.setAttribute('aria-pressed',String(labels))};
  function frameAt(s,t){if(s.liveFrame&&t>=s.liveFrame.t&&!s.done)return {a:s.liveFrame,b:s.liveFrame,p:1};if(s.version>=2&&!s.done&&s.previousLiveFrame&&t>=s.previousLiveFrame.t){const a=s.previousLiveFrame,b=s.liveFrame;return {a,b,p:Math.max(0,Math.min(1,(t-a.t)/Math.max(1,b.t-a.t)))}}let a=s.frames[0]||s.previousLiveFrame||s.liveFrame,b=a;for(const f of s.frames){if(f.t<=t)a=f;if(f.t>=t){b=f;break}b=f}return {a,b,p:b.t===a.t?1:Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t)))}}
- function screen(canvas,x,y){return [(x-cameraX)*zoom/mapWidth*canvas.clientWidth+canvas.clientWidth/2,(y-cameraY)*zoom/mapHeight*canvas.clientHeight+canvas.clientHeight/2]}
+ function screen(canvas,x,y){return [(x-cameraX)*zoom*mapScale+canvas.clientWidth/2,(y-cameraY)*zoom*mapScale+canvas.clientHeight/2]}
  function drawMap(canvas,r,t){
   const s=r.tactical;if(s?.journey&&window.FieldJourneyView)return FieldJourneyView.draw(canvas,r,t,{zoom,labels,selectedUnit,frameAt,clock,replayMode});const terrain=s?.terrain||fieldSimulation.maps?.factory||fieldSimulation.MAP,mapImage=imageFor(terrain.image),dpr=Math.min(devicePixelRatio||1,1.5),w=canvas.clientWidth,h=canvas.clientHeight;
-  mapWidth=terrain.width;mapHeight=terrain.height;const scale=canvas.parentElement.querySelector('.field-map-scale');const scaleText='GRID '+mapWidth+' × '+Number(mapHeight.toFixed(1));if(scale&&scale.textContent!==scaleText)scale.textContent=scaleText;
+  mapWidth=terrain.width;mapHeight=terrain.height;mapScale=Math.max(w/mapWidth,h/mapHeight);const scale=canvas.parentElement.querySelector('.field-map-scale');const scaleText='GRID '+mapWidth+' × '+Number(mapHeight.toFixed(1));if(scale&&scale.textContent!==scaleText)scale.textContent=scaleText;
   if(!w||!h)return;if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)}
   const c=canvas.getContext('2d');if(!c)return;c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);c.fillStyle='#e1e7dc';c.fillRect(0,0,w,h);
   cameraX=mapWidth/2;cameraY=mapHeight/2;
-  if(s&&zoom>1){const sample=frameAt(s,t),camera=window.fieldCameraState,key='legacy-'+s.map;let desired=null;
+  if(s){const sample=frameAt(s,t),camera=window.fieldCameraState,key='legacy-'+s.map;let desired=null;
    if(!selectedUnit&&sample.a.recovery&&sample.a.recovery.stage!=='complete'){const r=sample.a.recovery,n=sample.b.recovery||r;desired={x:r.position.x+(n.position.x-r.position.x)*sample.p,y:r.position.y+(n.position.y-r.position.y)*sample.p};}
    else if(selectedUnit){const i=s.units.findIndex(u=>u.id===selectedUnit),v=sample.a.units[i],n=sample.b.units[i]||v;if(v)desired={x:v[0]+(n[0]-v[0])*sample.p,y:v[1]+(n[1]-v[1])*sample.p};}
    if(!desired){const own=s.units.map((u,i)=>({u,v:sample.a.units[i]})).filter(o=>o.u.faction==='blackline'&&o.v&&(o.v[7]?o.v[7].f:o.v[2]>55));if(own.length)desired={x:own.reduce((n,o)=>n+o.v[0],0)/own.length,y:own.reduce((n,o)=>n+o.v[1],0)/own.length};}
    if(camera.follow&&desired){cameraX=desired.x;cameraY=desired.y;}else if(!camera.follow&&camera.scene===key&&camera.x!=null){cameraX=camera.x;cameraY=camera.y;}
-   cameraX=Math.max(mapWidth/2/zoom,Math.min(mapWidth-mapWidth/2/zoom,cameraX));cameraY=Math.max(mapHeight/2/zoom,Math.min(mapHeight-mapHeight/2/zoom,cameraY));Object.assign(camera,{x:cameraX,y:cameraY,width:mapWidth,height:mapHeight,scene:key});
+   const halfW=w/mapScale/zoom/2,halfH=h/mapScale/zoom/2;cameraX=halfW>=mapWidth/2?mapWidth/2:Math.max(halfW,Math.min(mapWidth-halfW,cameraX));cameraY=halfH>=mapHeight/2?mapHeight/2:Math.max(halfH,Math.min(mapHeight-halfH,cameraY));Object.assign(camera,{x:cameraX,y:cameraY,width:w/mapScale,height:h/mapScale,scene:key});
   }
-  c.save();c.translate(w/2,h/2);c.scale(zoom,zoom);c.translate(-cameraX/mapWidth*w,-cameraY/mapHeight*h);if(mapImage.complete&&mapImage.naturalWidth)c.drawImage(mapImage,0,0,w,h);else{c.fillStyle='#bdc7c9';c.fillRect(0,h*31/66.667,w,h*6/66.667);c.fillRect(w*.64,0,w*.06,h);c.fillStyle='#b4c0b5';for(const b of terrain.buildings)c.fillRect(b[0]/mapWidth*w,b[1]/mapHeight*h,(b[2]-b[0])/mapWidth*w,(b[3]-b[1])/mapHeight*h)}c.restore();
+  c.save();c.translate(w/2,h/2);c.scale(zoom,zoom);c.translate(-cameraX*mapScale,-cameraY*mapScale);if(mapImage.complete&&mapImage.naturalWidth)c.drawImage(mapImage,0,0,mapWidth*mapScale,mapHeight*mapScale);else{c.fillStyle='#bdc7c9';c.fillRect(0,h*31/66.667,w,h*6/66.667);c.fillRect(w*.64,0,w*.06,h);c.fillStyle='#b4c0b5';for(const b of terrain.buildings)c.fillRect(b[0]/mapWidth*w,b[1]/mapHeight*h,(b[2]-b[0])/mapWidth*w,(b[3]-b[1])/mapHeight*h)}c.restore();
   c.fillStyle='rgba(245,249,255,.08)';c.fillRect(0,0,w,h);
   c.strokeStyle='rgba(255,255,255,.23)';c.lineWidth=.5;for(let i=1;i<10;i++){c.beginPath();c.moveTo(i*w/10,0);c.lineTo(i*w/10,h);c.stroke()}for(let i=1;i<7;i++){c.beginPath();c.moveTo(0,i*h/7);c.lineTo(w,i*h/7);c.stroke()}
   if(!s)return;
@@ -89,7 +93,7 @@
   if(labels)for(const spot of terrain.positions?.highGrounds||[]){const point=screen(canvas,spot.x,spot.y);label(c,'△ '+spot.id,point[0],point[1],'#8b744a')}
   if(selectedUnit){const order=(s.orders||[]).filter(o=>o.actor===selectedUnit&&o.t<=t).slice(-1)[0];const index=s.units.findIndex(u=>u.id===selectedUnit);if(order&&a.units[index]){const from=screen(canvas,a.units[index][0],a.units[index][1]),to=screen(canvas,...order.position);c.setLineDash([4,5]);c.strokeStyle='#4c75b577';c.lineWidth=1;c.beginPath();c.moveTo(...from);c.lineTo(...to);c.stroke();c.setLineDash([]);label(c,order.kind,to[0]+5,to[1]-10,'#5275a2')}}
   FieldArt.marker(c,gx,gy,'임무 목표',a.objective,'#6a8bba','◆');
-  if(window.FieldArt){FieldArt.aim(c,a.aims, (x,y)=>screen(canvas,x,y),t);FieldArt.effects(c,s,t,(x,y)=>screen(canvas,x,y),'site',w,h,w/mapWidth*zoom);}
+  if(window.FieldArt){FieldArt.aim(c,a.aims, (x,y)=>screen(canvas,x,y),t);FieldArt.effects(c,s,t,(x,y)=>screen(canvas,x,y),'site',w,h,mapScale*zoom);}
   if(a.recovery&&a.recovery.stage!=='complete'){const r=a.recovery,n=b.recovery||r,x=r.position.x+(n.position.x-r.position.x)*p,y=r.position.y+(n.position.y-r.position.y)*p;FieldArt.vehicle(c,...screen(canvas,x,y),r.position.heading,50*Math.sqrt(zoom));FieldArt.label(c,(r.blocked?'회수 중단':r.stage==='returning'?'환자 탑승 · 본부 복귀':r.stage==='loading'?'환자 탑승 중':'회수 차량 접근')+' · 약 '+Math.ceil(r.eta/60)+'분',...screen(canvas,x+5,y-5),'#527c8d');}
   s.units.forEach((u,i)=>{if((u.joinedAt||0)>t||a.recovery&&a.recovery.stage!=='complete'&&[...(a.recovery.stage==='boarding'?[]:a.recovery.crewIds),...a.recovery.loadedIds].includes(u.id))return;
    const v=a.units[i],next=b.units[i]||v;if(!v)return;
@@ -121,8 +125,8 @@
    const used=s.events.filter(e=>e.kind==='shot'&&e.actor.startsWith('bl')&&e.t<=playhead).reduce((n,e)=>n+e.rounds,0);fieldElement('field-ammo').textContent=used+'발';
    const known=s.radio.some(e=>e.kind==='contact'&&e.msg.includes(s.rival.name)&&e.t<=playhead);const jf=a.journey,enemyCount=jf?((['outbound','homebound'].includes(jf.stage)?jf.road:['entry','interior','exit'].includes(jf.stage)&&jf.inside.some(u=>u.faction==='blackline')?jf.inside:(a.contacts||[]).filter(c=>c[4]&&c[6]!==false).map(c=>({faction:s.units.find(u=>u.id===c[0])?.faction}))).filter(u=>u.faction==='insurgent').length):(a.contacts||[]).filter(c=>c[4]&&c[6]!==false&&s.units.find(u=>u.id===c[0])?.faction==='insurgent').length;fieldElement('field-factions').textContent=enemyCount?'적 관측 '+enemyCount+'명':known?(s.rival.hostile?'PMC 적대 접촉':'PMC 식별 · 중립'):'접촉 확인 중';
    const rosterStamp=String(selected)+':'+a.t+':'+selectedUnit;
-   if(rosterKey!==rosterStamp){rosterKey=rosterStamp;fieldElement('field-roster').innerHTML=blue.map(u=>FieldMedicalUI.card(u,u.view,states[u.view[4]]||u.view[4],selectedUnit===u.id)).join('');
-   viewRoot().querySelectorAll('[data-unit]').forEach(button=>button.onclick=()=>{selectedUnit=button.dataset.unit;update()});}
+   if(rosterKey!==rosterStamp){rosterKey=rosterStamp;const scroller=viewRoot()?.querySelector('.field-map-column'),scrollTop=scroller?.scrollTop||0;fieldElement('field-roster').innerHTML=blue.map(u=>FieldMedicalUI.card(u,u.view,states[u.view[4]]||u.view[4],selectedUnit===u.id)).join('');
+   viewRoot().querySelectorAll('[data-unit]').forEach(button=>button.onclick=()=>{selectedUnit=button.dataset.unit;update()});if(scroller&&scroller.scrollTop!==scrollTop)scroller.scrollTop=scrollTop;}
    const unit=blue.find(u=>u.id===selectedUnit),aims=a.journey?([...a.journey.aims,...(a.journey.roadAims||[]),...(a.aims||[])]):(a.aims||[]),aim=aims.find(x=>x.actor===selectedUnit),targetName=aim?s.units.find(u=>u.id===aim.target)?.name:null;fieldElement('field-unit-detail').innerHTML=unit?'<strong>'+esc(unit.name)+' · '+esc(unit.role)+' · '+esc((s.orders||[]).filter(o=>o.actor===unit.id&&o.t<=playhead).slice(-1)[0]?.kind||'임무 수행')+'</strong><span>좌표 '+unit.view[0].toFixed(1)+' / '+unit.view[1].toFixed(1)+' · '+FieldMedicalUI.ammo(unit.view[8],unit.view[3])+(targetName?' · 조준 '+esc(targetName):'')+' · 상대 고도 '+Number(unit.view[6]||0)+(a.journey?.ambient?.sectors.find(v=>v.id===unit.id)?' · '+esc(a.journey.ambient.sectors.find(v=>v.id===unit.id).sector):'')+' · '+esc(states[unit.view[4]]||unit.view[4])+'</span>':'대원 또는 지도 마커를 선택하면 좌표와 잔탄을 확인할 수 있습니다.';
    fieldElement('field-after-action').textContent=!r.live&&playhead>=s.duration?(r.training?'훈련 종료 · 실제 정산 없음':(r.success?'임무 성공':'임무 목표 미달')+' · 탄약 '+(r.used??s.ammoUsed)+'발 · 기록 재생 완료'):'최종 결과는 작전 종료 시 확인할 수 있습니다.';
   }
@@ -137,7 +141,7 @@
  function start(){viewRoot()?.querySelectorAll('[data-camera-toggle]').forEach(b=>{b.textContent=window.fieldCameraState.follow?'추적 고정':'자유 시점';b.setAttribute('aria-pressed',String(window.fieldCameraState.follow))});viewRoot()?.querySelector('.field-console')?.classList.toggle('field-focus',expanded);document.body.classList.toggle('field-focus-open',expanded);if(raf)cancelAnimationFrame(raf);last=performance.now();painted=0;radioKey='';rosterKey='';raf=requestAnimationFrame(loop);const canvas=fieldElement('field-canvas');if(canvas){let drag=null;canvas.onpointerdown=e=>{window.fieldCameraState.dragged=false;if(!window.fieldCameraState.follow){drag={x:e.clientX,y:e.clientY};canvas.setPointerCapture?.(e.pointerId)}};canvas.onpointermove=e=>{if(!drag)return;const camera=window.fieldCameraState,dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>2)camera.dragged=true;camera.x-=dx/canvas.clientWidth*camera.width/zoom;camera.y-=dy/canvas.clientHeight*camera.height/zoom;drag={x:e.clientX,y:e.clientY};update()};canvas.onpointerup=canvas.onpointercancel=()=>drag=null;}if(canvas)canvas.onclick=e=>{if(window.fieldCameraState.dragged)return;const r=record();if(!r?.tactical)return;const a=frameAt(r.tactical,playhead).a,box=canvas.getBoundingClientRect();if(r.tactical.journey){selectedUnit=FieldJourneyView.hitTest(e.clientX-box.left,e.clientY-box.top);update();return}let nearest=null,d=22;r.tactical.units.forEach((u,i)=>{if(u.faction!=='blackline')return;const p=screen(canvas,a.units[i][0],a.units[i][1]),distance=Math.hypot(p[0]-(e.clientX-box.left),p[1]-(e.clientY-box.top));if(distance<d){nearest=u.id;d=distance}});selectedUnit=nearest;update()}}
  const oldHome=home;home=function(){const html=oldHome();return html.replace('<div class="stats">',launchMarkup()+'<div class="stats">')};
  let mountedCanvas=null;
- window.blacklineRefreshObservation=function(){const canvas=fieldElement('field-canvas');if(tab==='observation'||replayMode){if(canvas!==mountedCanvas||!raf){mountedCanvas=canvas;start()}}else{if(raf)cancelAnimationFrame(raf);raf=null;mountedCanvas=null;expanded=false;document.body.classList.remove('field-focus-open');try{sessionStorage.removeItem('blackline_field_view')}catch(e){}}};
+ window.blacklineRefreshObservation=function(){document.body.classList.toggle('field-observing',tab==='observation'&&!replayMode);const canvas=fieldElement('field-canvas');if(tab==='observation'||replayMode){if(canvas!==mountedCanvas||!raf){mountedCanvas=canvas;start()}}else{if(raf)cancelAnimationFrame(raf);raf=null;mountedCanvas=null;expanded=false;document.body.classList.remove('field-focus-open');try{sessionStorage.removeItem('blackline_field_view')}catch(e){}}};
  const oldRender=render;render=function(){oldRender();if(replayMode)app.querySelectorAll('[id^="field-"]').forEach(el=>el.id='background-'+el.id);if(window.blacklineRenderingView)return;if(tab==='observation'||replayMode)start();else {if(raf)cancelAnimationFrame(raf);raf=null;expanded=false;document.body.classList.remove('field-focus-open');try{sessionStorage.removeItem('blackline_field_view')}catch(e){}}};
  const legacyOpen=window.blacklineOpenResultReplay;
  window.blacklineOpenResultReplay=i=>{const report=state.reports[Number(i)];if(!report)return;const title=String(report.title||'').replace(/^.*?보고\s*[·ㆍ]\s*/,'').trim();const h=state.history.find(h=>h.title===title&&h.date===report.date)||state.history.find(h=>h.title===title);if(!h)return legacyOpen(i);if(window.closeCompanyReport)window.closeCompanyReport();openFieldObservation(h.planId||h.id)};
@@ -146,5 +150,5 @@
  if(savedView?.open&&activeOps().length)tab='observation';
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(expanded)window.fieldExpand();else if(replayMode)window.closeFieldReplay()}});
  document.addEventListener('visibilitychange',()=>{if(document.hidden){if(raf)cancelAnimationFrame(raf);raf=null}else if(tab==='observation'||replayMode)start()});
- document.addEventListener('click',e=>{if(e.target.closest('#blackline-continue')&&tab==='observation')start()});
+ document.addEventListener('click',e=>{if(e.target.closest('#blackline-continue')&&tab==='observation'){window.blacklineRefreshObservation();start()}});
 })();
