@@ -299,7 +299,40 @@
     report('작전','최종 작전 결과 보고 · '+m.title,(success?'임무 성공. ':'임무 실패. ')+(casualtyName?'전사자 '+casualtyName+' 발생. ':'')+(injuryName?'부상자 '+injuryName+' 발생. ':'')+'투입 방식: '+op.method+'.',reward,{summary:(success?'임무 목표 달성. ':'임무 목표 미달성. ')+(casualtyName?'사망자 1명 발생. ':'')+(injuryName?'부상자 1명 발생. ':'')+'현장지휘관의 종료 보고가 접수됐습니다.',metrics:[{label:'임무 결과',value:success?'성공':'실패'},{label:'계약 수입',value:money(reward)},{label:'지원비',value:money(supportCost)}],sections:[{title:'작전 기본 정보',items:['작전명: '+m.title,'작전번호: '+op.id,'현장지휘관: '+op.leaderName,'투입 방식: '+op.method,'투입 인원: '+members.length+'명']},{title:'임무 수행 결과',items:['최종 결과: '+(success?'임무 성공':'임무 실패'),'세부 목표 달성: '+completedObjectives+'/'+objectives.length,'적대 세력 접촉: '+hostileCount+'명 / 사살 '+hostileKilled+'명 / 제압·체포 '+hostileDetained+'명 / 이탈 '+hostileRetreated+'명',...personnelCombat.filter(p=>p.kills||p.detained).map(p=>p.name+' · 사살 '+p.kills+'명 · 제압 '+p.detained+'명'),'계약 수입: '+money(reward),'탄약 사용량: '+used,'의료물자 사용량: '+medUsed]},{title:'인원 피해 현황',items:[casualtyName?'사망: '+casualtyName:'사망 보고 없음',injuryName?'부상: '+injuryName+' / '+(op.resolution.medical?.severity||'정도 미확인')+' / 회복 예상 '+(op.resolution.medical?.recoveryDays||'미정')+'일':'부상 보고 없음']},{title:'현장 지원 처리',items:choices.length?choices.map(c=>c.name+' / '+money(c.cost)):['추가 지원 요청 없음']},{title:'사후 처리',items:['현장 판단: '+(withdrew?'조기 철수':'임무 계속')+' / 제때 도착한 지원 효과 '+supportBonus+'점 / 최종 평가 '+Math.round(finalScore)+'점','현장 기록과 무전 로그는 작전 다시보기에서 열람할 수 있습니다.',injuryName?'부상자 제외 후 잔여 '+activeMembers.length+'명 재편성 / 작전 수행 영향 '+reassignmentPenalty+'점':'추가 인원 재배치 없음','인사 및 재무 변동은 각 부서 기록에 반영됩니다.']}]});
     if(casualtyName)report('인사','긴급 인명 피해 보고 · '+casualtyName,casualtyName+' 용병이 '+m.title+' 수행 중 사망했습니다. 계약 종료 및 추모 기록에 반영했습니다.');
  }
- nextDay=function(){oldNextDay();autoRecruit();runScheduled();state.operations.filter(o=>o.status==='현장 진행 중').forEach(startField);save();render()};
+ 
+ // Persistent contract market: templates are not simultaneously available offers.
+ function refreshContractMarket(){
+   if(!Array.isArray(state.missions))state.missions=[];
+   if(!Array.isArray(state.missionTemplates)||!state.missionTemplates.length){
+     state.missionTemplates=state.missions.map(m=>({id:m.id,title:m.title,client:m.client,reward:m.reward,risk:m.risk,type:m.type||'시설 보안',description:m.description}));
+     state.contractMarketVersion=1;
+     state.missions=state.missions.slice(0,Math.min(5,state.missions.length)).map((m,i)=>({...m,receivedDate:state.date,expiresDate:addDays(state.date,4+i*2),contractStatus:'검토 가능'}));
+     report('작전','계약시장 운영 개시','기존 고정 의뢰 목록을 계약시장으로 전환했습니다. 신규 의뢰는 거래처 및 회사 평판에 따라 접수되며 기한이 지나면 철회될 수 있습니다.');
+   }
+   const templates=state.missionTemplates;
+   const ongoing=new Set((state.operations||[]).filter(o=>o.status!=='작전 완료'&&o.status!=='작전 보류').map(o=>o.missionId));
+   const today=state.date;
+   const expired=state.missions.filter(m=>m.expiresDate&&m.expiresDate<today&&!ongoing.has(m.id));
+   for(const m of expired)report('작전','의뢰 철회 통보 · '+m.title,m.client+'에서 제안 유효기간 만료로 계약 의뢰를 철회했습니다.');
+   state.missions=state.missions.filter(m=>!expired.includes(m));
+   const active=state.missions.filter(m=>!ongoing.has(m.id));
+   const target=Math.min(7,Math.max(3,3+Math.floor((Number(state.reputation)||0)/30)));
+   if(active.length>=target)return;
+   const slots=Math.min(2,target-active.length);
+   for(let i=0;i<slots;i++){
+     const eligible=templates.filter(m=>!state.missions.some(x=>x.id===m.id)&&Number(state.reputation||0)>=(m.risk>=4?48:m.risk>=3?25:0));
+     if(!eligible.length)break;
+     const weighted=eligible.map(m=>({m,weight:Math.max(1,10+Math.floor(Number(state.reputation||0)/12)-(m.risk*2)+(state.history||[]).some(h=>h.success&&h.title===m.title)?4:0)}));
+     const total=weighted.reduce((a,x)=>a+x.weight,0);
+     let pick=(state.day*37+i*61+Number(state.reputation||0)*13)%total;
+     const selected=weighted.find(x=>(pick-=x.weight)<0)?.m||eligible[0];
+     const offer={...selected,receivedDate:today,expiresDate:addDays(today,4+((state.day+selected.id)%8)),contractStatus:'검토 가능',marketReason:selected.risk>=3?'고위험 지역 계약 요청':'기존 거래처 및 공개 입찰 요청'};
+     state.missions.push(offer);
+     report('작전','신규 계약 의뢰 접수 · '+offer.title,offer.client+'에서 '+offer.type+' 임무를 의뢰했습니다. 제안 기한 '+offer.expiresDate+' / 계약 보수 '+money(offer.reward)+'.');
+   }
+ }
+ refreshContractMarket();
+ nextDay=function(){oldNextDay();autoRecruit();refreshContractMarket();runScheduled();state.operations.filter(o=>o.status==='현장 진행 중').forEach(startField);save();render()};
  // Resume unfinished operations without advancing the simulation date.
  function resumeFields(){if(typeof state==='undefined'||!Array.isArray(state.operations))return;state.operations.filter(o=>o.status==='현장 진행 중'&&o.fieldProgress).forEach(startField)}
  setTimeout(resumeFields,0);
