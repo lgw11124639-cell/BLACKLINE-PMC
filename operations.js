@@ -41,15 +41,16 @@
     const m=op.contract||state.missions.find(x=>x.id===op.missionId);
     if(!m){op.status='작전 보류';continue}
     const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
+    if(window.blacklineReviewArmory&&members.some(p=>!p.loadout?.primary||p.loadout.primary==='미지급')){window.blacklineReviewArmory();if(members.some(p=>!p.loadout?.primary||p.loadout.primary==='미지급')){op.status='작전 보류';report('군수','지급 총기 확보 대기 · '+op.id,'미지급 인원이 있어 출동을 보류했습니다. 군수본부가 실제 총기와 탄약을 확보한 뒤 재검토합니다.');continue}}
     const staffing=window.blacklineCheckStaffing?.(m,members);if(members.length<Math.max(2,op.requiredStaffing?.minimum||0)||staffing&&!staffing.ready){op.status='작전 보류';report('작전','작전 투입 보류 · '+op.id,'출동 가능한 인원이 부족합니다. 팀장에게 재편성 보고를 요청했습니다.');continue}
-    if(state.ammo<120||state.med<1){op.status='작전 보류';report('군수','작전 투입 보류 · '+op.id,'탄약 또는 의료물자가 부족하여 투입을 중단했습니다.');continue}
+    if(state.ammo<(window.fieldSimulation.ammoPlan?.(members).total||120)||state.med<1){window.blacklineReviewMunitions?.();if(state.ammo<(window.fieldSimulation.ammoPlan?.(members).total||120)||state.med<1){op.status='작전 보류';report('군수','작전 투입 보류 · '+op.id,'보직별 휴대 탄약 또는 의료물자가 부족하여 투입을 중단했습니다.');continue}}
     if(op.status!=='현장 진행 중'){
       op.status='현장 진행 중';
       op.fieldProgress={stage:0,seed:op.reconSeed??((state.day*7919+op.missionId*101+members.length*37)%997),startedDay:state.day,startedDate:state.date,teamSnapshot:members.map(p=>p.id),riskShift:0,lateRisk:0,events:[]};
       if(window.fieldSimulation){
-        op.fieldProgress.reservedTacticalAmmo=Math.min(state.ammo,Math.max(120,members.length*45));
+        op.fieldProgress.reservedTacticalAmmo=Math.min(state.ammo,window.fieldSimulation.ammoPlan?.(members).total||Math.max(120,members.length*45));
         state.ammo-=op.fieldProgress.reservedTacticalAmmo;
-        op.fieldProgress.reservedTacticalMed=Math.min(state.med,Math.ceil(members.length/3));state.med-=op.fieldProgress.reservedTacticalMed;
+        op.fieldProgress.reservedTacticalMed=Math.min(state.med,members.length+members.filter(p=>/의무/.test(p.role)).length*2);state.med-=op.fieldProgress.reservedTacticalMed;
         op.fieldProgress.tactical=window.fieldSimulation.create(op,m,members,op.fieldProgress.reservedTacticalAmmo,{medicalBudget:op.fieldProgress.reservedTacticalMed});
         window.blacklineApplyTaskGroups?.(op,op.fieldProgress.tactical);
       }
@@ -82,8 +83,8 @@
    if(stage>=stageLabels.length){
      clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);
      const m=op.contract||state.missions.find(x=>x.id===op.missionId);
-     const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
-     if(!m||members.length<2){if(fp.reservedTacticalMed){state.med+=fp.reservedTacticalMed;fp.reservedTacticalMed=0;}if(fp.reservedTacticalAmmo){state.ammo+=Math.max(0,fp.reservedTacticalAmmo-(fp.tactical?.ammoUsed||0));fp.reservedTacticalAmmo=0;}if(op.fieldProgress?.reservedSupportCost){state.cash+=op.fieldProgress.reservedSupportCost;op.fieldProgress.reservedSupportCost=0;}op.status='작전 보류';report('작전','작전 중단 보고 · '+op.id,'작전 진행 중 투입 가능 인원이 부족하거나 의뢰가 종료되어 작전을 보류했습니다.');save();render();return}
+     const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(Boolean);
+     if(!m||members.length<2&&!fp.tactical){if(fp.reservedTacticalMed){state.med+=fp.reservedTacticalMed;fp.reservedTacticalMed=0;}if(fp.reservedTacticalAmmo){state.ammo+=Math.max(0,fp.reservedTacticalAmmo-(fp.tactical?.ammoUsed||0));fp.reservedTacticalAmmo=0;}if(op.fieldProgress?.reservedSupportCost){state.cash+=op.fieldProgress.reservedSupportCost;op.fieldProgress.reservedSupportCost=0;}op.status='작전 보류';report('작전','작전 중단 보고 · '+op.id,'작전 진행 중 투입 가능 인원이 부족하거나 의뢰가 종료되어 작전을 보류했습니다.');save();render();return}
      if(fp.finalized||op.resolution){op.status='작전 완료';save();render();return;}
      finalizeOperation(op,m,members);fp.finalized=true;save();render();return;
    }
@@ -294,20 +295,20 @@
     for(const record of personnelCombat){const p=combatPersonnel.find(x=>x.id===record.id);if(!p)continue;p.combatStats=p.combatStats||{missions:0,kills:0,detained:0};p.combatStats.missions++;p.combatStats.kills+=record.kills;p.combatStats.detained+=record.detained;p.combatHistory=Array.isArray(p.combatHistory)?p.combatHistory:[];p.combatHistory.unshift({date:state.date,mission:m.title,kills:record.kills,detained:record.detained,actions:record.actions});p.combatHistory=p.combatHistory.slice(0,30)}
     phases.push({t:210,phase:'위협 대응',detail:hostileContact?'적대 세력 '+hostileCount+'명 접촉 · 사살 '+hostileKilled+'명 · 제압·체포 '+hostileDetained+'명 · 이탈 '+hostileRetreated+'명':'적대 세력 접촉 없음',score:Math.round(finalScore)});
     const used=fieldResult?fieldResult.used:Math.min(state.ammo,Math.max(45,120+seed%180-(withdrew?80:0)));
-    const medUsed=tactical?.version>=2?Math.min((op.fieldProgress.reservedTacticalMed||0)+state.med,(fieldResult.usedMed||0)+fieldResult.casualties.filter(c=>!c.dead&&!c.stabilized).length):fieldResult?Math.min(state.med,fieldResult.casualties.filter(c=>!c.dead).length):injury?1:0;
+    const medUsed=tactical?.physiologyVersion?(tactical.medUsed||0):tactical?.version>=2?Math.min((op.fieldProgress.reservedTacticalMed||0)+state.med,(fieldResult.usedMed||0)+fieldResult.casualties.filter(c=>!c.dead&&!c.stabilized).length):fieldResult?Math.min(state.med,fieldResult.casualties.filter(c=>!c.dead).length):injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
     phases.push({t:330,phase:'인원 보호',detail:death?'중대한 인명 피해':injury?'부상자 발생':'인원 이상 없음',score:Math.round(exposure)});
     op.resolution={version:15,personnelCombat,hostileContact,hostileCount,hostileKilled,hostileDetained,hostileRetreated,missionType,objectives,completedObjectives,methodBonus,medicBonus,reconBonus,fieldReorganization:op.fieldProgress?.reorganization||null,activeTeamCount:activeMembers.length,reassignmentPenalty,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
     state.cash-=Math.max(0,supportCost-(Number(op.fieldProgress?.reservedSupportCost)||0));op.actualSupportCost=supportCost;op.supportDecisions=choices;
-    if(fieldResult){state.ammo+=Math.max(0,(op.fieldProgress.reservedTacticalAmmo||0)-used);op.fieldProgress.reservedTacticalAmmo=0;window.fieldSimulation.settleRelations(tactical)}else state.ammo-=used;if(tactical?.version>=2){const reserved=op.fieldProgress.reservedTacticalMed||0;state.med+=Math.max(0,reserved-medUsed);state.med-=Math.max(0,medUsed-reserved);op.fieldProgress.reservedTacticalMed=0}else state.med-=medUsed;
+    if(fieldResult){const ledger=window.fieldSimulation.ammoAccounting?.(tactical,op);state.ammo+=ledger?ledger.returned:Math.max(0,(op.fieldProgress.reservedTacticalAmmo||0)-used);if(ledger)op.resolution.ammunition=ledger;op.fieldProgress.reservedTacticalAmmo=0;window.fieldSimulation.settleRelations(tactical)}else state.ammo-=used;if(tactical?.version>=2){const reserved=op.fieldProgress.reservedTacticalMed||0;state.med+=Math.max(0,reserved-medUsed);state.med-=Math.max(0,medUsed-reserved);op.fieldProgress.reservedTacticalMed=0}else state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*(withdrew?.08:.15)+(!withdrew?m.reward*.12*completedObjectives:0));state.cash+=reward;
     let casualtyName=null,injuryName=null;
     if(fieldResult){
-      const dead=[],injured=[];
+      const dead=[],injured=[];for(const actor of tactical.units.filter(u=>u.faction==='blackline')){const person=state.team.find(p=>p.id===actor.personId);if(person&&actor.health?.armor)person.armorCondition=actor.health.armor.condition;}
       for(const casualty of fieldResult.casualties){
         const p=members.find(p=>p.id===casualty.id);if(!p)continue;
         if(casualty.dead){p.dead=true;p.injured=false;p.dateOfDeath=state.date;p.causeOfDeath='현장 교전 중 사망';dead.push(p.name);state.fallen.unshift({id:p.id,name:p.name,date:state.date,mission:m.title});if(state.leaderId===p.id)state.leaderId=available().find(x=>x.id!==p.id)?.id||null}
-        else{p.injured=true;p.injurySeverity=casualty.severity;p.recoveryUntil=addDays(state.date,casualty.severity==='중상'?45:casualty.severity==='보통'?21:7);p.injuryHistory=Array.isArray(p.injuryHistory)?p.injuryHistory:[];p.injuryHistory.unshift({date:state.date,mission:m.title,severity:casualty.severity,recoveryUntil:p.recoveryUntil,evacuated:evacuation});p.injuryHistory=p.injuryHistory.slice(0,30);injured.push(p.name)}
+        else{p.injured=true;p.injurySeverity=casualty.severity;if(casualty.wounds&&!casualty.recovered)p.awaitingRecovery=true;if(casualty.wounds&&casualty.recovered){if(p.medicalCase?.operationId!==op.id)p.medicalCase={operationId:op.id,admittedDate:state.date,status:'진료 대기',wounds:casualty.wounds,health:casualty.health};window.blacklineTreatAtBase?.(p);}p.recoveryUntil=p.medicalCase?.recoveryUntil||addDays(state.date,casualty.severity==='중상'?45:casualty.severity==='보통'?21:7);p.injuryHistory=Array.isArray(p.injuryHistory)?p.injuryHistory:[];p.injuryHistory.unshift({date:state.date,mission:m.title,severity:casualty.severity,wounds:casualty.wounds||[],recoveryUntil:p.recoveryUntil,evacuated:evacuation});p.injuryHistory=p.injuryHistory.slice(0,30);if(p.medicalCase?.status==='치료 완료'){p.injured=false;p.recoveryUntil=null;}injured.push(p.name)}
       }
       casualtyName=dead.join(', ')||null;injuryName=injured.join(', ')||null;
       op.resolution.casualties=fieldResult.casualties;

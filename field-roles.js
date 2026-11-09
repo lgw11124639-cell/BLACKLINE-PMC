@@ -21,7 +21,7 @@
  }
  function moveRole(s,u,goal,speed){const x=u.x,y=u.y;api.internals.move(s,u,goal,speed/(1+(u.elevation||0)/80));if(Math.hypot(u.x-x,u.y-y)>.001)u.heading=Math.atan2(u.y-y,u.x-x);if(!u.onRoof)u.elevation=api.elevationAt?.(s.terrain||api.MAP,u)||0;}
  function handle(s,u,op){
-  initialize(s,op);
+  initialize(s,op);if(u.health?.aid){u.status='treating';return true;}
   const a=u.assignment;if(!a)return false;
   if(s.phase==='복귀'){
    if(u.onRoof){if(!u.descendingUntil){u.descendingUntil=s.time+12;radio(s,u.name,'후방 엄호 종료. 관측층에서 내려와 복귀 경로에 합류한다.')}u.status='descending';if(s.time>=u.descendingUntil){u.x=a.entry[0];u.y=a.entry[1];u.onRoof=false;u.elevation=0;u.path=[];u.destination=''}return true}
@@ -31,7 +31,7 @@
   // Confirmed contacts trigger a command report, without disclosing unobserved positions.
   if(s.contact&&!s.contactOrders){s.contactOrders=true;radio(s,s.commander,'접촉 보고 접수. 선두는 엄폐, 저격조는 후방 사격선 유지. 지원조는 측면 엄호, 의무 담당은 후방에서 대기한다.')}
   if(u.tacticalRole==='medic'){
-   const casualty=s.units.filter(p=>p.faction==='blackline'&&!p.inside&&!p.evacComplete&&p.id!==u.id&&p.status!=='dead'&&!p.stabilized&&(p.hp<=55||p.woundedAt!=null)).sort((a,b)=>a.hp-b.hp)[0];
+   const casualty=s.units.filter(p=>p.faction==='blackline'&&!p.inside&&!p.evacComplete&&p.id!==u.id&&p.status!=='dead'&&!p.stabilized&&!p.health?.fieldCareCompleted&&!p.health?.aid&&(p.hp<=55||p.woundedAt!=null)).sort((a,b)=>a.hp-b.hp)[0];
    if(casualty&&s.medUsed<s.medicalBudget){
     const unsafe=Object.entries(s.contacts).some(([id,c])=>c.visible&&Math.hypot(c.x-casualty.x,c.y-casualty.y)<8&&s.units.some(p=>p.id===id&&active(p)&&(p.faction==='insurgent'||s.rival.hostile)));
     if(unsafe){if(s.time-(u.lastMedicalRequest||-100)>45){u.lastMedicalRequest=s.time;radio(s,u.name,'부상자 접근로에 관측된 위협이 남아 있다. 엄호 확보를 요청한다.','medical')}u.status='medical-hold';return true}

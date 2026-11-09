@@ -4,7 +4,7 @@
   buildings:[[7,41,22,49],[23,51,30,59],[41,42,56,54],[9,19,20,28],[23,8,39,16],[23,18,39,27],[43,8,60,16],[43,18,60,27],[73,5,84,23],[84,5,94,15]],
   goals:{'시설 보안':[88,27],'호송':[94,34],'구조':[58,29],'정밀 지원':[62,29],'무장세력 대응':[86,28]}};
  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
- const active=u=>u.hp>0&&!['captured','evacuated','retreated','wounded','medevac','evac-home'].includes(u.status);
+ const active=u=>window.fieldSimulation?.actorOperational?.(u)??(u.hp>0&&!['captured','evacuated','retreated','wounded','medevac','evac-home'].includes(u.status));
  const blocked=(x,y,map=MAP)=>x<1||x>map.width-1||y<1||y>map.height-1||[...(map.buildings||[]),...(map.obstacles||[])].some(b=>x>b[0]-.7&&x<b[2]+.7&&y>b[1]-.7&&y<b[3]+.7);
  function clearLine(a,b,map=MAP){const count=Math.max(20,Math.ceil(Math.hypot(a.x-b.x,a.y-b.y)));for(let i=1;i<count;i++){const t=i/count,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,eye=(a.elevation||0)+1.7+((b.elevation||0)-(a.elevation||0))*t;
   if((map.buildings||[]).some(r=>x>r[0]&&x<r[2]&&y>r[1]&&y<r[3]&&eye<(r[4]??99)))return false;
@@ -51,6 +51,7 @@
  }
  function hostile(s,a,b){if(a.faction===b.faction)return false;if(a.faction==='insurgent'||b.faction==='insurgent')return true;return s.rival.hostile}
  function move(s,u,target,amount){
+  if(u.health){if(!u.health.canWalk||u.health.aid)return;amount*=u.health.movementFactor;}
   if(window.fieldSimulation?.projectToGround)target=window.fieldSimulation.projectToGround(s.terrain||MAP,target);
   const destination=target.map(v=>Math.round(v/2)*2).join(',');
   if(u.destination!==destination||!u.path.length){u.destination=destination;u.path=pathTo(u,target,s.terrain||MAP)}
@@ -58,7 +59,7 @@
   while(left>0&&u.path.length){const p=u.path[0],d=Math.hypot(p[0]-u.x,p[1]-u.y),next=u.path[1],map=s.terrain||MAP;if(next&&d<(map.grid||2)*.7&&clearLine(u,{x:next[0],y:next[1]},map)&&!blocked((u.x+next[0])/2,(u.y+next[1])/2,map)){u.path.shift();continue}if(d<=left){u.x=p[0];u.y=p[1];u.path.shift();left-=d}else{u.x+=(p[0]-u.x)*left/d;u.y+=(p[1]-u.y)*left/d;left=0}}
  }
  function damage(s,target,amount,source){
-  amount=window.fieldSimulation?.adjustDamage?.(s,target,amount,source)??amount;const was=target.hp;target.hp=Math.max(0,target.hp-amount);if(target.faction==='blackline'&&target.hp<=55){target.mobility='immobile';target.fitForDuty=false;if(target.hp>0)target.status='wounded';if(was>55)target.stabilized=false;}
+  amount=window.fieldSimulation?.adjustDamage?.(s,target,amount,source)??amount;if(window.fieldSimulation?.applyWound){window.fieldSimulation.applyWound(s,target,amount,source);return}const was=target.hp;target.hp=Math.max(0,target.hp-amount);if(target.faction==='blackline'&&target.hp<=55){target.mobility='immobile';target.fitForDuty=false;if(target.hp>0)target.status='wounded';if(was>55)target.stabilized=false;}
   if(target.faction==='blackline'&&was>55&&target.hp<=55){log(s,target.name,'피격. 엄폐 후 의무 지원 요청.','medical');event(s,{kind:'wound',target:target.id,x:target.x,y:target.y})}
   if(target.hp===0){
    if(target.faction==='blackline'){target.status=rand(s)<.12?'dead':'wounded';log(s,'의무 담당',target.name+(target.status==='dead'?' 전사 확인.':' 전투 불능. 후송 위치 확보 중.'),'medical')}

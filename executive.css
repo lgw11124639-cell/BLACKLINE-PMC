@@ -30,3 +30,15 @@ nav#tabs{background:#ffffffed;border-color:var(--line);box-shadow:0 -4px 25px #1
 .mail-pagination button:disabled{opacity:.4;cursor:default}
 .mail-pagination strong{font-size:11px;font-weight:600;white-space:nowrap}
 @media(max-width:700px){#company-inbox .mail-item{padding:12px;gap:10px}.mail-pagination{font-size:10px}.mail-pagination>div{gap:8px}.mail-pagination button{padding:8px;min-height:40px}}
+
+.field-roster .medical-unit-card{display:grid;grid-template-columns:57px minmax(0,1fr);align-items:center;gap:10px;padding:13px;text-align:left;min-height:146px}
+.body-diagram{width:52px;height:108px;display:block}
+.medical-card-copy{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field-roster .medical-unit-card strong{font-size:12px;display:block;color:#3e5579;text-align:left}
+.field-roster .medical-unit-card small{font-size:10px;display:block}
+.medical-condition{font-size:11px;color:#8d7054}
+.medical-wounds,.medical-ammo,.medical-vitals{font-size:10px;line-height:1.6;color:#7c8da6;overflow-wrap:anywhere}
+.medical-vitals{font-variant-numeric:tabular-nums;color:#4c8c8d}
+@media(max-width:700px){.field-roster{grid-template-columns:1fr!important}.field-roster .medical-unit-card{min-height:136px}}
+
+.field-roster .medical-unit-card .medical-card-copy>strong{margin:0;align-self:flex-start}
