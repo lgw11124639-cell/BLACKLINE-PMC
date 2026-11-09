@@ -31,7 +31,7 @@ node --test tests/*.test.cjs
 
 현재 앱 서버를 8000에서 실행한 뒤 `python3 tests/browser-ui.py`로 320/390/768/1440px 화면의 메뉴, 인사기록 탭, 보고서 검색·필터, 날짜 진행, 백업 내보내기 및 저장 복원을 확인할 수 있습니다. Playwright와 Chromium이 필요합니다. iPhone 실기기 검증을 대신하지는 않습니다.
 
-## v2026.11.09.31: 좌표 기반 관찰실과 자동 시간
+## v2026.11.09.32: 좌표 기반 관찰실과 자동 시간
 
 상단/하단 메뉴의 **관찰** 또는 본부의 **작전 관찰 · 다시보기**로 진입합니다. 실제 작전이 없을 때는 **훈련 시연 시작**으로 이동·사격·포격·공습·무전 흐름을 볼 수 있습니다. 훈련은 별도 메모리에서 실행되며 회사의 자금·탄약·평판·대원 경력을 변경하지 않습니다. 자동 회사 운영은 별도로 진행되므로 그 시간을 멈추려면 상단 시간 일시정지를 사용합니다.
 
@@ -49,6 +49,7 @@ node --test tests/*.test.cjs
 python3 tests/browser-observation.py
 python3 tests/browser-ui.py
 python3 tests/browser-save-import.py
+python3 tests/browser-speed.py
 ```
 
 브라우저 테스트는 8000의 현재 정적 서버와 Chromium/Playwright를 사용합니다. 이전 버전 호환성 검사는 기존과 같이 8001의 v28 정적 서버를 준비한 뒤 `python3 tests/browser-contracts.py`로 실행합니다. 테스트는 실제 사용자의 저장 데이터와 분리된 브라우저 컨텍스트에서 실행합니다.

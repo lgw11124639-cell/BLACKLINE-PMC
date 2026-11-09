@@ -71,7 +71,7 @@
    try{
    if(fp.tactical){
      if(state.simClock?.paused||document.hidden||document.body.classList.contains('start-visible'))return;
-     for(let i=0;i<(state.simClock?.speed||1);i++)window.fieldSimulation.step(fp.tactical,op);
+     window.fieldSimulation.step(fp.tactical,op);
      if(fp.tactical.done)fp.stage=4;
      const threshold=fp.tactical.done?fp.tactical.time:([13,91,169,247][fp.stage]??390);
      if(fp.tactical.time<threshold||fp.stage>=4&&!fp.tactical.done){save();window.dispatchEvent(new Event('blackline-field-update'));return}
@@ -169,7 +169,7 @@
  }
  function startField(op){
    if(op.status!=='현장 진행 중'||fieldTimers.has(op.id))return;
-   const timer=setInterval(()=>{try{fieldStep(op)}catch(err){clearInterval(timer);fieldTimers.delete(op.id);console.error('BLACKLINE field operation failed',op.id,err)}},op.fieldProgress?.tactical?500:1800);
+   const timer=setInterval(()=>{try{const steps=op.fieldProgress?.tactical?(state.simClock?.speed||1):1;for(let i=0;i<steps;i++){fieldStep(op);if(op.status!=='현장 진행 중')break}}catch(err){clearInterval(timer);fieldTimers.delete(op.id);console.error('BLACKLINE field operation failed',op.id,err)}},op.fieldProgress?.tactical?500:1800);
    fieldTimers.set(op.id,timer);
  }
  function finalizeOperation(op,m,members){
