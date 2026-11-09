@@ -228,26 +228,37 @@
     // Hostile contact is simulated only when the mission encounters an armed threat.
     const hostileContact=!withdrew&&m.risk>=2&&((seed*29+missionDay*11+m.id*17)%100)<Math.min(85,18+m.risk*15+Math.max(0,pressure)+(missionType==='무장세력 대응'?12:0));
     const hostileCount=hostileContact?1+(seed%Math.max(2,m.risk+2)):0;
-    const neutralized=hostileContact?Math.min(hostileCount,Math.floor((seed*7+Math.round(finalScore))% (hostileCount+1))):0;
-    const hostileKilled=hostileContact?Math.min(neutralized,(seed*13+missionDay*3)% (neutralized+1)):0;
-    const hostileDetained=neutralized-hostileKilled;
-    const hostileRetreated=hostileCount-neutralized;
     const combatPersonnel=members.filter(p=>!p.dead&&!p.retired);
-    const personnelCombat=combatPersonnel.map(p=>({id:p.id,name:p.name,role:p.role||'일반 대원',kills:0,detained:0}));
-    const weighted=[...personnelCombat].sort((a,b)=>{
-      const pa=combatPersonnel.find(p=>p.id===a.id),pb=combatPersonnel.find(p=>p.id===b.id);
-      const score=p=>Number(p.skill||0)+(/저격|정밀사수/.test(p.role||'')&&missionType==='정밀 지원'?30:0);
-      return score(pb)-score(pa)||String(a.id).localeCompare(String(b.id));
-    });
-    for(let i=0;i<hostileKilled&&weighted.length;i++)weighted[(seed+i)%weighted.length].kills++;
-    for(let i=0;i<hostileDetained&&weighted.length;i++)weighted[(seed+hostileKilled+i+1)%weighted.length].detained++;
-    for(const record of personnelCombat){const p=combatPersonnel.find(x=>x.id===record.id);if(!p)continue;p.combatStats=p.combatStats||{missions:0,kills:0,detained:0};p.combatStats.missions++;p.combatStats.kills+=record.kills;p.combatStats.detained+=record.detained;p.combatHistory=Array.isArray(p.combatHistory)?p.combatHistory:[];p.combatHistory.unshift({date:state.date,mission:m.title,kills:record.kills,detained:record.detained});p.combatHistory=p.combatHistory.slice(0,30)}
+    const personnelCombat=combatPersonnel.map(p=>({id:p.id,name:p.name,role:p.role||'일반 대원',kills:0,detained:0,actions:[]}));
+    let hostileKilled=0,hostileDetained=0;
+    // Each operator acts independently. The aggregate encounter report is derived from these actions.
+    let remainingHostiles=hostileCount;
+    for(let round=0;round<2&&remainingHostiles>0;round++){
+      for(const record of personnelCombat){
+        if(remainingHostiles<=0)break;
+        const p=combatPersonnel.find(x=>x.id===record.id);
+        const ev=personnelEvaluation(p);
+        const precision=Number(ev.precision)||Number(p.skill)||50;
+        const awareness=Number(ev.awareness)||50;
+        const specialist=/저격|정밀사수/.test(record.role)&&missionType==='정밀 지원'?12:0;
+        const fatigue=Math.round((Number(p.fatigue)||0)/7);
+        const chance=Math.max(8,Math.min(78,Math.round(20+precision*.34+awareness*.12+specialist-fatigue-m.risk*5)));
+        const roll=(seed*17+missionDay*11+m.id*7+Number(p.id||0)*13+round*37)%100;
+        if(roll>=chance){record.actions.push({round:round+1,result:'위협 관측·대응 실패'});continue}
+        const lethal=(seed*23+Number(p.id||0)*19+round*31+missionDay)%100<(missionType==='무장세력 대응'?38:missionType==='정밀 지원'?32:17);
+        if(lethal){record.kills++;hostileKilled++;record.actions.push({round:round+1,result:'적대 인원 사살'})}
+        else{record.detained++;hostileDetained++;record.actions.push({round:round+1,result:'적대 인원 제압·체포'})}
+        remainingHostiles--;
+      }
+    }
+    const hostileRetreated=remainingHostiles;
+    for(const record of personnelCombat){const p=combatPersonnel.find(x=>x.id===record.id);if(!p)continue;p.combatStats=p.combatStats||{missions:0,kills:0,detained:0};p.combatStats.missions++;p.combatStats.kills+=record.kills;p.combatStats.detained+=record.detained;p.combatHistory=Array.isArray(p.combatHistory)?p.combatHistory:[];p.combatHistory.unshift({date:state.date,mission:m.title,kills:record.kills,detained:record.detained,actions:record.actions});p.combatHistory=p.combatHistory.slice(0,30)}
     phases.push({t:210,phase:'위협 대응',detail:hostileContact?'적대 세력 '+hostileCount+'명 접촉 · 사살 '+hostileKilled+'명 · 제압·체포 '+hostileDetained+'명 · 이탈 '+hostileRetreated+'명':'적대 세력 접촉 없음',score:Math.round(finalScore)});
     const used=Math.min(state.ammo,Math.max(45,120+seed%180-(withdrew?80:0)));
     const medUsed=injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
     phases.push({t:330,phase:'인원 보호',detail:death?'중대한 인명 피해':injury?'부상자 발생':'인원 이상 없음',score:Math.round(exposure)});
-    op.resolution={version:14,personnelCombat,hostileContact,hostileCount,hostileKilled,hostileDetained,hostileRetreated,missionType,objectives,completedObjectives,methodBonus,medicBonus,reconBonus,fieldReorganization:op.fieldProgress?.reorganization||null,activeTeamCount:activeMembers.length,reassignmentPenalty,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
+    op.resolution={version:15,personnelCombat,hostileContact,hostileCount,hostileKilled,hostileDetained,hostileRetreated,missionType,objectives,completedObjectives,methodBonus,medicBonus,reconBonus,fieldReorganization:op.fieldProgress?.reorganization||null,activeTeamCount:activeMembers.length,reassignmentPenalty,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
     state.cash-=Math.max(0,supportCost-(Number(op.fieldProgress?.reservedSupportCost)||0));op.actualSupportCost=supportCost;op.supportDecisions=choices;
     state.ammo-=used;state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*(withdrew?.08:.15)+(!withdrew?m.reward*.12*completedObjectives:0));state.cash+=reward;
@@ -268,6 +279,7 @@
       {t:275,who:'현장 팀원',msg:success?'목표 달성 확인. 인원 상태를 점검 중입니다.':'임무 중단 명령 확인. 인원 상태를 확인합니다.'},
       {t:330,who:leaderVoice,msg:'팀원 상태 최종 확인 후 본부에 작전 종료를 보고하겠습니다.'}
     ];
+    for(const p of personnelCombat)for(const action of p.actions)logs.push({t:190+action.round*10,who:p.name,msg:action.result});
     if(hostileContact&&personnelCombat.some(p=>p.kills||p.detained))logs.push({t:216,who:'작전본부',msg:'대원별 교전 결과: '+personnelCombat.filter(p=>p.kills||p.detained).map(p=>p.name+' 사살 '+p.kills+'명·제압 '+p.detained+'명').join(', ')});
     if(hostileContact)logs.push({t:210,who:'현장 지휘관',msg:'적대 세력 접촉 '+hostileCount+'명. 사살 '+hostileKilled+'명, 제압·체포 '+hostileDetained+'명, 현장 이탈 '+hostileRetreated+'명으로 집계합니다.'});
     objectives.forEach((o,i)=>logs.push({t:155+i*28,who:'현장 작전팀',msg:o.name+' · '+(o.completed?'목표 달성 확인':'목표 미달성 보고')}));
