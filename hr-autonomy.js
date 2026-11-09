@@ -9,7 +9,7 @@
  state.recruitPolicy.enabled=false;
  function recruit(){
   const employed=active();
-  const required=Math.max(6,Number(state.staffingDemand?.minimum)||6),needsMedic=!employed.some(p=>/의무|의료|구급/.test(p.role||''));if(employed.length>=required&&!needsMedic||!state.candidates.length)return;
+  const required=Math.max(6,Number(state.staffingDemand?.minimum)||6)+4,needsMedic=!employed.some(p=>!p.injured&&/의무|의료|구급/.test(p.role||''));if(employed.filter(p=>!p.injured).length>=required&&!needsMedic||!state.candidates.length)return;
   const candidate=state.candidates.filter(p=>state.cash>=p.salary/12).sort((a,b)=>(needsMedic?( /의무|의료|구급/.test(b.role)?1:0)-( /의무|의료|구급/.test(a.role)?1:0):0)||fit(b)-fit(a)||a.salary-b.salary)[0];
   if(!candidate){issue('채용 보류 보고','인사팀이 신규 채용을 검토했으나 가용 예산이 부족하여 계약을 보류했습니다.');return}
   const p={...candidate,injured:false,dead:false,retired:false,loadout:{primary:'미지급',secondary:'미지급',armor:'미지급',helmet:'미지급',radio:'미지급'}};
@@ -23,11 +23,10 @@
   const previous=state.leaderId;
   const leader=people.find(p=>!p.injured&&personnelEvaluation(p).leadership>=80)||people.find(p=>!p.injured)||people[0];
   state.leaderId=leader?.id||null;
-  const squads=[];
-  for(let i=0;i<people.length;i+=4){const members=people.slice(i,i+4);squads.push({name:'작전 '+String(squads.length+1).padStart(2,'0')+'팀',leaderId:members[0]?.id,memberIds:members.map(p=>p.id)})}
-  const before=JSON.stringify(hr.teams);
-  hr.teams=squads;hr.leaderId=state.leaderId;
-  if(before!==JSON.stringify(squads)||previous!==state.leaderId)issue('인사팀 편제 및 지휘관 지정 보고',(leader?'총괄 팀장 '+leader.name+' 지정. ':'가용 인력 없음. ')+squads.map(t=>t.name+' '+t.memberIds.length+'명').join(', ')+'. 전문 역량과 현재 인력 상태를 고려해 편제했습니다.',{summary:(leader?leader.name+' 인원을 총괄 팀장으로 지정하고 ':'총괄 팀장 지정 없이 ')+squads.length+'개 팀을 편성했습니다.',metrics:[{label:'편성 팀',value:squads.length+'개'},{label:'가용 인원',value:people.length+'명'}],sections:[{title:'지휘 체계',items:[leader?'총괄 팀장: '+leader.name:'총괄 팀장: 미지정']},{title:'팀별 편성',items:squads.map(t=>t.name+' / '+t.memberIds.length+'명 / '+t.memberIds.map(id=>people.find(p=>p.id===id)?.name||'미확인').join(', '))},{title:'편성 기준',items:['역량 평가, 건강 상태, 현재 가용 인원을 기준으로 자동 편성했습니다.']}]});
+  const squads=(state.operations||[]).filter(o=>!['작전 완료','작전 보류'].includes(o.status)).flatMap(o=>(o.taskGroups||[]).map(t=>({...t,operationId:o.id})));
+  hr.teams=squads;hr.leaderId=state.leaderId;hr.formationPolicy='mission';
+  // Personnel remain in the company pool until operations assigns an actual mission.
+
  }
  function renew(){
   for(const p of active()){
@@ -41,7 +40,7 @@
    issue('인사팀 계약 갱신 보고',p.name+' 용병의 복무 성과와 건강·예산을 검토해 계약을 1년 연장했습니다. 갱신 종료일 '+p.contractEnd+'.',{summary:p.name+' 인원의 계약을 1년 연장했습니다.',metrics:[{label:'연장 기간',value:'1년'},{label:'새 만료일',value:p.contractEnd}],sections:[{title:'계약 변경',items:['계약 인원: '+p.name,'기존 만료일: '+old,'갱신 만료일: '+p.contractEnd,'연봉: '+money(p.salary)]},{title:'갱신 판단',items:['복무 성과, 건강 상태 및 회사 가용 자금을 검토했습니다.']}]});
   }
  }
- function review(force=false){
+ function review(force=false){window.blacklineRefreshApplicants?.();
   const minutes=state.day*1440+(state.simClock?.minutes||0),urgent=!!state.staffingDemand&&minutes-(hr.lastUrgentReview??-100)>=10;if(!force&&hr.lastReview===state.date&&!urgent)return;
   renew();
   // Gradual hiring: at most one per day, rather than instantaneous roster filling.
@@ -52,7 +51,7 @@
  const previousPeople=people;
  people=function(){
   const staff=active(),teams=hr.teams||[];
-  return '<h2>인사본부 · 부서장 보고</h2><div class="card"><h3>인사 운영 원칙</h3><p class="empty">채용, 계약 갱신, 퇴직, 팀 편제, 팀장 임명은 인사팀이 자율적으로 결정합니다. 사장님께서는 보고서와 인사기록을 열람합니다.</p><div class="line"><span>현직 계약 인원</span><strong>'+staff.length+'명</strong></div><div class="line"><span>운영 팀</span><strong>'+teams.length+'개</strong></div><div class="line"><span>퇴직자</span><strong>'+(state.alumni||[]).length+'명</strong></div><div class="line"><span>작전 중 사망자</span><strong>'+(state.fallen||[]).length+'명</strong></div></div><h2>팀 편제 보고</h2>'+ (teams.length?teams.map(t=>'<div class="card"><h3>'+escapeHTML(t.name)+'</h3><p class="muted">팀장: '+escapeHTML(state.team.find(p=>p.id===t.leaderId)?.name||'미지정')+'</p>'+t.memberIds.map(id=>{const p=state.team.find(x=>x.id===id);return p?'<div class="line"><span>'+escapeHTML(p.name)+' · '+escapeHTML(p.role)+'</span><span class="muted">'+(p.injured?'치료 중':'현역')+'</span></div>':''}).join('')+'</div>').join(''):'<div class="card"><p class="empty">인사팀이 인원 확보와 편제를 진행하고 있습니다.</p></div>')+'<h2>현직 인원 기록</h2>'+staff.map(p=>'<div class="card person-click" onclick="openProfile('+p.id+',true)"><div class="line"><strong>'+escapeHTML(p.name)+'</strong><span class="tag">'+escapeHTML(p.role)+'</span></div><p class="muted">'+escapeHTML(p.unit)+' · 만 '+personnelAge(p)+'세 · '+(p.injured?'치료 중':'출동 가능')+'</p><small class="muted">상세 인사기록 열람</small></div>').join('')+'<h2>퇴직·사망 기록</h2>'+(state.alumni||[]).slice(0,10).map(p=>'<div class="card"><strong>'+escapeHTML(p.name)+'</strong><p class="empty">'+escapeHTML(p.reason)+' · '+p.date+'</p></div>').join('')+(state.fallen||[]).slice(0,10).map(p=>'<div class="card"><strong>'+escapeHTML(p.name)+'</strong><p class="empty">작전 중 사망 · '+p.date+'</p></div>').join('');
+  return '<h2>인사본부 · 부서장 보고</h2><div class="card"><h3>인사 운영 원칙</h3><p class="empty">채용, 계약 갱신, 퇴직, 팀 편제, 팀장 임명은 인사팀이 자율적으로 결정합니다. 사장님께서는 보고서와 인사기록을 열람합니다.</p><div class="line"><span>현직 계약 인원</span><strong>'+staff.length+'명</strong></div><div class="line"><span>운영 팀</span><strong>'+teams.length+'개</strong></div><div class="line"><span>퇴직자</span><strong>'+(state.alumni||[]).length+'명</strong></div><div class="line"><span>작전 중 사망자</span><strong>'+(state.fallen||[]).length+'명</strong></div></div><h2>팀 편제 보고</h2>'+ (teams.length?teams.map(t=>'<div class="card"><h3>'+escapeHTML(t.name)+'</h3><p class="muted">팀장: '+escapeHTML(state.team.find(p=>p.id===t.leaderId)?.name||'미지정')+'</p>'+t.memberIds.map(id=>{const p=state.team.find(x=>x.id===id);return p?'<div class="line"><span>'+escapeHTML(p.name)+' · '+escapeHTML(p.role)+'</span><span class="muted">'+(p.injured?'치료 중':'현역')+'</span></div>':''}).join('')+'</div>').join(''):'<div class="card"><p class="empty">상설 전투팀 없음 · 작전본부가 정찰 결과에 따라 임무별 팀을 편성합니다.</p></div>')+'<h2>현직 인원 기록</h2>'+staff.map(p=>'<div class="card person-click" onclick="openProfile('+p.id+',true)"><div class="line"><strong>'+escapeHTML(p.name)+'</strong><span class="tag">'+escapeHTML(p.role)+'</span></div><p class="muted">'+escapeHTML(p.unit)+' · 만 '+personnelAge(p)+'세 · '+(p.injured?'치료 중':'출동 가능')+'</p><small class="muted">상세 인사기록 열람</small></div>').join('')+'<h2>퇴직·사망 기록</h2>'+(state.alumni||[]).slice(0,10).map(p=>'<div class="card"><strong>'+escapeHTML(p.name)+'</strong><p class="empty">'+escapeHTML(p.reason)+' · '+p.date+'</p></div>').join('')+(state.fallen||[]).slice(0,10).map(p=>'<div class="card"><strong>'+escapeHTML(p.name)+'</strong><p class="empty">작전 중 사망 · '+p.date+'</p></div>').join('');
  };
  // Director sees personnel files but cannot appoint, hire or dismiss.
  const previousProfile=renderProfile;

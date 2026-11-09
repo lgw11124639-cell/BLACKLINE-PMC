@@ -5,7 +5,7 @@
  const log=(s,who,msg,kind='radio')=>api.transmit?api.transmit(s,who,msg,kind):s.radio.push({t:s.time,who,msg,kind});
  const foes=(s,a,b)=>a.faction!==b.faction&&(a.faction==='insurgent'||b.faction==='insurgent'||s.rival.hostile);
  const visible=(s,a,b)=>!a.inside&&!b.inside&&!a.roadOnly&&!b.roadOnly&&dist(a,b)<=a.vision&&api.canSeeActor?.(s,a,b,'site')!==false&&api.clearLine(a,b,s.terrain||MAP);
- function snapshot(s){const frame={journey:api.journeyFrame?.(s),aims:s.units.filter(u=>u.target&&!u.inside&&(u.faction==='blackline'||s.contacts[u.id]?.visible)).flatMap(u=>{const target=s.units.find(v=>v.id===u.target);return target&&visible(s,u,target)?[{actor:u.id,target:target.id,from:[u.x,u.y],to:[target.x,target.y],friendly:u.faction==='blackline'}]:[]}),t:s.time,objective:Math.round(s.objective),retreat:s.retreat,phase:s.phase,contacts:Object.entries(s.contacts).map(([id,c])=>[id,+c.x.toFixed(2),+c.y.toFixed(2),c.lastSeen,c.visible,c.source||'ground',c.identified!==false,c.confidence??100]),units:s.units.map(u=>[+u.x.toFixed(2),+u.y.toFixed(2),u.hp,u.ammo,u.status,+u.heading.toFixed(2),+(u.elevation||0).toFixed(1)])};s.previousLiveFrame=s.liveFrame?.t===s.time?(s.previousLiveFrame||frame):(s.liveFrame||frame);s.liveFrame=frame;if(s.time%(s.journey?10:5)===0||s.done||s.journey&&s.frames.at(-1)?.journey?.stage!==s.journey.stage){if(s.frames.at(-1)?.t===s.time)s.frames[s.frames.length-1]=frame;else s.frames.push(frame)}}
+ function snapshot(s){const frame={journey:api.journeyFrame?.(s),aims:s.units.filter(u=>u.target&&!u.inside&&(u.faction==='blackline'||s.contacts[u.id]?.visible)).flatMap(u=>{const target=s.units.find(v=>v.id===u.target);return target&&visible(s,u,target)?[{actor:u.id,target:target.id,from:[u.x,u.y],to:[target.x,target.y],friendly:u.faction==='blackline'}]:[]}),t:s.time,objective:Math.round(s.objective),retreat:s.retreat,phase:s.phase,contacts:Object.entries(s.contacts).map(([id,c])=>[id,+c.x.toFixed(2),+c.y.toFixed(2),c.lastSeen,c.visible,c.source||'ground',c.identified!==false,c.confidence??100]),units:s.units.map(u=>[+u.x.toFixed(2),+u.y.toFixed(2),u.hp,u.ammo,u.status,+u.heading.toFixed(2),+(u.elevation||0).toFixed(1)])};s.previousLiveFrame=s.liveFrame?.t===s.time?(s.previousLiveFrame||frame):(s.liveFrame||frame);s.liveFrame=frame;if(s.time%(s.journey?10:5)===0||s.done||s.units.some(u=>u.joinedAt===s.time)||s.journey&&s.frames.at(-1)?.journey?.stage!==s.journey.stage){if(s.frames.at(-1)?.t===s.time)s.frames[s.frames.length-1]=frame;else s.frames.push(frame)}}
  api.create=function(op,m,members,ammoBudget,options={}){
   const s=legacyCreate(op,m,members,ammoBudget,options);
   s.version=2;s.duration=900;s.plannedDuration=900;s.time=0;s.phase='접근';s.frames=[];s.events=[];s.radio=[];s.contacts={};s.searchStarted=null;s.securedAt=null;s.returnStarted=null;s.checkpoint=0;s.mutedLog=false;
@@ -68,8 +68,8 @@
    log(s,e.kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','탄착 확인. 현장조는 피해·잔여 위협 관측 바란다.','support');
   }
   for(const [i,o] of (op.fieldProgress?.supportOrders||[]).entries()){
-   if(['drone','vehicle-recovery','medevac'].includes(o.kind))continue;
-   const key=o.name+'-'+i;if(s.time<o.requestedAt+o.eta||s.supportArrived.includes(key))continue;
+   if(['drone','vehicle-recovery','medevac','reinforcement','resupply'].includes(o.kind))continue;
+   const key=o.id||o.name+'-'+i;if(s.time<o.requestedAt+o.eta||s.supportArrived.includes(key))continue;
    s.supportArrived.push(key);const kind=/공중/.test(o.name)?'airstrike':/원거리|포병/.test(o.name)?'artillery':null;
    if(!kind){log(s,'작전지원본부',o.name+' 도착.');continue}
    const target=s.units.find(u=>!u.inside&&active(u)&&u.faction!=='blackline'&&(u.faction==='insurgent'||s.rival.hostile)&&s.contacts[u.id]?.visible&&s.contacts[u.id]?.identified!==false&&s.time-s.contacts[u.id].lastSeen<=5);

@@ -41,16 +41,17 @@
     const m=op.contract||state.missions.find(x=>x.id===op.missionId);
     if(!m){op.status='작전 보류';continue}
     const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
-    const staffing=window.blacklineCheckStaffing?.(m,members);if(members.length<2||staffing&&!staffing.ready){op.status='작전 보류';report('작전','작전 투입 보류 · '+op.id,'출동 가능한 인원이 부족합니다. 팀장에게 재편성 보고를 요청했습니다.');continue}
+    const staffing=window.blacklineCheckStaffing?.(m,members);if(members.length<Math.max(2,op.requiredStaffing?.minimum||0)||staffing&&!staffing.ready){op.status='작전 보류';report('작전','작전 투입 보류 · '+op.id,'출동 가능한 인원이 부족합니다. 팀장에게 재편성 보고를 요청했습니다.');continue}
     if(state.ammo<120||state.med<1){op.status='작전 보류';report('군수','작전 투입 보류 · '+op.id,'탄약 또는 의료물자가 부족하여 투입을 중단했습니다.');continue}
     if(op.status!=='현장 진행 중'){
       op.status='현장 진행 중';
-      op.fieldProgress={stage:0,seed:(state.day*7919+op.missionId*101+members.length*37)%997,startedDay:state.day,startedDate:state.date,teamSnapshot:members.map(p=>p.id),riskShift:0,lateRisk:0,events:[]};
+      op.fieldProgress={stage:0,seed:op.reconSeed??((state.day*7919+op.missionId*101+members.length*37)%997),startedDay:state.day,startedDate:state.date,teamSnapshot:members.map(p=>p.id),riskShift:0,lateRisk:0,events:[]};
       if(window.fieldSimulation){
         op.fieldProgress.reservedTacticalAmmo=Math.min(state.ammo,Math.max(120,members.length*45));
         state.ammo-=op.fieldProgress.reservedTacticalAmmo;
         op.fieldProgress.reservedTacticalMed=Math.min(state.med,Math.ceil(members.length/3));state.med-=op.fieldProgress.reservedTacticalMed;
         op.fieldProgress.tactical=window.fieldSimulation.create(op,m,members,op.fieldProgress.reservedTacticalAmmo,{medicalBudget:op.fieldProgress.reservedTacticalMed});
+        window.blacklineApplyTaskGroups?.(op,op.fieldProgress.tactical);
       }
       save();render();
     }
@@ -66,7 +67,7 @@
    if(window.blacklineImportingSave)return;
    if(op.status!=='현장 진행 중'){clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);return}
    if(state.simClock?.paused||document.hidden||document.body.classList.contains('start-visible'))return;
-   const fp=op.fieldProgress;if(!fp){clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);return;}
+   const fp=op.fieldProgress;window.fieldSimulation.reconcileSupport?.(op);if(!fp){clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);return;}
    if(processingFields.has(op.id))return;
    processingFields.add(op.id);
    try{
@@ -115,9 +116,10 @@
        else if(op.air!=='off'&&m.risk>=2&&budget>=spent+14000000)requests.push({name:'승인된 공중 지원',cost:14000000,effect:8});
      }
      // Commit support expenses when the commander orders them; do not charge twice on completion.
-     fp.supportOrders=(fp.supportOrders||[]).filter(o=>['drone','vehicle-recovery','medevac'].includes(o.kind));
+     fp.supportOrders=(fp.supportOrders||[]).filter(o=>['drone','vehicle-recovery','medevac','reinforcement','resupply'].includes(o.kind));
      fp.reservedSupportCost=Number(fp.reservedSupportCost)||0;
-     for(const [i,r] of requests.entries()){
+     for(const [i,request] of requests.entries()){
+       const r=window.fieldSimulation.reserveSupport?.(op,request);if(!r)continue;
        if(fp.reservedSupportCost+r.cost>Math.max(0,Number(op.budget)||0)||state.cash<r.cost)continue;
        state.cash-=r.cost;
        fp.reservedSupportCost+=r.cost;
@@ -139,7 +141,7 @@
      fp.medical={injured,exposure,severity,recoveryDays,personId:fp.tactical?actual?.id||null:injured&&members.length?members[fp.seed%members.length].id:null,evacuation:false,medicalCost:0,medUsed:injured?1:0,reassignment:injured?'부상 인원 임무 제외 · 잔여 인원 재배치':'불필요'};
      if(injured){
        const remaining=Math.max(0,Number(op.budget)||0)-fp.reservedSupportCost;
-       if(remaining>=8500000&&state.cash>=8500000){
+       if(!fp.tactical&&remaining>=8500000&&state.cash>=8500000){
          state.cash-=8500000;fp.reservedSupportCost+=8500000;
          fp.medical.evacuation=true;fp.medical.medicalCost=8500000;
          fp.supportOrders.push({name:'긴급 의료 후송',cost:8500000,effect:0,requestedAt:fp.tactical?.time??235,eta:45,charged:true,reason:'현장 의무 담당 긴급 요청'});
