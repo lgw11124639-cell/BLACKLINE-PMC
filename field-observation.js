@@ -3,7 +3,7 @@
  const esc=x=>escapeHTML(String(x??'')),clock=t=>String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
  let mobilePanel='map';
  let replayMode=false,expanded=false,savedView=null;try{savedView=JSON.parse(sessionStorage.getItem('blackline_field_view')||'null')}catch(e){}
- let selected=savedView?.open?savedView.id:null,demo=null,playhead=savedView?.time||0,playing=true,follow=true,speed=1,zoom=1.8,cameraX=50,cameraY=33.333,mapScale=1,mapWidth=100,mapHeight=66.667,labels=true,selectedUnit=null,raf=null,last=0,painted=0,radioKey='',rosterKey='',lastTime=-1,changedAt=0,lastPersist=0;
+ let selected=savedView?.open?savedView.id:null,demo=null,playhead=savedView?.time||0,playing=true,follow=true,speed=1,zoom=1.8,cameraX=50,cameraY=33.333,mapScale=1,mapWidth=100,mapHeight=66.667,labels=false,selectedUnit=null,raf=null,last=0,painted=0,radioKey='',rosterKey='',lastTime=-1,changedAt=0,lastPersist=0;
  window.fieldCameraState={follow:true,x:null,y:null,width:100,height:66.667,dragged:false};
  for(const op of state.operations||[])for(const s of [op.fieldProgress?.tactical,op.preRecon?.operation.fieldProgress.tactical])if(s&&!s.done)window.fieldSimulation.captureFrame(s);
  const viewRoot=()=>replayMode?document.getElementById('field-recording-root'):app;

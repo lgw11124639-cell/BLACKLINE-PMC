@@ -13,7 +13,7 @@
   const positions=regional?(f.road.length?f.road.filter(u=>u.faction==='blackline'):[{id:'vehicle',...f.transport}]):inside?f.inside.filter(u=>u.faction==='blackline'&&u.hp>0):s.units.filter(u=>u.faction==='blackline'&&(u.joinedAt||0)<=t).map(u=>{const i=s.units.indexOf(u);return {id:u.id,x:a.units[i][0],y:a.units[i][1]}}),focus=positions.find(u=>u.id===options.selectedUnit),main=positions.filter(u=>j.team.includes(u.id)),team=main.length?main:positions;
   const desired=focus||regional&&!f.transport.stopped?focus||f.transport:team.length?{x:team.reduce((n,u)=>n+u.x,0)/team.length,y:team.reduce((n,u)=>n+u.y,0)/team.length}:{x:cx,y:cy};
   if(camera.follow){cx=desired.x;cy=desired.y;if(camera.scene===scene&&camera.x!=null){cx=camera.x+(cx-camera.x)*.18;cy=camera.y+(cy-camera.y)*.18}}else if(camera.scene===scene&&camera.x!=null){cx=camera.x;cy=camera.y}
-  const halfW=w/baseScale/z/2,halfH=h/baseScale/z/2;cx=halfW>=map.width/2?map.width/2:Math.max(halfW,Math.min(map.width-halfW,cx));cy=halfH>=map.height/2?map.height/2:Math.max(halfH,Math.min(map.height-halfH,cy));Object.assign(camera,{x:cx,y:cy,width:w/baseScale,height:h/baseScale,scene});art.beginFrame?.();
+  const halfW=w/baseScale/z/2,halfH=h/baseScale/z/2;cx=halfW>=map.width/2?map.width/2:Math.max(halfW,Math.min(map.width-halfW,cx));cy=halfH>=map.height/2?map.height/2:Math.max(halfH,Math.min(map.height-halfH,cy));Object.assign(camera,{x:cx,y:cy,width:w/baseScale,height:h/baseScale,scene});art.beginFrame?.(c,w,h);
   const screen=(x,y)=>[(x-cx)*z*baseScale+w/2,(y-cy)*z*baseScale+h/2],scale=baseScale*z;
   const im=map.image?art.image(map.image):null;c.save();c.translate(w/2,h/2);c.scale(z,z);c.translate(-cx*baseScale,-cy*baseScale);if(im?.complete&&im.naturalWidth){if(map.mirrorX){c.translate(map.width*baseScale,0);c.scale(-1,1)}c.drawImage(im,0,0,map.width*baseScale,map.height*baseScale);}c.restore();
   const root=canvas.closest('.field-console'),shell=canvas.parentElement,key=r.id+':'+scene;
@@ -53,7 +53,7 @@
   }
    if(f.medevac&&(f.medevac.scene||'site')===scene&&f.medevac.stage!=='complete'){const e=f.medevac;art.helicopter(c,...screen(e.position.x,e.position.y),e.position.heading||0,Math.max(30,scale*7.5),t,e.altitude);art.marker(c,...screen(...e.lz),'의료 후송 '+(e.loadedIds?.length||0)+'/'+e.patients.length+'명'+(innerWidth<=700?'':' · '+(e.waitReason||e.stage)),e.boarding/15*100,'#64a18b','+')}
   art.effects(c,s,t,screen,scene,w,h,scale);const firing=s.events.filter(e=>e.kind==='shot'&&(e.scene||'site')===scene&&e.visible!==false&&e.t<=t&&t-e.t<8);if(firing.length){const count=new Set(firing.map(e=>e.actor)).size;c.fillStyle='#fff5e8ee';c.fillRect(w/2-90,12,180,25);c.fillStyle='#bd7548';c.font='700 10px -apple-system,sans-serif';c.textAlign='center';c.fillText('CONTACT / '+count+'명 교전 중',w/2,29);c.textAlign='left'}
-  updateHud(root,s,f,scene,r.id);
+  art.endFrame?.(c);updateHud(root,s,f,scene,r.id);
  }
  function updateHud(root,s,f,scene,id){const key=id+':'+JSON.stringify([f.stage,f.search,f.tasks,f.recon,f.insertionRecon,f.rivalMission,f.pickup?.boarding,f.drone?.remaining,scene]);if(hudKey===key&&root.querySelector('.field-journey-panel'))return;hudKey=key;
   let panel=root.querySelector('.field-journey-panel');if(!panel){panel=document.createElement('div');panel.className='field-journey-panel';panel.setAttribute('aria-label','실제 작전 진행 단계');root.querySelector('.field-map-toolbar').before(panel)}
