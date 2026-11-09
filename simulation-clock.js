@@ -8,9 +8,10 @@
  let last=performance.now(),lastSave=last,lastReview=0,lastMarket=-1;
  const text=()=>String(Math.floor(clock.minutes/60)).padStart(2,'0')+':'+String(Math.floor(clock.minutes%60)).padStart(2,'0');
  function paint(){
-  const preparing=state.operations.find(o=>['작전 승인','사전 연습 완료','추가 연습 필요'].includes(o.status));
+  const preparing=state.operations.find(o=>o.workflow&&!['operation','done'].includes(o.workflow.stage)||['작전 승인','사전 연습 완료','추가 연습 필요'].includes(o.status));
   if(!preparing&&state.staffingDemand)document.querySelectorAll('[data-live-departure]').forEach(el=>el.textContent='편제 확보 중 · 가용 '+state.team.filter(p=>!p.dead&&!p.retired&&!p.injured).length+'명 / 필요 '+state.staffingDemand.minimum+'명 · '+(state.staffingDemand.missing||[]).join(' · '));
-  if(preparing?.deployAt)document.querySelectorAll('[data-live-departure]').forEach(el=>{const seconds=Math.max(0,Math.ceil((preparing.deployAt-state.day*1440-clock.minutes)*60));el.textContent=preparing.leaderName+' 팀 · '+preparing.status+' · 출동까지 약 '+Math.floor(seconds/60)+'분 '+seconds%60+'초'});
+  if(preparing?.workflow)document.querySelectorAll('[data-live-departure]').forEach(el=>el.textContent=window.blacklineMissionPlanSummary(preparing));
+  else if(preparing?.deployAt)document.querySelectorAll('[data-live-departure]').forEach(el=>{const seconds=Math.max(0,Math.ceil((preparing.deployAt-state.day*1440-clock.minutes)*60));el.textContent=preparing.leaderName+' 팀 · '+preparing.status+' · 출동까지 약 '+Math.floor(seconds/60)+'분 '+seconds%60+'초'});
   document.querySelectorAll('[data-company-time]').forEach(el=>el.textContent=state.date+' · '+text());
   document.querySelectorAll('[data-clock-toggle]').forEach(el=>{el.textContent=clock.paused?'시간 계속':'시간 일시정지';el.setAttribute('aria-pressed',String(clock.paused))});
   document.querySelectorAll('[data-clock-speed]').forEach(el=>{const live=state.operations.some(o=>o.status==='현장 진행 중'&&o.fieldProgress?.tactical?.version>=2);el.textContent='회사 '+clock.speed+'×';el.disabled=false});

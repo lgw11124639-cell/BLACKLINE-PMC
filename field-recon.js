@@ -4,14 +4,14 @@
  const own=s=>s.units.filter(u=>u.faction==='blackline'),say=(s,msg)=>api.transmit(s,'현장지휘관',msg,'command',true);
  function prepare(s){if(s.scenario?.mode!=='recon'||!s.journey||s.remoteRecon)return;
   const center=s.goal.slice(),map=s.terrain,base=map.base,candidates=(map.positions?.highGrounds||[]).filter(p=>!p.roof&&Math.hypot(p.x-center[0],p.y-center[1])>=30).sort((a,b)=>b.height-a.height||dist(a,{x:base[0],y:base[1]})-dist(b,{x:base[0],y:base[1]}));
-  let hill=candidates[0];if(!hill){const dx=base[0]-center[0],dy=base[1]-center[1],d=Math.max(1,Math.hypot(dx,dy)),p=api.projectToGround(map,[Math.max(2,Math.min(map.width-2,center[0]+dx/d*42)),Math.max(2,Math.min(map.height-2,center[1]+dy/d*42))]);hill={x:p[0],y:p[1],height:api.elevationAt?.(map,{x:p[0],y:p[1]})||0}}
+  let hill=candidates.find(p=>s.reconPlan?.observationRidge&&p.x===s.reconPlan.observationRidge.x&&p.y===s.reconPlan.observationRidge.y)||candidates[0];if(!hill){const dx=base[0]-center[0],dy=base[1]-center[1],d=Math.max(1,Math.hypot(dx,dy)),p=api.projectToGround(map,[Math.max(2,Math.min(map.width-2,center[0]+dx/d*42)),Math.max(2,Math.min(map.height-2,center[1]+dy/d*42))]);hill={x:p[0],y:p[1],height:api.elevationAt?.(map,{x:p[0],y:p[1]})||0}}
   const slots=own(s).map((u,i)=>{const p=api.projectToGround(map,[hill.x+Math.cos(i*2.4)*Math.sqrt(i)*1.8,hill.y+Math.sin(i*2.4)*Math.sqrt(i)*1.8]);return {id:u.id,position:p}});
   s.remoteRecon={version:1,center,exclusionRadius:24,hill:{x:hill.x,y:hill.y,height:hill.height},slots,sectors:[[center[0]-4,center[1]],[center[0]+3,center[1]-4],[center[0]+2,center[1]+4]].map(p=>({position:p,worked:0,checked:false,visible:false})),index:0,completed:false};
   s.journey.mode='recon';s.journey.team=own(s).map(u=>u.id);s.journey.siteSearch.discovered=false;s.journey.building.name='외곽 능선 관측';s.journey.exfil=api.projectToGround(map,[hill.x-7,hill.y+7]);
   if(s.journey.stage==='outbound'&&map.id==='regional'){const t=s.journey.transport;t.path=api.journeyTools.route(t.map,t.map.base,s.journey.exfil);t.distance=0;t.progress=0;}
   say(s,'작전구역 진입 금지. 외곽 능선에서 접근로·외부 움직임만 관측하고 복귀한다. 건물 내부와 가림 구역은 미확인으로 남긴다.');
  }
- api.create=function(...args){const s=create(...args);prepare(s);return s};
+ api.create=function(...args){const s=create(...args);if(args[1]?.reconPlan)s.reconPlan=JSON.parse(JSON.stringify(args[1].reconPlan));prepare(s);return s};
  api.journeySearchReady=s=>s.remoteRecon?false:ready(s);
  api.journeyMove=function(s,u,...args){const r=s.remoteRecon;if(!r||s.journey.stage!=='site'||s.retreat||u.inside)return move(s,u,...args);const slot=r.slots.find(p=>p.id===u.id);if(!slot||!active(u)||u.evacuationHold)return false;
   const safety={...s.terrain,obstacles:[...(s.terrain.obstacles||[]),[r.center[0]-24,r.center[1]-24,r.center[0]+24,r.center[1]+24]]};

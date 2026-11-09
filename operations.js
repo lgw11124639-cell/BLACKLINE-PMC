@@ -28,16 +28,18 @@
  function runScheduled(){
   for(const op of state.operations){
    if(op.status==='작전 완료')continue;
+   window.blacklineReviewOperationWorkflow?.(op);
    if((op.status==='작전 승인'||op.status==='추가 연습 필요')&&(op.rehearsalAt?absoluteTime()>=op.rehearsalAt:state.date>=op.rehearsalDate)){
     op.rehearsalComplete=true;
     const roll=(state.day*13+op.missionId*17+op.teamIds.length*7+(op.rehearsalAt?(op.rehearsalAttempts||0)*19:0))%100;
     if(op.rehearsalAt)op.rehearsalAttempts=(op.rehearsalAttempts||0)+1;
     const readiness=teamReadiness(op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(Boolean));
     op.readiness=readiness;op.rehearsalQuality=readiness>=82?'우수':readiness>=68?'양호':'보완 필요';
-    if(roll>readiness){op.rehearsalIssue='모의훈련에서 통신 및 현장 대응 절차의 보완 사항이 발견되었습니다.';op.status='추가 연습 필요';if(op.rehearsalAt){op.rehearsalAt=absoluteTime()+1;op.deployAt=absoluteTime()+3}else{op.deployDate=addDays(op.deployDate,2);op.rehearsalDate=addDays(state.date,1)};report('작전','사전 연습 문제점 보고 · '+op.id,op.leaderName+' 팀장: '+op.rehearsalIssue+' 작전 투입일을 '+op.deployDate+'로 연기했습니다.');}
-    else {op.status='사전 연습 완료';report('작전','팀장 사전 연습 결과 보고 · '+op.id,op.leaderName+' 팀장이 '+op.rehearsal+'을 완료했습니다. 평가: '+op.rehearsalQuality+'.');}
+    if(roll>readiness){op.rehearsalIssue='모의훈련에서 통신 및 현장 대응 절차의 보완 사항이 발견되었습니다.';op.status='추가 연습 필요';if(op.rehearsalAt){op.rehearsalAt=absoluteTime()+(op.workflow?120+Number(op.contract?.risk||1)*30:1);op.deployAt=op.rehearsalAt+(op.workflow?120:2);if(op.workflow){op.rehearsalDate=addDays(state.date,Math.floor((op.rehearsalAt-state.day*1440)/1440));op.deployDate=addDays(state.date,Math.floor((op.deployAt-state.day*1440)/1440));}}else{op.deployDate=addDays(op.deployDate,2);op.rehearsalDate=addDays(state.date,1)};report('작전','사전 연습 문제점 보고 · '+op.id,op.leaderName+' 팀장: '+op.rehearsalIssue+' 작전 투입일을 '+op.deployDate+'로 연기했습니다.');}
+    else {op.status='사전 연습 완료';if(op.workflow){op.deployAt=Math.max(op.deployAt||0,absoluteTime()+120);op.deployDate=addDays(state.date,Math.floor((op.deployAt-state.day*1440)/1440));}report('작전','팀장 사전 연습 결과 보고 · '+op.id,op.leaderName+' 팀장이 '+op.rehearsal+'을 완료했습니다. 평가: '+op.rehearsalQuality+'.');}
    }
    if((op.status==='사전 연습 완료'||op.status==='작전 승인')&&(op.deployAt?absoluteTime()>=op.deployAt:state.date>=op.deployDate)){
+    if(window.blacklineCanDeployWorkflow&&!window.blacklineCanDeployWorkflow(op))continue;
     const m=op.contract||state.missions.find(x=>x.id===op.missionId);
     if(!m){op.status='작전 보류';continue}
     const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
