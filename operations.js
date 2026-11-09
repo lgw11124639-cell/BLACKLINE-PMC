@@ -43,7 +43,7 @@
     if(state.ammo<120||state.med<1){op.status='작전 보류';report('군수','작전 투입 보류 · '+op.id,'탄약 또는 의료물자가 부족하여 투입을 중단했습니다.');continue}
     if(op.status!=='현장 진행 중'){
       op.status='현장 진행 중';
-      op.fieldProgress={stage:0,seed:(state.day*7919+op.missionId*101+members.length*37)%997,riskShift:0,lateRisk:0,events:[]};
+      op.fieldProgress={stage:0,seed:(state.day*7919+op.missionId*101+members.length*37)%997,startedDay:state.day,startedDate:state.date,teamSnapshot:members.map(p=>p.id),riskShift:0,lateRisk:0,events:[]};
       save();
     }
     startField(op);
@@ -65,7 +65,7 @@
      finalizeOperation(op,m,members);save();render();return;
    }
    // Each checkpoint is evaluated only when its timer fires, not before deployment.
-   const roll=(fp.seed+stage*173+state.team.length*11+Math.floor(state.cash/1000000))%100;
+   const roll=(fp.seed+stage*173+(fp.teamSnapshot?.length||op.teamIds.length)*11)%100;
    const riskShift=roll<20?7:roll<45?3:roll>86?-4:0;
    fp.riskShift+=riskShift;
    if(stage===1)fp.situation=roll<25?'예상 밖의 현장 위험':roll<55?'현장 상황 변화':'계획 범위 내 상황';
@@ -100,8 +100,8 @@
      const readiness=teamReadiness(members);
      const missionRisk=Number(m?.risk)||1;
      const exposure=Math.max(2,Math.min(48,11+missionRisk*5+Math.max(0,fp.riskShift)+fp.lateRisk-Math.round(readiness/13)-(fp.commandDecision==='철수'?9:0)));
-     const injured=(fp.seed*23+state.day*7)%100<exposure;
-     const severityRoll=(fp.seed*41+state.day*13+missionRisk*19)%100;
+     const injured=(fp.seed*23+(fp.startedDay??state.day)*7)%100<exposure;
+     const severityRoll=(fp.seed*41+(fp.startedDay??state.day)*13+missionRisk*19)%100;
      const severity=injured?(severityRoll<12?'중상':severityRoll<42?'보통':'경상'):null;
      const recoveryDays=severity==='중상'?45+fp.seed%31:severity==='보통'?18+fp.seed%14:severity==='경상'?5+fp.seed%8:0;
      fp.medical={injured,exposure,severity,recoveryDays,personId:injured&&members.length?members[fp.seed%members.length].id:null,evacuation:false,medicalCost:0,medUsed:injured?1:0,reassignment:injured?'부상 인원 임무 제외 · 잔여 인원 재배치':'불필요'};
@@ -141,7 +141,8 @@
  }
  function finalizeOperation(op,m,members){
     // Stage-based, deterministic mission resolution. Support changes actual outcome.
-    const seed=(state.day*7919+m.id*101+state.history.length*509+members.length*37)%997;
+    const seed=op.fieldProgress?.seed??(state.day*7919+m.id*101+state.history.length*509+members.length*37)%997;
+    const missionDay=op.fieldProgress?.startedDay??state.day;
     const avg=members.reduce((a,p)=>a+(Number(p.skill)||0),0)/members.length;
     const readiness=teamReadiness(members);
     const avgFatigue=members.reduce((a,p)=>a+(Number(p.fatigue)||0),0)/members.length;
@@ -152,7 +153,7 @@
     const authorized=Math.max(0,Number(op.budget)||0),choices=[];let supportCost=0;
     const phases=[];
     const baseScore=Math.max(10,Math.min(90,44+avg*.22+readiness*.16+preparationBonus+specialistBonus-fatiguePenalty-m.risk*12));
-    const incident=(seed*37+state.day*11+m.risk*29)%100;
+    const incident=(seed*37+missionDay*11+m.risk*29)%100;
     const situation=op.fieldProgress?.situation||(incident<19?'예상 밖의 현장 위험':incident<43?'현장 상황 변화':'계획 범위 내 상황');
     const pressure=(situation==='예상 밖의 현장 위험'?19:situation==='현장 상황 변화'?9:0)+Math.round(avgFatigue/12)+Math.max(-10,Math.min(16,Number(op.fieldProgress?.riskShift)||0));
     const leadership=members.find(p=>p.id===op.leaderId)||members[0];
@@ -177,7 +178,7 @@
     const effective=choices.filter(c=>c.requestedAt+c.eta<=220);
     const delayed=choices.filter(c=>c.requestedAt+c.eta>220);
     const supportBonus=effective.reduce((sum,c)=>sum+c.effect,0);
-    const secondIncident=(seed*53+state.day*23+m.id*31)%100;
+    const secondIncident=(seed*53+missionDay*23+m.id*31)%100;
     const latePressure=(secondIncident<17?14:secondIncident<36?6:0)+Math.max(0,Number(op.fieldProgress?.lateRisk)||0);
     const fieldStamina=Math.max(0,Math.round(100-avgFatigue-m.risk*6-(situation==='예상 밖의 현장 위험'?12:0)));
     // A casualty removes one operative from the active roster for the remaining mission.
@@ -192,12 +193,12 @@
     phases.push({t:185,phase:'지원 상황',detail:effective.length?effective.map(c=>c.name).join(', ')+' 도착':'목표 판정 전 지원 도착 없음',score:supportBonus});
     if(medical?.injured)phases.push({t:200,phase:'인원 재배치',detail:'잔여 '+activeMembers.length+'명 재편성 · 수행 영향 '+reassignmentPenalty+'점',score:Math.round(activeReadiness)});
     phases.push({t:205,phase:'상황 재평가',detail:secondaryRetreat?'상황 악화로 현장 철수 결정':latePressure?'추가 위험 확인':'현장 안정 유지',score:Math.round(continuingScore)});
-    const success=!withdrew&&((seed*17+state.day*13+m.id*7)%100)<finalScore;
+    const success=!withdrew&&((seed*17+missionDay*13+m.id*7)%100)<finalScore;
     const exposure=Math.max(2,Math.min(48,11+m.risk*5+pressure+latePressure-Math.round(readiness/13)-Math.round(supportBonus/2)-(withdrew?9:0)));
-    const injury=op.fieldProgress?.medical?!!op.fieldProgress.medical.injured:(seed*23+state.day*7)%100<exposure;
+    const injury=op.fieldProgress?.medical?!!op.fieldProgress.medical.injured:(seed*23+missionDay*7)%100<exposure;
     if(injury&&!op.fieldProgress?.medical&&state.cash>=8500000)consider('긴급 의료 후송',8500000,'부상자 보호 및 의료 지원',true,true,0);
     const evacuation=op.fieldProgress?.medical?!!op.fieldProgress.medical.evacuation:choices.some(c=>c.name==='긴급 의료 후송'&&c.requestedAt+c.eta<=330);
-    const death=(seed*31+state.day*19)%100<Math.max(1,Math.round(exposure/3)+(success?0:3)-(evacuation?7:0)-(withdrew?3:0));
+    const death=(seed*31+missionDay*19)%100<Math.max(1,Math.round(exposure/3)+(success?0:3)-(evacuation?7:0)-(withdrew?3:0));
     const used=Math.min(state.ammo,Math.max(45,120+seed%180-(withdrew?80:0)));
     const medUsed=injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
@@ -245,7 +246,7 @@
  function approveScheduled(){const op=state.pending?.plan;if(!op)return;const budget=Number(document.getElementById('budget').value);if(!Number.isFinite(budget)||budget<0||budget>200000000){alert('지원 예산을 확인하세요.');return}op.budget=budget;op.air=document.getElementById('air').value;op.artillery=document.getElementById('artillery').value;op.status='작전 승인';op.departmentBudget={personnel:Math.round(budget*.22),logistics:Math.round(budget*.25),transport:Math.round(budget*.18),medical:Math.round(budget*.15),reserve:budget-Math.round(budget*.22)-Math.round(budget*.25)-Math.round(budget*.18)-Math.round(budget*.15)};state.operations.unshift(op);state.pending=null;report('작전','팀장 작전계획 승인 보고 · '+op.id,op.leaderName+' 팀장 계획 승인. 팀 준비 평가 '+(op.readiness>=82?'우수':op.readiness>=68?'양호':'보완 필요')+'. '+op.rehearsalDate+' 사전 연습, '+op.deployDate+' 작전 투입 예정.');save();render()}
  window.approveScheduled=approveScheduled;
  const oldMissions=missions;missions=function(){let html='<h2>작전 운영 현황</h2>'+state.operations.filter(x=>x.status!=='작전 완료').map(op=>'<div class="card"><div class="line"><strong>'+escapeHTML(op.id)+'</strong><span class="tag">'+escapeHTML(op.status)+'</span></div><p class="empty">팀장 '+escapeHTML(op.leaderName)+' · 투입 '+op.deployDate+'<br>사전 연습 '+op.rehearsalDate+' · '+escapeHTML(op.rehearsal)+'<br>팀 준비 평가 '+(op.readiness>=82?'우수':op.readiness>=68?'양호':'보완 필요')+'<br>투입 방식 '+escapeHTML(op.method)+'</p></div>').join('');return html+oldMissions()};
- const oldHome=home;home=function(){const op=state.operations.filter(x=>x.status!=='작전 완료');return oldHome()+(op.length?'<h2>진행 중인 작전 일정</h2>'+op.map(x=>'<div class="card"><strong>'+escapeHTML(x.id)+'</strong><p class="empty">'+escapeHTML(x.status)+' · 연습 '+x.rehearsalDate+' · 투입 '+x.deployDate+'</p></div>').join(''):'')};
+ const oldHome=home;home=function(){const op=state.operations.filter(x=>x.status!=='작전 완료');return oldHome()+(op.length?'<h2>진행 중인 작전 일정</h2>'+op.map(x=>{const fp=x.fieldProgress;const latest=fp?.events?.slice(-1)[0];return '<div class="card"><strong>'+escapeHTML(x.id)+'</strong><p class="empty">'+escapeHTML(x.status)+' · 연습 '+x.rehearsalDate+' · 투입 '+x.deployDate+'</p>'+(fp?'<p class="empty">현장 진행 '+Math.min(4,fp.stage)+'/4단계 · '+escapeHTML(latest?.phase||'현장 투입 대기')+'</p><p class="empty">'+escapeHTML(latest?.detail||'현장 지휘부 연결 중')+'</p>'+(fp.medical?.injured?'<p class="empty">의료 대응: '+escapeHTML(fp.medical.severity)+' · '+escapeHTML(fp.medical.evacuation?'후송 승인':'현장 응급처치')+'</p>':''):'')+'</div>'}).join(''):'')};
  const oldPeople=people;people=function(){return '<div class="card"><h3>인사팀 자율 채용 지침</h3><p class="empty">사장님이 채용 권한을 위임하면 인사팀은 매월 최대 1명까지 승인된 예산 범위에서 부족 인원을 자동 계약합니다.</p><label><input type="checkbox" id="autoRecruit" '+(state.recruitPolicy.enabled?'checked':'')+'> 인사팀 자동 계약 허용</label><label>최소 유지 인원<input type="number" id="minTeam" min="2" max="12" value="'+state.recruitPolicy.minTeam+'"></label><label>연봉 상한 (원)<input type="number" id="salaryCap" min="10000000" step="10000000" value="'+state.recruitPolicy.maxAnnualSalary+'"></label>'+btn('인사 위임 지침 저장','saveRecruitPolicy()')+'</div><h2>현직 인원 및 사망 기록</h2>'+(state.fallen.length?state.fallen.map(x=>'<div class="card"><strong>'+escapeHTML(x.name)+'</strong><p class="empty">사망일 '+x.date+' · '+escapeHTML(x.mission)+'</p></div>').join(''):'<p class="empty">사망 기록 없음</p>')+oldPeople()};
  function saveRecruitPolicy(){state.recruitPolicy.enabled=document.getElementById('autoRecruit').checked;state.recruitPolicy.minTeam=Math.max(2,Math.min(12,Number(document.getElementById('minTeam').value)||4));state.recruitPolicy.maxAnnualSalary=Math.max(10000000,Number(document.getElementById('salaryCap').value)||110000000);report('인사','인사팀 채용 위임 지침 변경','자동 채용 '+(state.recruitPolicy.enabled?'허용':'중지')+'. 최소 유지 인원 '+state.recruitPolicy.minTeam+'명.');save();render()}
  window.saveRecruitPolicy=saveRecruitPolicy;
