@@ -115,6 +115,17 @@
        fp.events.push({stage:4,t:235,phase:'의료 대응',detail:severity+' 부상 · '+(fp.medical.evacuation?'의료 후송 승인':'현장 응급처치')+' · 잔여 인원 재배치',riskShift:0});
      }
 
+     // Lock in the post-casualty field reorganization before the final settlement.
+     const remainingMembers=fp.medical.injured?members.filter(p=>p.id!==fp.medical.personId):members;
+     const remainingReadiness=remainingMembers.length?teamReadiness(remainingMembers):0;
+     const reassignmentPenalty=fp.medical.injured?Math.max(4,Math.round((readiness-remainingReadiness)/3)+Math.round(16/Math.max(1,remainingMembers.length))+(fp.medical.severity==='중상'?4:0)):0;
+     const leader=members.find(p=>p.id===op.leaderId)||members[0];
+     const leadership=leader?personnelEvaluation(leader).leadership:50;
+     const supportEffect=fp.supportOrders.filter(o=>o.requestedAt+o.eta<=220).reduce((sum,o)=>sum+(Number(o.effect)||0),0);
+     const fieldEstimate=Math.round(44+readiness*.16+(members.reduce((a,p)=>a+(Number(p.skill)||0),0)/Math.max(1,members.length))*.22-missionRisk*12-fp.riskShift-fp.lateRisk+supportEffect-reassignmentPenalty);
+     fp.reorganization={activeTeamIds:remainingMembers.map(p=>p.id),activeReadiness:remainingReadiness,penalty:reassignmentPenalty,fieldEstimate};
+     fp.secondaryDecision=fp.commandDecision==='철수'?'철수 유지':(remainingMembers.length<2||fieldEstimate<31)&&leadership>=40?'철수':'계속';
+     fp.events.push({stage:4,t:240,phase:'전력 재편성',detail:'가용 '+remainingMembers.length+'명 · '+(fp.secondaryDecision==='철수'?'지휘관 철수 결정':'잔여 인원 임무 계속'),riskShift:0});
      fp.events.push({stage:4,t:205,phase:'지원 도착 확인',detail:fp.supportArrivals.length?fp.supportArrivals.map(o=>o.name+(o.onTime?' · 판정 전 도착':' · 판정 후 도착')).join(', '):'지원 요청 없음',riskShift:0});
    }
    const detail=roll<20?'예상 외 위험 증가':roll>86?'현장 상황 안정':stage===2?'지휘관 현장 판단 갱신':'현장 상황 점검 완료';
@@ -173,9 +184,9 @@
     const medical=op.fieldProgress?.medical;
     const activeMembers=medical?.injured?members.filter(p=>p.id!==medical.personId):members;
     const activeReadiness=teamReadiness(activeMembers);
-    const reassignmentPenalty=medical?.injured?Math.max(4,Math.round((readiness-activeReadiness)/3)+Math.round(16/Math.max(1,activeMembers.length))+(medical.severity==='중상'?4:0)):0;
+    const reassignmentPenalty=op.fieldProgress?.reorganization?.penalty??(medical?.injured?Math.max(4,Math.round((readiness-activeReadiness)/3)+Math.round(16/Math.max(1,activeMembers.length))+(medical.severity==='중상'?4:0)):0);
     const continuingScore=baseScore-pressure+supportBonus-latePressure+Math.round((fieldStamina-50)/12)-reassignmentPenalty;
-    const secondaryRetreat=!retreat&&(continuingScore<31||activeMembers.length<2)&&leaderScore>=40;
+    const secondaryRetreat=!retreat&&(op.fieldProgress?.secondaryDecision?op.fieldProgress.secondaryDecision==='철수':(continuingScore<31||activeMembers.length<2)&&leaderScore>=40);
     const withdrew=retreat||secondaryRetreat;
     const finalScore=Math.max(5,Math.min(96,continuingScore));
     phases.push({t:185,phase:'지원 상황',detail:effective.length?effective.map(c=>c.name).join(', ')+' 도착':'목표 판정 전 지원 도착 없음',score:supportBonus});
@@ -191,7 +202,7 @@
     const medUsed=injury?1:0;
     phases.push({t:220,phase:'임무 평가',detail:withdrew?'안전 철수':success?'목표 달성':'목표 미달성',score:Math.round(finalScore)});
     phases.push({t:330,phase:'인원 보호',detail:death?'중대한 인명 피해':injury?'부상자 발생':'인원 이상 없음',score:Math.round(exposure)});
-    op.resolution={version:9,activeTeamCount:activeMembers.length,reassignmentPenalty,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
+    op.resolution={version:10,fieldReorganization:op.fieldProgress?.reorganization||null,activeTeamCount:activeMembers.length,reassignmentPenalty,medical:op.fieldProgress?.medical||null,supportArrivals:op.fieldProgress?.supportArrivals||[],fieldEvents:op.fieldProgress?.events||[],phases,situation,retreat:withdrew,secondaryRetreat,baseScore:Math.round(baseScore),pressure,latePressure,fieldStamina,supportBonus,delayedSupport:delayed.map(c=>c.name),finalScore:Math.round(finalScore),exposure:Math.round(exposure)};
     state.cash-=Math.max(0,supportCost-(Number(op.fieldProgress?.reservedSupportCost)||0));op.actualSupportCost=supportCost;op.supportDecisions=choices;
     state.ammo-=used;state.med-=medUsed;
     const reward=success?m.reward:Math.round(m.reward*(withdrew?.08:.15));state.cash+=reward;
