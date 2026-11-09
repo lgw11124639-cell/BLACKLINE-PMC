@@ -9,7 +9,7 @@
   if(progress!=null){label(c,Math.round(progress)+'%',19,-7,color);c.fillStyle='#dfe7f1';c.fillRect(19,-2,66,3);c.fillStyle=color;c.fillRect(19,-2,66*Math.min(100,progress)/100,3)}c.restore();
  }
  function vehicle(c,x,y,heading,size=62,jet=false){c.save();c.translate(x,y);c.rotate(heading);const ok=sprite(c,'images/operators/vehicles.webp',jet?2:0,2,2,0,size*.12,size,size*2/3);if(!ok){c.fillStyle=jet?'#4d6477':'#4e7093';c.beginPath();c.moveTo(size*.4,0);c.lineTo(-size*.3,-size*.16);c.lineTo(-size*.3,size*.16);c.closePath();c.fill()}c.restore()}
- function unit(c,u,v,x,y,size,t,selected=false,labels=true){const color=palette[u.faction]||palette.blackline,heading=v[5]||0,down=v[2]<=0||['dead','wounded','evacuated'].includes(v[4]),wounded=v[2]<=55||down,care=v[4]==='treating',carry=['carrying','casualty-recovery'].includes(v[4]);
+ function unit(c,u,v,x,y,size,t,selected=false,labels=true){const color=palette[u.faction]||palette.blackline,heading=v[5]||0,down=v[2]<=0||['dead','wounded','evacuated'].includes(v[4]),wounded=v[2]<=55||down,care=v[4]==='treating',carry=v[4]==='carrying';
   if(v[4]==='boarded')return;
   c.save();c.translate(x,y);c.fillStyle='#24394a20';c.beginPath();c.ellipse(0,4,size*.28,size*.09,0,0,Math.PI*2);c.fill();
   if(selected){c.strokeStyle=color;c.lineWidth=1.5;const d=size*.43;for(const [sx,sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){c.beginPath();c.moveTo(sx*d,sy*d*.7-sy*5);c.lineTo(sx*d,sy*d*.7);c.lineTo(sx*d-sx*6,sy*d*.7);c.stroke()}}
