@@ -20,9 +20,10 @@
   const risk=Math.max(1,Number(m.risk)||1);
   const budget=budgetFor(m);
   if(budget<3000000)return null;
-  const op={id:'OP-'+String(state.day).padStart(4,'0')+'-'+m.id,missionId:m.id,leaderId:leader.id,leaderName:leader.name,teamIds:people.map(p=>p.id),created:state.date,deployDate:addDays(state.date,risk>1?4:3),rehearsalDate:addDays(state.date,1),method:risk>1?'항공·지상 수송 검토':'지상 차량 이동',rehearsal:'통신·후송·민간인 보호 모의훈련',status:'작전 승인',briefing:'작전본부가 자율적으로 의뢰 조건을 검토했습니다.',readiness:75,rehearsalQuality:null,rehearsalIssue:null,rules:'민간인 보호 및 인원 안전 우선. 현장지휘관은 위험 시 임무를 중단할 수 있습니다.',air:risk>1?'restricted':'off',artillery:'off',budget};
+  const op={id:'OP-'+String(state.day).padStart(4,'0')+'-'+m.id,missionId:m.id,leaderId:leader.id,leaderName:leader.name,teamIds:people.map(p=>p.id),created:state.date,deployDate:addDays(state.date,risk>1?4:3),rehearsalDate:addDays(state.date,1),method:risk>1?'항공·지상 수송 검토':'지상 차량 이동',rehearsal:'통신·후송·민간인 보호 모의훈련',status:'작전 승인',briefing:'작전본부가 자율적으로 의뢰 조건을 검토했습니다.',readiness:75,rehearsalQuality:null,rehearsalIssue:null,rules:'민간인 보호 및 인원 안전 우선. 현장지휘관은 위험 시 임무를 중단할 수 있습니다.',air:risk>1?'restricted':'off',artillery:risk>=3?'restricted':'off',budget};
   op.departmentBudget={personnel:Math.round(budget*.22),logistics:Math.round(budget*.25),transport:Math.round(budget*.18),medical:Math.round(budget*.15),reserve:budget-Math.round(budget*.22)-Math.round(budget*.25)-Math.round(budget*.18)-Math.round(budget*.15)};
   op.contract={...m};
+  if(state.simClock){const now=state.day*1440+state.simClock.minutes;op.rehearsalAt=now+.5;op.deployAt=now+3;op.rehearsalDate=state.date;op.deployDate=state.date}
   return op;
  }
  function review(force=false){
@@ -49,6 +50,7 @@
  };
  home=function(){return originalHome()+'<div class="card"><h3>회사 운영 권한</h3><p class="empty">완전 관전형 · 작전본부, 인사본부, 군수본부, 재무본부가 자체적으로 의사결정합니다. 사장은 진행 현황과 작전 결과를 확인합니다.</p></div>'};
  nextDay=function(){originalNext();review();save();render()};
+ window.blacklineReviewCompany=()=>review(true);
  // Disable legacy owner action entrypoints while retaining automatic simulation internals.
  window.prepare=function(){};
  window.approveScheduled=function(){};

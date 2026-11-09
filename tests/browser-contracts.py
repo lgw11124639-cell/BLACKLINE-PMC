@@ -8,7 +8,7 @@ with sync_playwright() as p:
  legacy=old.evaluate('JSON.stringify(state)');assert old.evaluate("state.operations.some(o=>o.status==='현장 진행 중')")
  old.close();ctx=b.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
  page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
- page.goto(URL,wait_until='networkidle');page.evaluate('(s)=>{localStorage.clear();localStorage.setItem("blackline_pmc_v1",s);localStorage.setItem("blackline_pmc_v1_backup",s)}',legacy)
+ page.goto(URL,wait_until='networkidle');page.evaluate('(s)=>{state=JSON.parse(s);localStorage.clear();localStorage.setItem("blackline_pmc_v1",s);localStorage.setItem("blackline_pmc_v1_backup",s)}',legacy)
  page.reload(wait_until='networkidle');page.locator('#blackline-continue').click()
  print('PASS old v28 save migration',page.evaluate('state.missionTemplates.length'))
  assert page.evaluate("state.operations.filter(o=>o.status==='현장 진행 중').every(o=>!!o.contract)")
@@ -47,7 +47,7 @@ with sync_playwright() as p:
  # Pre-market saves must retain an approved template beyond the first five offers.
  ancient=json.loads(legacy);ancient['missions']=ancient.pop('missionTemplates');ancient.pop('contractWorld',None)
  op=ancient['operations'][0];op['missionId']=18;op['id']='OP-legacy-18';op['status']='작전 승인';op['deployDate']='2031-01-01';op['rehearsalDate']='2031-01-01';op.pop('fieldProgress',None);op.pop('contract',None)
- page.evaluate('(s)=>{localStorage.setItem("blackline_pmc_v1",s);localStorage.setItem("blackline_pmc_v1_backup",s)}',json.dumps(ancient))
+ page.evaluate('(s)=>{state=JSON.parse(s);localStorage.setItem("blackline_pmc_v1",s);localStorage.setItem("blackline_pmc_v1_backup",s)}',json.dumps(ancient))
  page.reload(wait_until='networkidle')
  assert page.evaluate('state.missionTemplates.length===18&&state.missions.some(m=>m.id===18)&&state.operations[0].contract.id===18')
  print('PASS pre-market save retains approved template 18')

@@ -48,7 +48,7 @@
   if(c.budget<reward)return null;
   const offer={...t,id:++w.sequence,templateId:t.id,clientId:c.id,regionId:r.id,risk,reward,receivedDate:state.date,expiresDate:addDays(state.date,eventId?3:7),contractStatus:'검토 가능',marketReason:reason,eventId:eventId||null,parentContractId:parentId||null,contractKind:parentId&&t.type==='시설 보안'?'후속 시설 방호':eventId?'긴급 단기':'일반 단기',durationDays:1};
   // Budget is reserved by an outstanding offer, released on withdrawal, consumed on settlement.
-  c.budget-=reward;c.lastOffer=state.date;c.demand=Math.max(0,c.demand-18);
+  c.budget-=reward;c.lastOffer=state.date;c.lastOfferAt=state.simClock?state.day*1440+state.simClock.minutes:null;c.demand=Math.max(0,c.demand-18);
   state.missions.push(offer);report('신규 계약 의뢰 접수 · '+offer.title,r.name+' / '+reason+' / '+offer.contractKind+' / 제안 마감 '+offer.expiresDate+' / 보수 '+money(reward)+'.');return offer;
  }
  function refresh(){
@@ -65,10 +65,11 @@
     report('의뢰 철회 통보 · '+m.title,m.client+'의 제안 유효기간이 만료되었습니다.');return false;
    }return true;
   });
-  if(w.lastDate===state.date)return;
-  const first=w.lastDate===null;w.lastDate=state.date;
+  const cycle=state.simClock?state.date+':'+Math.floor(state.simClock.minutes/30):state.date;
+  if(w.lastCycle===cycle)return;
+  const first=w.lastDate===null,newDay=w.lastDate!==state.date;w.lastDate=state.date;w.lastCycle=cycle;
   for(const r of w.regions){
-   if(!first){r.conflict=clamp(r.conflict+(r.instability>50?2:-1));r.security=clamp(r.security+(r.conflict>60?-2:1));r.economy=clamp(r.economy+(r.security<40?-1:r.security>65?1:0));r.instability=clamp(r.instability+(r.economy<40?1:r.security>65?-1:0))}
+   if(!first&&newDay){r.conflict=clamp(r.conflict+(r.instability>50?2:-1));r.security=clamp(r.security+(r.conflict>60?-2:1));r.economy=clamp(r.economy+(r.security<40?-1:r.security>65?1:0));r.instability=clamp(r.instability+(r.economy<40?1:r.security>65?-1:0))}
    if(r.conflict>=60&&(!r.lastEventDate||addDays(r.lastEventDate,5)<=state.date)){
     const e={id:'event-'+r.id+'-'+state.date,date:state.date,regionId:r.id,kind:'시설 위협',cause:'분쟁 강도 '+r.conflict+' · 치안 '+r.security,title:'무장세력 활동 증가로 기반시설 공격 위험 상승'};
     w.events.unshift(e);w.events=w.events.slice(0,30);r.lastEventDate=state.date;r.security=clamp(r.security-3);
@@ -77,14 +78,14 @@
   }
   for(const c of w.clients){
    const r=w.regions.find(r=>r.id===c.regionId);
-   if(!first)c.budget=Math.min(1500000000,c.budget+Math.round(r.economy*150000));
+   if(!first&&newDay)c.budget=Math.min(1500000000,c.budget+Math.round(r.economy*150000));
    const templates=state.missionTemplates.filter(t=>t.client===c.name);
    c.demand=clamp(Math.max(...templates.map(t=>demandFor(t,r)))+(100-c.trust)*.1);
   }
   const candidates=[];
   for(const t of state.missionTemplates){
    const c=w.clients.find(c=>c.name===t.client),r=w.regions.find(r=>r.id===c.regionId);
-   if(c.lastOffer&&addDays(c.lastOffer,3)>state.date)continue;
+   if(state.simClock&&c.lastOfferAt!=null){if(state.day*1440+state.simClock.minutes-c.lastOfferAt<180)continue}else if(c.lastOffer&&addDays(c.lastOffer,3)>state.date)continue;
    const event=t.type==='시설 보안'?w.events.find(e=>e.regionId===r.id&&e.date===state.date):null;
    candidates.push({t,c,r,event,score:demandFor(t,r)+c.trust*.1+(event?25:0)+(w.specialties[t.type]||0)*2});
   }

@@ -20,7 +20,15 @@ async function restore(file){
   const parsed=JSON.parse(await file.text()),data=parsed.state||parsed;
   if(!data||typeof data!=='object'||!Array.isArray(data.reports)||!Array.isArray(data.team)||!Number.isFinite(Number(data.day))||! /^\d{4}-\d{2}-\d{2}$/.test(data.date))throw Error('BLACKLINE 저장 형식이 아닙니다.');
   if(!confirm('현재 저장을 백업 파일의 진행 상태로 교체할까요?'))return;
-  localStorage.setItem(KEY,JSON.stringify(data));localStorage.setItem(KEY+'_backup',JSON.stringify(data));location.reload();
+  const serialized=JSON.stringify(data),previousState=state,primary=localStorage.getItem(KEY),backup=localStorage.getItem(KEY+'_backup');
+  window.blacklineImportingSave=true;
+  try{localStorage.setItem(KEY,serialized);localStorage.setItem(KEY+'_backup',serialized);state=data}
+  catch(writeError){
+   try{if(primary===null)localStorage.removeItem(KEY);else localStorage.setItem(KEY,primary);if(backup===null)localStorage.removeItem(KEY+'_backup');else localStorage.setItem(KEY+'_backup',backup)}
+   finally{state=previousState;window.blacklineImportingSave=false}
+   throw writeError;
+  }
+  location.reload();
  }catch(e){alert('불러오기 실패: '+e.message)}
 }
 window.blacklineExportSave=download;

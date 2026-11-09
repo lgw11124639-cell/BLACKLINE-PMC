@@ -45,7 +45,7 @@
   if(!force&&hr.lastReview===state.date)return;
   renew();
   // Gradual hiring: at most one per day, rather than instantaneous roster filling.
-  recruit();organize();hr.lastReview=state.date;save();
+  if(hr.lastReview!==state.date)recruit();if(force&&!hr.continuousRosterInitialized&&active().length<2)recruit();hr.continuousRosterInitialized=true;organize();hr.lastReview=state.date;save();
  }
  const previousNext=nextDay;
  nextDay=function(){previousNext();review();save();render()};

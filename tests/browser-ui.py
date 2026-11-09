@@ -10,7 +10,7 @@ with sync_playwright() as p:
   assert page.locator('#blackline-continue').evaluate('(el)=>el===document.activeElement')
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
   if width==390:page.screenshot(path='/tmp/blackline-final-start-mobile.png',full_page=True)
-  page.locator('#blackline-continue').click()
+  page.locator('#blackline-continue').click();page.evaluate('if(!state.simClock.paused)companyClock.toggle()')
   assert page.locator('nav').evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgb(255, 255, 255)'
   assert page.locator('.stats .stat').count()==4
   tools=page.locator('.header-tools').bounding_box();assert tools['x']+tools['width']<=width,(width,'header clipped')
@@ -27,7 +27,7 @@ with sync_playwright() as p:
     if width==390:page.screenshot(path='/tmp/blackline-final-profile-mobile.png')
     page.locator('.profile-close').click()
   # Inbox filters/search retain their existing behavior.
-  page.get_by_role('button',name='재무',exact=True).click();assert page.locator('.mail-item').count()==0
+  page.get_by_role('button',name='재무',exact=True).click();assert page.locator('.mail-item').count()==page.locator('.mail-item.mail-finance').count()
   page.get_by_role('button',name='전체',exact=True).click()
   page.locator('.mail-search input').fill('신규 계약');assert page.locator('.mail-item').count()>0
   page.locator('.mail-search input').fill('')
@@ -36,7 +36,7 @@ with sync_playwright() as p:
   if width==390:page.screenshot(path='/tmp/blackline-final-report-mobile.png')
   if width==1440:page.screenshot(path='/tmp/blackline-final-report-desktop.png')
   page.locator('.report-back').click()
-  day=page.evaluate('state.day');page.get_by_role('button',name='다음 날 진행',exact=True).click();assert page.evaluate('state.day')==day+1
+  day=page.evaluate('state.day');minutes=page.evaluate('state.simClock.minutes');page.evaluate('companyClock.toggle()');page.wait_for_timeout(650);page.evaluate('companyClock.toggle()');assert page.evaluate('state.simClock.minutes')>minutes;page.evaluate('nextDay()');assert page.evaluate('state.day')==day+1
   assert page.evaluate("JSON.parse(localStorage.getItem('blackline_pmc_v1')).day")==day+1
   page.locator('.save-management').click();assert page.locator('.start-panel').is_visible()
   with page.expect_download() as d:page.locator('#blackline-export').click()
