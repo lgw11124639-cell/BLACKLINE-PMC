@@ -31,11 +31,11 @@
     if(target.faction===u.faction||!active(target))continue;
     if(!visible(s,u,target)){delete u.recognition[target.id];continue}
     u.recognition[target.id]=(u.recognition[target.id]||0)+1;if(s.version>=4&&u.faction==='blackline'&&u.recognition[target.id]>=2&&u.recognition[target.id]<4&&api.radioLinked(s,u)&&s.contacts[target.id]?.identified!==true)s.contacts[target.id]={x:target.x,y:target.y,lastSeen:s.time,firstSeen:s.time,visible:true,identified:false,confidence:35};
-    if(u.recognition[target.id]<(/정찰/.test(u.role)?2:4))continue;
+    if(u.faction==='blackline'&&u.recognition[target.id]>=2)api.observeContact?.(s,u,target,'site',{identified:u.recognition[target.id]>=(/정찰/.test(u.role)?2:4)});if(u.recognition[target.id]<(/정찰/.test(u.role)?2:4))continue;
     const previous=u.knowledge[target.id];u.knowledge[target.id]={x:target.x,y:target.y,lastSeen:s.time};
     if(u.faction==='blackline'&&(s.version<4||api.radioLinked(s,u))){
      const first=!s.contacts[target.id];s.contacts[target.id]={firstSeen:s.contacts[target.id]?.firstSeen??s.time,x:target.x,y:target.y,lastSeen:s.time,visible:true,faction:target.faction,identified:true,confidence:100};
-     if(first){target.seenAt=s.time;log(s,u.name,target.faction==='pmc'?s.rival.name+' 소속 인원 관측. 상호 식별을 진행한다.':'무장 인원 시각 확인. 현 위치 엄폐, 팀장에게 접촉 보고.','contact');s.events.push({t:s.time,kind:'contact',target:target.id,visible:true})}
+     if(first){target.seenAt=s.time;if(!api.observeContact)log(s,u.name,target.faction==='pmc'?s.rival.name+' 소속 인원 관측. 상호 식별을 진행한다.':'무장 인원 시각 확인. 현 위치 엄폐, 팀장에게 접촉 보고.','contact');s.events.push({t:s.time,kind:'contact',target:target.id,visible:true})}
      if(target.faction==='pmc'&&!s.rival.identified){s.rival.identified=true;log(s,'현장지휘관',s.rival.hostile?'경계구역 충돌 가능. 접근을 중단하고 상대 의도를 확인한다.':'다른 PMC 계약 수행 구역 확인. 분리 이동하고 충돌을 피한다.','command')}
     }
    }
@@ -46,6 +46,7 @@
   for(const u of blue.filter(u=>s.version<4||api.radioLinked(s,u)))for(const [id,c] of Object.entries(s.contacts))if(s.time-c.firstSeen>=2&&s.time-c.lastSeen<30&&!u.knowledge[id])u.knowledge[id]={x:c.x,y:c.y,lastSeen:c.lastSeen};
  }
  function fire(s,u,target){
+  if(api.authorizeEngagement?.(s,u,target,'site')===false)return;
   if(s.time<u.nextShot)return;
   const suppressed=(s.suppression?.[u.id]||0)>s.time;
   u.nextShot=s.time+(api.weaponCycle?.(u)||(/저격|정밀/.test(u.role)?(api.consumeRounds?7:13):((api.consumeRounds?3:8)+Math.floor(rand(s)*5))*(suppressed?1.7:1)));
@@ -105,7 +106,7 @@
    if(u.faction==='blackline'&&u.tacticalRole==='medic'&&api.roles?.handle(s,u,op))continue;
    if(u.faction==='blackline'&&u.tacticalRole==='sniper'&&!u.positionReported&&s.phase!=='접근'&&s.phase!=='복귀'&&(!target||dist(u,target)>6)&&api.roles?.handle(s,u,op))continue;
    if(target&&u.ammo>0&&dist(u,target)<=u.range&&!(s.phase==='복귀'&&u.faction==='blackline')){
-    if(u.target!==target.id){u.target=target.id;u.aimSince=s.time}u.heading=Math.atan2(target.y-u.y,target.x-u.x);u.status='engaging';
+    if(u.target!==target.id){u.target=target.id;u.aimSince=s.time}u.heading=Math.atan2(target.y-u.y,target.x-u.x);u.status=api.contactStatus?.(s,u,target,'site')||'engaging';
     if(s.time-u.aimSince>=2)fire(s,u,target);continue;
    }
    u.target=null;u.aimSince=null;

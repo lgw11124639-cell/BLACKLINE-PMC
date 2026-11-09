@@ -107,7 +107,7 @@
      if(fp.supportOrders&&fp.medical&&fp.reorganization){fp.stage=4;save();render();return;}
      if(roll<30)fp.lateRisk+=6;
      const m=op.contract||state.missions.find(x=>x.id===op.missionId);
-     const requests=[];const observedEnemies=fp.tactical?.units.filter(u=>!u.inside&&!u.roadOnly&&u.hp>0&&fp.tactical.contacts?.[u.id]?.visible&&(u.faction==='insurgent'||u.faction==='pmc'&&fp.tactical.rival.hostile))||[];
+     const requests=[];const observedEnemies=fp.tactical?.units.filter(u=>!u.inside&&!u.roadOnly&&u.hp>0&&fp.tactical.contacts?.[u.id]?.visible&&(!window.fieldSimulation.contactSupportAuthorized||window.fieldSimulation.contactSupportAuthorized(fp.tactical,u.id))&&(u.faction==='insurgent'||u.faction==='pmc'&&fp.tactical.rival.hostile))||[];
      if(fp.commandDecision!=='철수'&&m){
        const budget=Math.max(0,Number(op.budget)||0);
        if(budget>=1800000&&(fp.tactical?.version>=3?fp.tactical.units.filter(u=>u.faction==='blackline').reduce((n,u)=>n+u.ammo,0)<op.teamIds.length*15:state.ammo<500||roll<35))requests.push({name:'현장 물자 재보급',cost:1800000,effect:4});
