@@ -40,7 +40,7 @@
   if(u.id===plan.cover||u.id===plan.rear||u.tacticalRole==='medic'){const room=ind.rooms[ind.room],dir=u.id===plan.rear?-1:1;u.interior.heading=Math.atan2((room[1]-plan.door[1])*dir,(room[0]-plan.door[0])*dir);u.watchSector=u.id===plan.rear?'후방 경계':u.id===plan.cover?'출입구 엄호':'측방·의무 경계';return {position:[plan.door[0]+offset,plan.door[1]],status:u.id===plan.rear?'rear-security':'door-cover',speed:.35}}
   u.watchSector='실내 수색·전방 경계';return {position:goal,status:'room-clear',speed:.5};
  };
- function casualty(s){return own(s).filter(u=>u.inside&&u.status!=='dead'&&!u.rescuedInside&&(u.hp<=55&&!u.fitForDuty)).sort((a,b)=>a.hp-b.hp)[0]}
+ function casualty(s){return own(s).filter(u=>u.inside&&u.status!=='dead'&&!u.rescuedInside&&(u.health?.needsAid||u.hp<=55&&!u.fitForDuty)).sort((a,b)=>a.hp-b.hp)[0]}
  api.hasInteriorRescue=s=>!!(s.version>=4&&casualty(s)&&fit(s).length);
  api.mustRecoverInside=(s,u)=>s.version>=4&&!!casualty(s)&&!u.carryPatient;
  api.indoorRecover=function(s,u){if(s.version<4||u.faction!=='blackline')return false;const patient=casualty(s);if(!patient||patient.id===u.id)return false;const rescuer=s.journey.interior.rescuer;if(rescuer!==u.id)return false;

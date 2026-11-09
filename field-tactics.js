@@ -64,7 +64,7 @@
  }
  function supports(s,op){
   for(const e of s.events.filter(e=>e.impactAt!=null&&!e.applied&&!e.cancelledAt&&s.time>=e.impactAt)){
-   if(s.units.some(u=>!u.inside&&!u.roadOnly&&active(u)&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,{x:e.x,y:e.y})<e.radius+3)){e.cancelledAt=s.time;log(s,'작전지원본부','타격 중지. 아군·중립 인원 접근, 안전거리 재확인.','support');continue}
+   if(s.units.some(u=>!u.roadOnly&&!u.health?.dead&&u.status!=='dead'&&!u.evacComplete&&!u.boarded&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,{x:e.x,y:e.y})<e.radius+3)){e.cancelledAt=s.time;log(s,'작전지원본부','타격 중지. 아군·중립 인원 접근, 안전거리 재확인.','support');continue}
    api.areaImpact?.(s,e);e.applied=true;for(const u of s.units)if(!u.inside&&!u.roadOnly&&active(u)&&dist(u,{x:e.x,y:e.y})<e.radius)damage(s,u,Math.round(80-dist(u,{x:e.x,y:e.y})*4),null);
    log(s,e.kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','탄착 확인. 현장조는 피해·잔여 위협 관측 바란다.','support');
   }
@@ -77,7 +77,7 @@
    if(!target){s.supportWait=s.supportWait||{};if(s.supportWait[key]==null||s.time-s.supportWait[key]>=30){log(s,'작전지원본부',o.name+' 타격 보류. 유효한 시각 표적 정보가 없다. 표적 재식별까지 대기한다.','support');s.supportWait[key]=s.time;}continue}
    s.supportArrived.push(key);
    const radius=kind==='airstrike'?8:6;
-   if((s.civilians||[]).some(c=>c.found&&c.hp>0&&dist(c,target)<radius+3)||s.units.some(u=>active(u)&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,target)<radius+3)){log(s,'작전지원본부',o.name+' 취소. 아군·중립 인원과의 안전거리 미충족.','support');continue}
+   if((s.civilians||[]).some(c=>c.found&&c.hp>0&&dist(c,target)<radius+3)||s.units.some(u=>!u.health?.dead&&u.status!=='dead'&&!u.evacComplete&&!u.boarded&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,target)<radius+3)){log(s,'작전지원본부',o.name+' 취소. 아군·중립 인원과의 안전거리 미충족.','support');continue}
    const center={x:target.x,y:target.y};s.events.push({t:s.time,impactAt:s.time+6,scene:'site',kind,target:target.id,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','확인 좌표로 진입. 6초 후 타격, 현장조는 안전거리 유지 바란다.','support');
 
   }

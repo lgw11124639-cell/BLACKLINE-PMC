@@ -12,7 +12,7 @@
  function unpack(text){if(!text?.startsWith(prefix))return text;const input=atob(text.slice(prefix.length)),out=[];let at=0;while(at<input.length){const flags=input.charCodeAt(at++);for(let bit=0;bit<8&&at<input.length;bit++){if(flags&(1<<bit)){if(at+1>=input.length)throw Error('Incomplete save token');const token=(input.charCodeAt(at++)<<8)|input.charCodeAt(at++),distance=(token>>4)+1,length=(token&15)+3;if(distance>out.length)throw Error('Invalid save reference');for(let n=0;n<length;n++)out.push(out[out.length-distance]);}else out.push(input.charCodeAt(at++));if(out.length>33554432)throw Error('Save exceeds supported size');}}return new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(out));}
  const codec={pack,unpack,prefix};root.blacklineSaveCodec=codec;if(typeof module!=='undefined'&&module.exports)module.exports=codec;
  if(typeof Storage==='undefined')return;const get=Storage.prototype.getItem,set=Storage.prototype.setItem,keys=new Set(['blackline_pmc_v1','blackline_pmc_v1_backup']);let lastText=null,lastPacked=null;
- codec.rawGet=key=>get.call(localStorage,key);
+ codec.rawGet=key=>get.call(localStorage,key);codec.rawSet=(key,value)=>set.call(localStorage,key,value);
  Storage.prototype.getItem=function(key){const value=get.call(this,key);if(!keys.has(String(key)))return value;try{return unpack(value)}catch(error){return '{"__blackline_corrupt_codec__":'}};
  Storage.prototype.setItem=function(key,value){let text=String(value);if(keys.has(String(key))&&text.length>4096&&!text.startsWith(prefix)){if(text===lastText)text=lastPacked;else{const encoded=pack(text);lastText=text;lastPacked=encoded.length<text.length?encoded:text;text=lastPacked}}return set.call(this,key,text)};
 })(typeof window==='undefined'?globalThis:window);

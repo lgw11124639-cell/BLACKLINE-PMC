@@ -21,7 +21,7 @@ async function restore(file){
   if(!data||typeof data!=='object'||!Array.isArray(data.reports)||!Array.isArray(data.team)||!Number.isFinite(Number(data.day))||! /^\d{4}-\d{2}-\d{2}$/.test(data.date))throw Error('BLACKLINE 저장 형식이 아닙니다.');
   if(!confirm('현재 저장을 백업 파일의 진행 상태로 교체할까요?'))return;
   const serialized=JSON.stringify(data),previousState=state,primary=window.blacklineSaveCodec?.rawGet?.(KEY)??localStorage.getItem(KEY),backup=window.blacklineSaveCodec?.rawGet?.(KEY+'_backup')??localStorage.getItem(KEY+'_backup');
-  window.blacklineImportingSave=true;
+  window.blacklineCancelPendingSave?.();window.blacklineImportingSave=true;
   try{localStorage.setItem(KEY,serialized);localStorage.setItem(KEY+'_backup',serialized);state=data}
   catch(writeError){
    try{if(primary===null)localStorage.removeItem(KEY);else localStorage.setItem(KEY,primary);if(backup===null)localStorage.removeItem(KEY+'_backup');else localStorage.setItem(KEY+'_backup',backup)}
@@ -33,7 +33,7 @@ async function restore(file){
 }
 function resetGame(){
  if(!confirm('회사를 초기화하고 새 게임을 시작할까요? 현재 진행은 초기화 전 저장으로 보관됩니다.'))return;
- const primary=localStorage.getItem(KEY),backup=localStorage.getItem(KEY+'_backup');
+ window.blacklineCancelPendingSave?.();const primary=localStorage.getItem(KEY),backup=localStorage.getItem(KEY+'_backup');
  try{
   localStorage.setItem(KEY+'_before_reset',JSON.stringify({game:'BLACKLINE PMC',schema:1,exportedAt:new Date().toISOString(),state}));
   window.blacklineSaveBlocked=true;

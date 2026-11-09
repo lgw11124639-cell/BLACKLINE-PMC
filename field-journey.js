@@ -70,7 +70,7 @@
  }
  function extractTick(s,op){const j=s.journey,pick=j.pickup,fit=blue(s).filter(active),down=blue(s).filter(u=>!u.boarded&&!active(u)&&u.status!=='dead'&&!u.evacComplete&&!u.stagedForPickup);
   if(!fit.length&&j.medevac&&j.medevac.stage!=='complete'){s.retreat=true;s.phase='의료 후송 대기';return;}if(!fit.length){s.retreat=true;s.done=true;s.duration=s.time;stage(s,'lost','긴급 구조 요청');say(s,'본부','전투 가능 인원 상실. 현 위치를 구조 요청 지점으로 등록, 작전을 중단한다.','result');return}
-  for(const [index,u]of fit.entries()){if(u.boarded||u.medicalOverride===s.time)continue;if(u.onRoof&&api.roles.handle(s,u,op))continue;if(down.some(v=>v.carriedBy===u.id))continue;u.inside=false;const station=api.projectToGround(s.terrain,[j.exfil[0]+Math.cos(index*2.4)*2.2,j.exfil[1]+Math.sin(index*2.4)*2.2]);moveTo(s,u,station,u.hp<=55?.34:.58);u.status=dist(u,point(j.exfil))<3?'pickup-security':'retreating';}
+  for(const [index,u]of fit.entries()){if(u.boarded||u.medicalOverride===s.time||u.contactOverride===s.time)continue;if(u.onRoof&&api.roles.handle(s,u,op))continue;if(down.some(v=>v.carriedBy===u.id))continue;u.inside=false;const station=api.projectToGround(s.terrain,[j.exfil[0]+Math.cos(index*2.4)*2.2,j.exfil[1]+Math.sin(index*2.4)*2.2]);moveTo(s,u,station,u.hp<=55?.34:.58);u.status=dist(u,point(j.exfil))<3?'pickup-security':'retreating';}
   const assigned=new Set(fit.filter(u=>u.onRoof||u.medicalOverride===s.time).map(u=>u.id));for(const u of down){if(j.medevac&&['inbound','landed'].includes(j.medevac.stage)&&j.medevac.patients.includes(u.id))continue;const carrier=fit.find(v=>v.id===u.carriedBy&&!assigned.has(v.id))||fit.filter(v=>!v.boarded&&!assigned.has(v.id)).sort((a,b)=>dist(a,u)-dist(b,u))[0];if(!carrier)continue;assigned.add(carrier.id);u.carriedBy=carrier.id;
    const location=u.inside?j.building.entrance:[u.x,u.y];if(dist(carrier,point(location))>2){moveTo(s,carrier,location,.58);carrier.status='medical-moving';continue}
    u.recoverySince=u.recoverySince??s.time;if(s.time-u.recoverySince<12){carrier.status='casualty-recovery';continue}
@@ -127,5 +127,5 @@
   }
   api.afterActors?.(s);api.deliverRadio?.(s);api.captureFrame(s);
  };
- api.journeyTools={stage,moveTo,indoorMove,beginExtraction,route,measure,along};api.journeyMaps={interior};
+ api.journeyTools={stage,moveTo,indoorMove,indoorFire:shoot,roadFire,beginExtraction,route,measure,along};api.journeyMaps={interior};
 })();

@@ -53,7 +53,7 @@
  function hostile(s,a,b){if(a.faction===b.faction)return false;if(a.faction==='insurgent'||b.faction==='insurgent')return true;return s.rival.hostile}
  function move(s,u,target,amount){
   const previousX=u.x,previousY=u.y;
-  if(u.evacuationHold)return;
+  if(u.evacuationHold||u.health?.wounds.some(w=>!w.treated&&!w.healed))return;
   if(window.blacklineEquipmentMovement&&u.fieldEquipment)amount*=window.blacklineEquipmentMovement(u);
   if(u.health){if(!u.health.canWalk||u.health.aid)return;amount*=u.health.movementFactor;}
   if(window.fieldSimulation?.projectToGround)target=window.fieldSimulation.projectToGround(s.terrain||MAP,target);

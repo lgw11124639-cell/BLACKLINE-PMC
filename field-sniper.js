@@ -8,7 +8,7 @@
  api.chooseSniperTarget=function(s,u,candidates){if(!body(u))return candidates[0]||null;
   const available=candidates.filter(v=>active(v)&&v.faction!==u.faction&&(v.faction==='insurgent'||u.faction==='insurgent'||s.rival.hostile)&&!v.inside&&!v.roadOnly&&u.knowledge?.[v.id]&&s.time-u.knowledge[v.id].lastSeen<=4&&dist(u,v)<=u.vision&&api.canSeeActor?.(s,u,v,'site')!==false&&api.clearLine(u,v,s.terrain)&&(!s.contacts[v.id]||s.contacts[v.id].identified!==false));
   const inRange=available.filter(v=>dist(u,v)<=u.range),pool=inRange.length?inRange:available;
-  const score=v=>{const close=dist(u,v)<6?220:0,counter=body(v)&&api.isPrecisionWeapon(v)?100:0,firing=s.events.some(e=>e.kind==='shot'&&e.actor===v.id&&e.visible!==false&&s.time-e.t<=12&&s.units.some(b=>b.id===e.target&&b.faction===u.faction))?45:0;return close+counter+firing-dist(u,v)*.35;};
+  const score=v=>{const close=dist(u,v)<6?220:0,counter=body(v)&&api.isPrecisionWeapon(v)?100:0,firing=(api.eventsAround?.(s,s.time,12)||s.events).some(e=>e.kind==='shot'&&e.actor===v.id&&e.visible!==false&&s.time-e.t<=12&&s.units.some(b=>b.id===e.target&&b.faction===u.faction))?45:0;return close+counter+firing-dist(u,v)*.35;};
   pool.sort((a,b)=>score(b)-score(a)||dist(u,a)-dist(u,b));const best=pool[0],current=pool.find(v=>v.id===u.target),target=current&&best&&score(best)-score(current)<15?current:best;
   if(target&&target.id!==u.counterSniperTarget&&body(target)&&dist(u,target)<=u.range){u.counterSniperTarget=target.id;u.roleActions=u.roleActions||[];u.roleActions.push({t:s.time,result:'식별된 적 저격수 대응',target:target.id});if(u.faction==='blackline')api.transmit?.(s,u.name,'식별된 적 저격수 사격선 확인. 대응 저격, 아군 이동을 엄호한다.','combat');}
   return target||null;
@@ -19,7 +19,7 @@
  function building(map,p){return (map.buildings||[]).findIndex(b=>p.x>b[0]&&p.x<b[2]&&p.y>b[1]&&p.y<b[3])}
  function occupied(map,p,reserved){return reserved.some(q=>dist(p,q)<4||p.roof&&q.roof&&building(map,p)>=0&&building(map,p)===building(map,q))}
  function known(s){return Object.entries(s.contacts||{}).filter(([,c])=>c.identified!==false&&s.time-c.lastSeen<=20&&(c.faction==='insurgent'||c.faction==='pmc'&&s.rival.hostile)).map(([id,c])=>({id,x:c.x,y:c.y,elevation:0,weight:3,observed:true})).slice(0,4)}
- function objectives(s,contacts){const goal=s.journey?.siteSearch.discovered?s.journey.building.entrance:s.goal,probes=[[0,0],[-5,0],[5,0],[0,5]];return [...contacts.slice(0,2),...probes.map(d=>{const p=api.projectToGround(s.terrain,[goal[0]+d[0],goal[1]+d[1]]);return {...point(p),elevation:0,weight:1,observed:false}})];}
+ function objectives(s,contacts){const goal=s.journey?.siteSearch.discovered?s.journey.building.entrance:s.goal,probes=[[0,0],[-5,0],[5,0],[0,5]];return [...(s.sniperCoverageTarget?[{...point(s.sniperCoverageTarget),elevation:0,weight:4,observed:false}]:[]),...contacts.slice(0,2),...probes.map(d=>{const p=api.projectToGround(s.terrain,[goal[0]+d[0],goal[1]+d[1]]);return {...point(p),elevation:0,weight:1,observed:false}})];}
  function forbidden(s,p){const b=s.journey?.siteSearch.discovered&&s.journey.building.bounds;return !!(p.roof&&b&&p.x>b[0]&&p.x<b[2]&&p.y>b[1]&&p.y<b[3]);}
  function candidates(s){const map=s.terrain,goal=point(s.goal),all=[];
   const add=p=>{if(forbidden(s,p)||p.x<1||p.y<1||p.x>map.width-1||p.y>map.height-1||all.some(q=>dist(p,q)<.8&&!!p.roof===!!q.roof))return;all.push(p)};
