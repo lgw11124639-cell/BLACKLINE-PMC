@@ -11,7 +11,7 @@
    const key=Object.keys(pages).find(key=>button.getAttribute('onclick')?.includes("'"+key+"'"));if(!key)return;
    button.querySelector('.ico').innerHTML=icon(key);
    button.setAttribute('aria-label',pages[key][0]);
-   if(button.classList.contains('active'))button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+   button.classList.toggle('active',key===tab);if(key===tab)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   });
   nav.insertAdjacentHTML('afterbegin','<div class="nav-caption">WORKSPACE</div>');
   nav.insertAdjacentHTML('beforeend','<div class="nav-footer"><strong>BLACKLINE PMC</strong>PRIVATE MILITARY COMPANY<br>EXECUTIVE EDITION</div>');

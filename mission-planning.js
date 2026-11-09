@@ -17,6 +17,7 @@
   op.reconSeed=op.reconSeed??(state.day*7919+Number(m.id||1)*101+37*4)%997;
   const child={id:op.id+'-RECON',leaderName:scouts[0].name,budget:op.budget,teamIds:scouts.map(p=>p.id),fieldProgress:{seed:op.reconSeed,supportOrders:[]}};
   const contract={...m,title:m.title+' · 사전 정찰',objectiveMode:'recon',preRecon:true,transport:'ground',mapId:'mountain',pinMap:true,reconPlan:op.reconPlan};
+  if(window.blacklineReserveTransport&&!window.blacklineReserveTransport(child,'ground'))return false;
   const tactical=api.create(child,contract,scouts,ammo,{medicalBudget:medical});child.fieldProgress.tactical=tactical;
   state.ammo-=ammo;state.med-=medical;op.preRecon={version:1,issuedAmmo:ammo,issuedMed:medical,status:'진행',memberIds:scouts.map(p=>p.id),operation:child,startedDate:state.date};
   op.teamIds=[];op.taskGroups=[];op.status='사전 정찰';if(op.workflow){op.workflow.stage='recon';op.workflow.since=now();op.workflow.dueAt=null;op.workflow.reservedIds=[];op.workflow.waitingReason='';op.workflow.history.push({stage:'recon',at:now()});}
@@ -65,6 +66,7 @@
  window.blacklineReviewMissionPlans=function(){let changed=false;for(const op of state.operations||[])if(window.blacklineReviewOperationWorkflow(op))changed=true;if(changed){save();render();}};
  window.blacklineCanDeployWorkflow=function(op){if(!op.workflow)return true;const people=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured),check=window.blacklineCheckStaffing(op.contract||{},people);if(!check.ready){op.teamIds=[];enter(op,'mainPlan');return wait(op,'출동 인원 변동으로 편제를 다시 검토합니다.');}
   window.blacklineReviewArmory?.();const missing=window.blacklineEquipmentReadiness?.(people)||[],ammo=api.ammoPlan?.(people).total||120;if(missing.length||state.ammo<ammo||state.med<1){wait(op,missing.join(' · ')||'출동 탄약·의료물자 확보 필요.');op.deployAt=now()+60;op.workflow.dueAt=op.deployAt;op.deployDate=stamp(op.deployAt).slice(0,10);return false;}
+  if(window.blacklineReserveTransport&&!window.blacklineReserveTransport(op,api.chooseTransport(op,op.contract||{}))){wait(op,'수송 승무원·기체·급유 비용 확보 필요.');op.deployAt=now()+60;op.workflow.dueAt=op.deployAt;return false;}
   op.workflow.waitingReason='';return true;
  };
  window.blacklineMissionStageLabel=op=>names[op.workflow?.stage]||op.status;

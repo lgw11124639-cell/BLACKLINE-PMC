@@ -9,7 +9,7 @@
  state.recruitPolicy.enabled=false;
  function recruit(){
   const employed=active();
-  const required=Math.max(6,Number(state.staffingDemand?.minimum)||6)+4,needsMedic=!employed.some(p=>!p.injured&&/의무|의료|구급/.test(p.role||''));if(employed.filter(p=>!p.injured).length>=required&&!needsMedic||!state.candidates.length)return;
+  const required=Math.max(18,Number(state.staffingDemand?.minimum)||6)+6,needsMedic=employed.filter(p=>!p.injured&&/의무|의료|구급/.test(p.role||'')).length<Math.ceil(required/6);if(employed.filter(p=>!p.injured).length>=required&&!needsMedic||!state.candidates.length)return;
   const candidate=state.candidates.filter(p=>state.cash>=p.salary/12).sort((a,b)=>(needsMedic?( /의무|의료|구급/.test(b.role)?1:0)-( /의무|의료|구급/.test(a.role)?1:0):0)||fit(b)-fit(a)||a.salary-b.salary)[0];
   if(!candidate){issue('채용 보류 보고','인사팀이 신규 채용을 검토했으나 가용 예산이 부족하여 계약을 보류했습니다.');return}
   const p={...candidate,injured:false,dead:false,retired:false,loadout:{primary:'미지급',secondary:'미지급',armor:'미지급',helmet:'미지급',radio:'미지급'}};

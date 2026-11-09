@@ -32,7 +32,7 @@
   config.lastReview=state.date;
   // Do not replace an active operation or flood reports when resources are inadequate.
   if(state.pending)state.pending=null;
-  const busy=state.operations.some(o=>!['작전 완료','작전 보류'].includes(o.status));
+  const busy=state.operations.filter(o=>!['작전 완료','작전 보류'].includes(o.status)).length>=3;
   if(busy||!state.missions.length)return;
   const candidates=state.missions.filter(m=>m.contractStatus==='검토 가능'&&(!m.expiresDate||m.expiresDate>=state.date)&&!state.operations.some(o=>o.missionId===m.id&&o.status!=='작전 완료'&&o.status!=='작전 보류'));
   const ordered=candidates.slice().sort((a,b)=>(Number(b.reward)||0)/(Math.max(1,Number(b.risk)||1))-(Number(a.reward)||0)/(Math.max(1,Number(a.risk)||1)));

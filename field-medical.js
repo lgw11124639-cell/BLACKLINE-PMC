@@ -20,12 +20,14 @@
     say(s,'차량 내 환자 발생. 현재 수송 위치에서 정차해 의료 헬기에 인계한다.');
    }
    if(state.cash<cost||(Number(fp.reservedSupportCost)||0)+cost>Number(op.budget)){if(!j.medicalBudgetReported){j.medicalBudgetReported=true;say(s,'항공 후송 자원 부족. 지상 수송으로 환자를 우선 복귀시킨다.');s.retreat=true}return}
+   if(window.blacklineReserveMedevac&&!window.blacklineReserveMedevac(op,s,cost))return;
    state.cash-=cost;fp.reservedSupportCost=(fp.reservedSupportCost||0)+cost;fp.supportOrders=fp.supportOrders||[];fp.supportOrders.push({name:'의료 헬기 후송',kind:'medevac',cost,effect:0,charged:true,requestedAt:s.time,eta:0,reason:'실제 임무 불가 환자 회수'});
    const first=patients[0],scene=first.road&&j.stage==='outbound'?'regional':'site',map=scene==='regional'?j.transport.map:s.terrain,p=location(first,scene),lz=api.projectToGround(map,[p.x-5,p.y+5]);
    f=j.medevac={id:op.id+'-MED-'+s.time,scene,stage:'inbound',patients:patients.map(p=>p.id),loadedIds:[],lz,path:[map.base.slice(),lz.slice()],distance:0,altitude:35,boarding:0,position:pt(map.base),carriers:{},staged:[],loadProgress:{}};
    say(s,'의료 헬기 출동. 환자 '+patients.length+'명. 착륙 지점 접근로와 사주 경계를 확보하라.');
   }
   if(f.stage==='complete')return;
+  if(window.blacklineTransportFlightReady&&!window.blacklineTransportFlightReady(s,op)){wait(s,f,'후송 승무원 전투 불능 · 교대 구조 대기');return;}
   f.carriers=f.carriers||{};f.staged=f.staged||[];f.loadedIds=f.loadedIds||[];f.loadProgress=f.loadProgress||{};
   const scene=f.scene||'site',patients=f.patients.map(id=>units.find(p=>p.id===id)).filter(p=>p&&p.status!=='dead'),length=api.journeyTools.measure(f.path);
   for(const p of patients){p.evacuationHold=true;p.target=null;p.interiorTarget=null;p.roadTarget=null;p.aimSince=null;if(p.evacComplete){if(!f.loadedIds.includes(p.id))f.loadedIds.push(p.id);continue}p.medicalOverride=s.time;
