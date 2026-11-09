@@ -1,0 +1,4 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),codec=require('../save-codec.js');
+test('old plain JSON is returned unchanged',()=>{assert.equal(codec.unpack('{"기존":"저장"}'),'{"기존":"저장"}');assert.equal(codec.unpack(null),null)});
+test('Unicode save data and repeated numeric simulation frames round-trip exactly',()=>{const text=JSON.stringify({title:'블랙라인 PMC 🛰️',history:Array.from({length:150},(_,t)=>({t,phase:'현장 수색',units:[[t/3,12.346,100,45,'이동'],[t/5,21.995,35,20,'부상']]}))});const encoded=codec.pack(text);assert.equal(codec.unpack(encoded),text);assert.ok(encoded.length<text.length*.6)});
+test('literal bytes, long repeated runs and malformed compressed data are handled',()=>{for(const text of ['', 'a'.repeat(20000),JSON.stringify(Array.from({length:5000},(_,i)=>String.fromCharCode(32+i%90)))])assert.equal(codec.unpack(codec.pack(text)),text);assert.throws(()=>codec.unpack('BLZ1:'+btoa(String.fromCharCode(1,255,255))))});

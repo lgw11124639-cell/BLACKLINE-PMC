@@ -31,14 +31,14 @@
   // Confirmed contacts trigger a command report, without disclosing unobserved positions.
   if(s.contact&&!s.contactOrders){s.contactOrders=true;radio(s,s.commander,'접촉 보고 접수. 선두는 엄폐, 저격조는 후방 사격선 유지. 지원조는 측면 엄호, 의무 담당은 후방에서 대기한다.')}
   if(u.tacticalRole==='medic'){
-   const casualty=s.units.filter(p=>p.faction==='blackline'&&!p.inside&&p.id!==u.id&&p.status!=='dead'&&!p.stabilized&&(p.hp<=55||p.woundedAt!=null)).sort((a,b)=>a.hp-b.hp)[0];
+   const casualty=s.units.filter(p=>p.faction==='blackline'&&!p.inside&&!p.evacComplete&&p.id!==u.id&&p.status!=='dead'&&!p.stabilized&&(p.hp<=55||p.woundedAt!=null)).sort((a,b)=>a.hp-b.hp)[0];
    if(casualty&&s.medUsed<s.medicalBudget){
     const unsafe=Object.entries(s.contacts).some(([id,c])=>c.visible&&Math.hypot(c.x-casualty.x,c.y-casualty.y)<8&&s.units.some(p=>p.id===id&&active(p)&&(p.faction==='insurgent'||s.rival.hostile)));
     if(unsafe){if(s.time-(u.lastMedicalRequest||-100)>45){u.lastMedicalRequest=s.time;radio(s,u.name,'부상자 접근로에 관측된 위협이 남아 있다. 엄호 확보를 요청한다.','medical')}u.status='medical-hold';return true}
     if(!u.treatTarget||u.treatTarget!==casualty.id){u.treatTarget=casualty.id;u.treatSince=null;order(s,u,'부상자 접근',[casualty.x,casualty.y],{target:casualty.id});radio(s,s.commander,u.name+', 부상자 '+casualty.name+' 응급처치. 나머지 인원은 접근로를 엄호하라.','medical')}
     if(dist(u,casualty)>2){moveRole(s,u,[casualty.x,casualty.y],.4);u.status='medical-moving';return true}
     u.status='treating';u.treatSince=u.treatSince??s.time;
-    if(s.time-u.treatSince>=Math.max(10,25-Math.floor((Number(u.medical)||40)/8))){const critical=casualty.hp<=0;casualty.woundedAt=casualty.woundedAt??s.time;casualty.stabilized=true;casualty.hp=Math.min(70,Math.max(15,casualty.hp+15));if(critical)casualty.status='evacuated';s.medUsed++;u.roleActions.push({t:s.time,result:'동료 응급처치',target:casualty.id});u.actions.push({t:s.time,round:0,result:casualty.name+' 응급처치 및 안정화'});radio(s,u.name,casualty.name+' 안정화 완료. '+(critical?'전투 복귀 없이 후송 대기.':'부상 상태로 임무를 축소한다.'),'medical');u.treatTarget=null;u.treatSince=null;order(s,u,'후방 의료 대기',u.medicalStation||a.position)}
+    if(s.time-u.treatSince>=Math.max(10,25-Math.floor((Number(u.medical)||40)/8))){const critical=casualty.hp<=0;casualty.woundedAt=casualty.woundedAt??s.time;casualty.stabilized=true;casualty.hp=Math.min(70,Math.max(15,casualty.hp+15));if(critical)casualty.status='evacuated';api.triageResult?.(s,casualty,u);s.medUsed++;u.roleActions.push({t:s.time,result:'동료 응급처치',target:casualty.id});u.actions.push({t:s.time,round:0,result:casualty.name+' 응급처치 및 안정화'});radio(s,u.name,casualty.name+' 안정화 완료. '+(critical?'전투 복귀 없이 후송 대기.':'부상 상태로 임무를 축소한다.'),'medical');u.treatTarget=null;u.treatSince=null;order(s,u,'후방 의료 대기',u.medicalStation||a.position)}
     return true;
    }
   }

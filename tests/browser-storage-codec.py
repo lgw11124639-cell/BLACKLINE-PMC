@@ -1,0 +1,7 @@
+"""Compressed primary corruption recovers backup; two damaged saves are never overwritten."""
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+ b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=b.new_page();page.goto('http://127.0.0.1:8000',wait_until='networkidle');page.evaluate('state.simClock.paused=true;save()');snapshot=page.evaluate('({cash:state.cash,day:state.day})');assert page.evaluate('localStorage.blackline_pmc_v1.startsWith("BLZ1:")')
+ assert page.evaluate('JSON.parse(localStorage.getItem("blackline_pmc_v1")).cash')==snapshot['cash']
+ page.evaluate('localStorage.blackline_pmc_v1="BLZ1:!!!corrupt"');page.reload(wait_until='networkidle');assert page.evaluate('({cash:state.cash,day:state.day})')==snapshot;assert '백업' in page.locator('#blackline-start-root').inner_text();print('PASS compressed primary recovered from backup')
+ page.add_init_script('if(sessionStorage.getItem("inject_bad_saves")){localStorage.blackline_pmc_v1="BLZ1:!!!primary";localStorage.blackline_pmc_v1_backup="BLZ1:!!!backup";sessionStorage.removeItem("inject_bad_saves")}');page.evaluate('sessionStorage.setItem("inject_bad_saves","1")');page.reload(wait_until='networkidle');assert page.evaluate('window.blacklineSaveBlocked');page.evaluate('save()');assert page.evaluate('localStorage.blackline_pmc_v1')=='BLZ1:!!!primary';assert page.evaluate('localStorage.blackline_pmc_v1_backup')=='BLZ1:!!!backup';print('PASS both damaged saves preserved without starter overwrite');b.close()

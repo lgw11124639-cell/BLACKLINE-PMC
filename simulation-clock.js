@@ -9,6 +9,7 @@
  const text=()=>String(Math.floor(clock.minutes/60)).padStart(2,'0')+':'+String(Math.floor(clock.minutes%60)).padStart(2,'0');
  function paint(){
   const preparing=state.operations.find(o=>['작전 승인','사전 연습 완료','추가 연습 필요'].includes(o.status));
+  if(!preparing&&state.staffingDemand)document.querySelectorAll('[data-live-departure]').forEach(el=>el.textContent='편제 확보 중 · 가용 '+state.team.filter(p=>!p.dead&&!p.retired&&!p.injured).length+'명 / 필요 '+state.staffingDemand.minimum+'명 · '+(state.staffingDemand.missing||[]).join(' · '));
   if(preparing?.deployAt)document.querySelectorAll('[data-live-departure]').forEach(el=>{const seconds=Math.max(0,Math.ceil((preparing.deployAt-state.day*1440-clock.minutes)*60));el.textContent=preparing.leaderName+' 팀 · '+preparing.status+' · 출동까지 약 '+Math.floor(seconds/60)+'분 '+seconds%60+'초'});
   document.querySelectorAll('[data-company-time]').forEach(el=>el.textContent=state.date+' · '+text());
   document.querySelectorAll('[data-clock-toggle]').forEach(el=>{el.textContent=clock.paused?'시간 계속':'시간 일시정지';el.setAttribute('aria-pressed',String(clock.paused))});
@@ -27,7 +28,7 @@
   if(window.blacklineImportingSave||clock.paused||document.hidden||document.body.classList.contains('start-visible'))return;
   const live=state.operations.some(o=>o.status==='현장 진행 중'&&o.fieldProgress?.tactical?.version>=2);clock.minutes+=live?delta/60:delta*(26/60)*clock.speed;
   if(clock.minutes>=1440){clock.minutes-=1440;nextDay()}
-  if(now-lastReview>1000){lastReview=now;const bucket=Math.floor((state.day*1440+clock.minutes)/30);if(bucket!==lastMarket){lastMarket=bucket;window.contractWorld.refresh();save();render()}if(window.blacklineReviewCompany)window.blacklineReviewCompany();if(window.blacklineRunScheduled)window.blacklineRunScheduled()}
+  if(now-lastReview>1000){lastReview=now;const bucket=Math.floor((state.day*1440+clock.minutes)/30);if(bucket!==lastMarket){lastMarket=bucket;window.contractWorld.refresh();save();render()}if(window.blacklineReviewHR)window.blacklineReviewHR();if(window.blacklineReviewCompany)window.blacklineReviewCompany();if(window.blacklineRunScheduled)window.blacklineRunScheduled()}
   paint();if(now-lastSave>5000){lastSave=now;save()}
  },250);
  document.addEventListener('visibilitychange',()=>{last=performance.now();if(document.hidden&&!window.blacklineImportingSave)save()});

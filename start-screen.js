@@ -20,7 +20,7 @@ async function restore(file){
   const parsed=JSON.parse(await file.text()),data=parsed.state||parsed;
   if(!data||typeof data!=='object'||!Array.isArray(data.reports)||!Array.isArray(data.team)||!Number.isFinite(Number(data.day))||! /^\d{4}-\d{2}-\d{2}$/.test(data.date))throw Error('BLACKLINE 저장 형식이 아닙니다.');
   if(!confirm('현재 저장을 백업 파일의 진행 상태로 교체할까요?'))return;
-  const serialized=JSON.stringify(data),previousState=state,primary=localStorage.getItem(KEY),backup=localStorage.getItem(KEY+'_backup');
+  const serialized=JSON.stringify(data),previousState=state,primary=window.blacklineSaveCodec?.rawGet?.(KEY)??localStorage.getItem(KEY),backup=window.blacklineSaveCodec?.rawGet?.(KEY+'_backup')??localStorage.getItem(KEY+'_backup');
   window.blacklineImportingSave=true;
   try{localStorage.setItem(KEY,serialized);localStorage.setItem(KEY+'_backup',serialized);state=data}
   catch(writeError){

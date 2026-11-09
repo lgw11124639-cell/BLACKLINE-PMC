@@ -19,7 +19,7 @@ with sync_playwright() as p:
  print('PASS failed import restores primary, backup and memory')
  context.close()
  context=b.new_context();page=context.new_page();page.goto('http://127.0.0.1:8000',wait_until='networkidle');page.locator('#blackline-continue').click()
- page.evaluate('''()=>{blacklineReviewCompany();for(const op of state.operations){if(op.status==='작전 승인'){op.status='사전 연습 완료';op.deployAt=state.day*1440+state.simClock.minutes-1}}blacklineRunScheduled();save()}''');page.wait_for_function('state.operations.some(o=>o.fieldProgress?.tactical)',timeout=5000);page.evaluate('companyClock.toggle()');data=page.evaluate('JSON.parse(JSON.stringify(state))');data['cash']=123456789
+ page.evaluate('''()=>{state.team.push(...state.candidates.splice(0,Math.max(0,8-state.team.length)));blacklineReviewArmory();blacklineReviewCompany();for(const op of state.operations){if(op.status==='작전 승인'){op.status='사전 연습 완료';op.deployAt=state.day*1440+state.simClock.minutes-1}}blacklineRunScheduled();save()}''');page.wait_for_function('state.operations.some(o=>o.fieldProgress?.tactical)',timeout=5000);page.evaluate('companyClock.toggle()');data=page.evaluate('JSON.parse(JSON.stringify(state))');data['cash']=123456789
  page.locator('.save-management').click();page.on('dialog',lambda d:d.accept())
  with page.expect_navigation(wait_until='networkidle'):
   page.locator('#blackline-import').set_input_files({'name':'backup.json','mimeType':'application/json','buffer':json.dumps({'state':data}).encode()})

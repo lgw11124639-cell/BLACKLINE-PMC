@@ -39,5 +39,5 @@
  };
  const oldNext=nextDay;
  nextDay=function(){oldNext();review();save();render()};
- review();save();
+ window.blacklineReviewArmory=review;review();save();
 })();

@@ -1,0 +1,9 @@
+/* Helicopter transport uses flight distance, altitude and a cleared landing zone. */
+(function(){const api=window.fieldSimulation,say=(s,msg)=>api.transmit(s,'항공 수송','블루 1, '+msg,'support',true);
+ api.airTravel=function(s,leg){if(s.journey.transport.kind!=='helicopter')return true;const t=s.journey.transport;if(t.altitude<40&&t.progress<1){if(!t.flightLeg||t.flightLeg!==leg){t.flightLeg=leg;t.arrivalAnnounced=false;say(s,'탑승·안전 확인. 이륙한다. 착륙 구역까지 항로 이동.')}t.altitude=Math.min(40,t.altitude+3);s.phase=leg==='outbound'?'헬기 이륙':'헬기 복귀 이륙';return false}if(t.progress<1)s.phase=leg==='outbound'?'헬기 수송':'헬기 본부 복귀';return true};
+ api.airArrival=function(s){const t=s.journey.transport;if(t.kind!=='helicopter')return true;t.altitude=Math.max(0,t.altitude-3);s.phase='헬기 착륙';if(t.altitude>0)return false;if(!t.arrivalAnnounced){t.arrivalAnnounced=true;say(s,'착륙 완료. 지상 경계 유지, 하차·인원 확인 실시.')}return true};
+ api.preparePickup=function(s){if(s.journey.transport.kind!=='helicopter')return;const p=s.journey.pickup;p.path=[s.terrain.base.slice(),s.journey.exfil.slice()];p.altitude=40;p.distance=0;p.kind='helicopter'};
+ api.pickupProgress=function(s,p){if(p.kind!=='helicopter')return undefined;p.distance+=1.7;return Math.min(1,p.distance/Math.max(1,api.journeyTools.measure(p.path)))};
+ api.pickupLanding=function(s,p){if(p.kind!=='helicopter')return true;const j=s.journey,unsafe=Object.entries(s.contacts).some(([id,c])=>c.visible&&c.identified!==false&&Math.hypot(c.x-j.exfil[0],c.y-j.exfil[1])<12&&s.units.some(u=>u.id===id&&u.hp>0&&(u.faction==='insurgent'||s.rival.hostile)));p.landingBlocked=unsafe;
+  if(unsafe){if(!p.lastHold||s.time-p.lastHold>25){p.lastHold=s.time;say(s,'착륙 구역 인근 위협 관측. 상공 대기, 지상조는 외곽 통제 후 재호출.')}return false}p.altitude=Math.max(0,p.altitude-3);if(p.altitude>0)return false;return true};
+})();

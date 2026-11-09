@@ -14,7 +14,7 @@
    state.contractWorld={version:1,lastDate:null,sequence:1000,regions:definitions.map(r=>({...r})),clients:[],events:[],specialties:{}};
    report('지역 정세 연동 개시','지역 치안·분쟁·정치 불안·경제와 고객 예산에 따라 계약이 발생합니다. 기존 작전과 저장 기록은 유지합니다.');
   }
-  const w=state.contractWorld;
+  const w=state.contractWorld;w.roamingGroups=w.roamingGroups||[];for(const r of w.regions){r.civilianTrust=r.civilianTrust??50;r.infrastructure=r.infrastructure??100;}
   for(const t of state.missionTemplates){
    let c=w.clients.find(x=>x.name===t.client);
    if(!c){c={id:'client-'+(w.clients.length+1),name:t.client,regionId:/세라/.test(t.client)?'sera':/노르덴/.test(t.client)?'norden':/라비엔/.test(t.client)?'ravien':w.regions[w.clients.length%w.regions.length].id,trust:50,budget:800000000,demand:40,lastOffer:null};w.clients.push(c)}
@@ -52,7 +52,7 @@
   state.missions.push(offer);report('신규 계약 의뢰 접수 · '+offer.title,r.name+' / '+reason+' / '+offer.contractKind+' / 제안 마감 '+offer.expiresDate+' / 보수 '+money(reward)+'.');return offer;
  }
  function refresh(){
-  const w=init();
+  const w=init();for(const g of w.roamingGroups||[])if(!g.arrived&&g.arrivesDate<=state.date){g.arrived=true;const r=w.regions.find(r=>r.id===g.to);if(r){r.conflict=clamp(r.conflict+Math.min(8,g.members*2));r.security=clamp(r.security-2);w.events.unshift({id:'arrival-'+g.sourceOp,date:state.date,regionId:r.id,kind:'잔여 세력 유입',title:'선행 작전 이탈 세력의 유입으로 지역 경계 수요 증가',cause:g.sourceOp+' → '+r.name});report('지역 이동 세력 보고',g.sourceOp+'에서 이탈한 인원이 '+r.name+'에 유입. 시설·호송 수요를 재평가합니다.')}}w.events=w.events.slice(0,30);
   const ongoing=new Set(state.operations.filter(busy).map(o=>o.missionId));
   state.missions=state.missions.filter(m=>{
    if(ongoing.has(m.id))return true;
@@ -104,20 +104,21 @@
   c.budget=Math.min(1500000000,c.budget+Math.max(0,(m.templateId?m.reward:0)-result.reward));
   r.security=clamp(r.security+(result.success?5:-4));
   r.conflict=clamp(r.conflict+(result.success?-3:3)+Math.min(3,result.resolution.hostileRetreated||0));
+  let fieldEffects=null;if(result.tactical?.version>=4){const impact=result.tactical.journey.impact||{},damage=Math.max(0,Number(impact.infrastructureDamage)||0),rescued=Number(impact.civiliansRescued)||0,harmed=(result.tactical.civilians||[]).filter(c=>c.hp<100&&!c.rescued).length,deaths=(result.tactical.civilians||[]).filter(c=>c.hp<=0).length,escaped=(impact.escaped||[]).filter(e=>e.faction==='insurgent').length;const beforeField={civilianTrust:r.civilianTrust,infrastructure:r.infrastructure};r.civilianTrust=clamp(r.civilianTrust+Math.min(8,rescued*2)-harmed*2-deaths*10);r.infrastructure=clamp(r.infrastructure-damage/10);c.trust=clamp(c.trust+Math.min(5,rescued)-harmed-deaths*5-Math.min(8,Math.floor(damage/20)));fieldEffects={damage,rescued,harmed,deaths,escaped,before:beforeField,after:{civilianTrust:r.civilianTrust,infrastructure:r.infrastructure}};if(escaped){const to=w.regions[(w.regions.indexOf(r)+1)%w.regions.length];w.roamingGroups.unshift({sourceOp:op.id,from:r.id,to:to.id,members:escaped,arrivesDate:addDays(state.date,1),arrived:false});w.roamingGroups=w.roamingGroups.slice(0,24)}op.fieldWorldEffects=fieldEffects;report('현장 결과의 지역 영향 · '+m.title,'보호·구조 '+rescued+'명 / 민간 피해 '+harmed+'명 / 시설 손상 '+Math.round(damage)+' / 실제 관측 이탈 '+escaped+'명. 주민 신뢰 '+beforeField.civilianTrust+' → '+r.civilianTrust+', 기반시설 상태 '+Math.round(beforeField.infrastructure)+' → '+Math.round(r.infrastructure)+'.');}
   w.specialties[m.type]=Math.max(0,Math.min(20,(w.specialties[m.type]||0)+(result.success?1:-1)));
   m.contractStatus='정산 완료';
   const offer=state.missions.find(x=>x.id===m.id);if(offer)offer.contractStatus='정산 완료';
-  op.worldSettlement={date:state.date,clientId:c.id,regionId:r.id,before,after:{trust:c.trust,security:r.security,conflict:r.conflict}};
+  op.worldSettlement={date:state.date,clientId:c.id,regionId:r.id,before,fieldEffects,after:{trust:c.trust,security:r.security,conflict:r.conflict}};
   result.contract={id:m.id,clientId:c.id,regionId:r.id,reason:m.marketReason,kind:m.contractKind};result.worldSettlement=op.worldSettlement;
   report('고객 평가 및 지역 정세 · '+m.title,(result.success?'계약 목표 달성':'계약 목표 미달')+' → 고객 신뢰 '+before.trust+' → '+c.trust+' / '+r.name+' 치안 '+before.security+' → '+r.security+' / 분쟁 '+before.conflict+' → '+r.conflict+'.');
-  if(result.success&&c.trust>=58){
-   const t=state.missionTemplates.find(t=>t.client===c.name&&t.type==='시설 보안')||state.missionTemplates.find(t=>t.client===c.name);
-   if(t)issue(t,c,r,'선행 계약 '+m.id+' 목표 달성 및 고객 신뢰 '+c.trust+'에 따른 후속 의뢰',null,m.id);
+  if(result.success&&c.trust>=58||fieldEffects&&c.trust>=40&&(fieldEffects.rescued||fieldEffects.damage>15)){
+   const followType=fieldEffects?.rescued?'호송':'시설 보안';const t=state.missionTemplates.find(t=>t.client===c.name&&t.type===followType)||state.missionTemplates.find(t=>t.type===followType)||state.missionTemplates.find(t=>t.client===c.name);
+   if(t)issue({...t,client:c.name},c,r,'선행 계약 '+m.id+' / '+(fieldEffects?.rescued?'구조 대상 후속 이동':fieldEffects?.damage>15?'시설 피해에 따른 긴급 방호':'목표 달성 및 고객 신뢰 '+c.trust)+'에 따른 후속 의뢰',null,m.id);
   }
  }
  function panel(){
   const w=state.contractWorld;if(!w)return '';
-  return '<h2>지역 정세 · 고객 수요</h2>'+w.regions.map(r=>'<div class="card"><strong>'+escapeHTML(r.name)+'</strong><p class="empty">치안 '+r.security+' · 분쟁 '+r.conflict+' · 정치 불안 '+r.instability+' · 경제 '+r.economy+'</p></div>').join('')+'<details class="card"><summary>고객 관계 및 계약 여력</summary>'+w.clients.map(c=>'<p class="empty">'+escapeHTML(c.name)+' · 신뢰 '+c.trust+' · 수요 '+c.demand+' · 가용 예산 '+money(c.budget)+'</p>').join('')+'</details>';
+  return '<h2>지역 정세 · 고객 수요</h2>'+w.regions.map(r=>'<div class="card"><strong>'+escapeHTML(r.name)+'</strong><p class="empty">치안 '+r.security+' · 분쟁 '+r.conflict+' · 정치 불안 '+r.instability+' · 경제 '+r.economy+' · 주민 신뢰 '+Math.round(r.civilianTrust??50)+' · 기반시설 '+Math.round(r.infrastructure??100)+'</p></div>').join('')+'<details class="card"><summary>고객 관계 및 계약 여력</summary>'+w.clients.map(c=>'<p class="empty">'+escapeHTML(c.name)+' · 신뢰 '+c.trust+' · 수요 '+c.demand+' · 가용 예산 '+money(c.budget)+'</p>').join('')+'</details>';
  }
  // Install after all existing department wrappers, keeping one complete daily transaction per tap.
  window.addEventListener('DOMContentLoaded',()=>{

@@ -7,7 +7,7 @@ with sync_playwright() as p:
  page.clock.pause_at(datetime(2026,11,9,0,0,10,tzinfo=timezone.utc))
  page.clock.run_for(60000)
  print('after60',page.evaluate('state.operations.map(o=>({id:o.id,status:o.status,t:o.fieldProgress?.tactical?.time}))'))
- assert page.evaluate('state.operations.some(o=>o.fieldProgress?.tactical?.version===3)')
+ assert page.evaluate('state.operations.some(o=>o.fieldProgress?.tactical?.version>=3)')
  opid=page.evaluate('state.operations.find(o=>o.fieldProgress?.tactical).id')
  page.evaluate('window.blacklineReviewCompany=()=>{};go("home")')
  for i in range(60):
