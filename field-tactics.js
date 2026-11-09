@@ -11,10 +11,11 @@
   s.version=2;s.duration=null;s.plannedDuration=null;s.time=0;s.phase='접근';s.frames=[];s.events=[];s.radio=[];s.contacts={};s.searchStarted=null;s.securedAt=null;s.returnStarted=null;s.checkpoint=0;s.mutedLog=false;
   s.terrain=JSON.parse(JSON.stringify(api.selectMap?.(m)||MAP));s.map=s.terrain.id||'factory';s.goal=s.terrain.goals[m.type]||s.terrain.goals['시설 보안'];s.medicalBudget=options.medicalBudget??Math.min(2,Number(state.med)||0);s.medUsed=0;
   const positions=(s.terrain.spawnPoints||[[48,29],[57,31],[60,34],[71,37],[84,28],[90,30],[92,39],[76,41]]).map(p=>p.slice());
+  const anchors=positions.map(p=>p.slice()),needed=s.units.filter(u=>u.faction==='insurgent').length;for(let n=0;positions.length<needed&&n<800;n++){const base=anchors[n%anchors.length],ring=1+Math.floor(n/anchors.length),angle=n*2.39996,p=api.projectToGround(s.terrain,[base[0]+Math.cos(angle)*ring*2.1,base[1]+Math.sin(angle)*ring*2.1]);if(positions.every(q=>Math.hypot(p[0]-q[0],p[1]-q[1])>=1.65))positions.push(p);}
   for(const [i,u] of s.units.entries()){
    if(u.faction==='blackline'&&s.map!=='factory'){u.x=s.terrain.base[0]+(i%3)*1.1;u.y=s.terrain.base[1]+Math.floor(i/3)}
    if(u.faction==='pmc'&&s.map!=='factory'){u.x=s.goal[0]+7+(i%3)*1.2;u.y=s.goal[1]+6+(i%2)*1.5}
-   if(u.faction==='insurgent'){const p=positions.splice(Math.floor(rand(s)*positions.length),1)[0];u.x=p[0];u.y=p[1]}
+   if(u.faction==='insurgent'){const p=positions.splice(Math.floor(rand(s)*positions.length),1)[0]||api.projectToGround(s.terrain,s.goal);u.x=p[0];u.y=p[1]}
    u.vision=u.faction==='blackline'?(/정찰/.test(u.role)?15:/저격/.test(u.role)?13:10):11;
    u.range=/저격|정밀/.test(u.role)?18:10;u.heading=-Math.PI/2;u.knowledge={};u.recognition={};u.nextShot=0;u.aimSince=null;u.waitUntil=0;u.patrolIndex=i%3;const ground=api.projectToGround?.(s.terrain,[u.x,u.y])||[u.x,u.y];u.x=ground[0];u.y=ground[1];u.spawn=[u.x,u.y];u.seenAt=null;
   }
