@@ -52,12 +52,13 @@
  }
 
  const fieldTimers=new Map();
+ const processingFields=new Set();
  const stageLabels=['현장 투입 및 상태 확인','현장 위험 평가','지휘관 상황 판단','지원·후속 상황 확인'];
  function fieldStep(op){
    if(op.status!=='현장 진행 중'){clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);return}
    const fp=op.fieldProgress;if(!fp){clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);return;}
-   if(fp.processing)return;
-   fp.processing=true;
+   if(processingFields.has(op.id))return;
+   processingFields.add(op.id);
    try{
    const stage=fp.stage;
    if(stage>=stageLabels.length){
@@ -139,7 +140,7 @@
    op.status='현장 진행 중';
    if(stage===0)report('작전','작전 개시 보고 · '+op.id,op.leaderName+' 지휘관이 현장 지휘권을 인수했습니다. 이후 상황은 현장 판단에 따라 진행됩니다.');
    save();render();
-   }finally{fp.processing=false;}
+   }finally{processingFields.delete(op.id);}
  }
  function startField(op){
    if(op.status!=='현장 진행 중'||fieldTimers.has(op.id))return;
