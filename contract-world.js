@@ -85,7 +85,7 @@
   for(const t of state.missionTemplates){
    const c=w.clients.find(c=>c.name===t.client),r=w.regions.find(r=>r.id===c.regionId);
    if(c.lastOffer&&addDays(c.lastOffer,3)>state.date)continue;
-   const event=w.events.find(e=>e.regionId===r.id&&e.date===state.date);
+   const event=t.type==='시설 보안'?w.events.find(e=>e.regionId===r.id&&e.date===state.date):null;
    candidates.push({t,c,r,event,score:demandFor(t,r)+c.trust*.1+(event?25:0)+(w.specialties[t.type]||0)*2});
   }
   candidates.sort((a,b)=>b.score-a.score||a.t.id-b.t.id);

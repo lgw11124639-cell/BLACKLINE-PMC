@@ -13,7 +13,7 @@ function setup(){
 }
 test('daily refresh is idempotent and persists unique offers and bounded events',()=>{
  const {state,api}=setup();api.refresh();const initial=JSON.stringify(state);api.refresh();assert.equal(JSON.stringify(state),initial);
- assert.ok(state.missions.some(m=>m.eventId));
+ assert.ok(state.missions.some(m=>m.eventId));assert.ok(state.missions.filter(m=>m.eventId).every(m=>m.type==='시설 보안'));
  for(let day=2;day<120;day++){state.day=day;state.date=new Date(Date.UTC(2030,0,day)).toISOString().slice(0,10);api.refresh()}
  assert.ok(state.contractWorld.events.length<=30);assert.ok(state.missions.length<=7);
  assert.equal(new Set(state.missions.map(m=>m.id)).size,state.missions.length);
