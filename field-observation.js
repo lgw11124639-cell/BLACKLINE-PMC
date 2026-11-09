@@ -36,7 +36,7 @@
  window.observation=function(){
   const mode=replayMode,old=selected;replayMode=false;
   const session=record()?.id||'standby';const template=document.createElement('template');template.innerHTML=archiveMarkup();replayMode=mode;if(mode)selected=old;
-  template.content.querySelector('.field-sessionbar')?.remove();
+  const live=activeOps(),pending=state.operations.filter(o=>!['작전 완료','작전 보류','현장 진행 중','사전 정찰'].includes(o.status)),bar=template.content.querySelector('.field-sessionbar');if(bar){bar.className='field-operation-switcher';bar.innerHTML='<label><span>현장 '+live.length+' · 준비 '+pending.length+'</span><select aria-label="관찰할 진행 작전 선택" onchange="openFieldObservation(this.value)"><option value="" '+(!live.length?'selected':'')+' disabled>현장 연결 대기</option>'+live.map(o=>'<option value="'+esc(o.id)+'" '+(String(o.id)===String(session)?'selected':'')+'>'+esc(o.contract?.title||o.id)+'</option>').join('')+(pending.length?'<optgroup label="출동 준비 중">'+pending.map(o=>'<option disabled>'+esc(o.contract?.title||o.id)+' · '+esc(o.status)+'</option>').join('')+'</optgroup>':'')+'</select></label>';bar.dataset.operations=live.map(o=>o.id).join(',');}
   const consoleEl=template.content.querySelector('.field-console');consoleEl.classList.add('live-only');consoleEl.dataset.session=String(session);consoleEl.dataset.mobilePanel=mobilePanel;
   template.content.querySelectorAll('.field-playback').forEach(el=>el.hidden=true);
   template.content.querySelector('.field-console-head').insertAdjacentHTML('afterend','<div class="field-live-meta"><span>REAL TIME / 시각 확인 기반</span><strong data-live-field-time>00:00 / 현장 진행</strong><span data-live-field-phase>출동 대기</span></div>');
@@ -49,7 +49,7 @@
  window.openFieldObservation=function(id){
   if(id&&state.history.some(h=>String(h.planId||h.id)===String(id)))return window.openFieldReplay(id);
   if(document.getElementById('field-recording-root'))window.closeFieldReplay();
-  replayMode=false;selected=id||activeOps()[0]?.id||null;playing=true;follow=true;radioKey='';lastTime=-1;selectedUnit=null;zoom=1.8;go('observation');
+  window.FieldAudio?.stop();Object.assign(window.fieldCameraState,{x:null,y:null,scene:null});replayMode=false;selected=id||activeOps()[0]?.id||null;playing=true;follow=true;radioKey='';lastTime=-1;selectedUnit=null;zoom=1.8;go('observation');
  };
  window.openFieldReplay=function(id){
   if(window.closeCompanyReport)window.closeCompanyReport();
