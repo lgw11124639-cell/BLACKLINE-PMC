@@ -8,7 +8,7 @@
  const operatorImage=new Image();operatorImage.src='images/operators/pmc-directions.webp';
  const mapCache=new Map();function imageFor(path){if(!mapCache.has(path)){const image=new Image();image.src=path;mapCache.set(path,image)}return mapCache.get(path)}
  const colors={blackline:'#3567d6',insurgent:'#d25343',pmc:'#bc8c2c'};
- const states={transporting:'차량 이동',repositioning:'전술 재배치',positioning:'진지 확보',overwatch:'저격 엄호',scouting:'고지 정찰','high-ground':'고지 관측','medical-hold':'의료 대기','medical-moving':'부상자 접근',treating:'응급처치',covering:'측면 엄호',descending:'관측층 하강',searching:'수색',scanning:'경계 확인',moving:'이동',engaging:'교전',holding:'경계',patrol:'순찰',guarding:'경계',wounded:'전투 불능',dead:'사망',captured:'구금',retreating:'철수',evacuated:'후송 대기',retreated:'이탈'};
+ const states={'site-inspection':'현장 확인','room-search':'실내 수색','objective-work':'목표 과업',entering:'출입구 접근',breaching:'진입 확인',exiting:'건물 이탈','pickup-security':'집결지 경계',boarding:'차량 탑승',boarded:'탑승 완료',carrying:'부상자 후송','casualty-recovery':'부상자 회수','road-cover':'하차 엄호','road-boarding':'차량 재탑승',transporting:'차량 이동',repositioning:'전술 재배치',positioning:'진지 확보',overwatch:'저격 엄호',scouting:'고지 정찰','high-ground':'고지 관측','medical-hold':'의료 대기','medical-moving':'부상자 접근',treating:'응급처치',covering:'측면 엄호',descending:'관측층 하강',searching:'수색',scanning:'경계 확인',moving:'이동',engaging:'교전',holding:'경계',patrol:'순찰',guarding:'경계',wounded:'전투 불능',dead:'사망',captured:'구금',retreating:'철수',evacuated:'후송 대기',retreated:'이탈'};
  const activeOps=()=>state.operations.filter(o=>o.status==='현장 진행 중'&&o.fieldProgress?.tactical);
  function record(){
   if(!replayMode){const op=activeOps().find(o=>o.id===selected)||activeOps()[0];if(!op)return null;selected=op.id;return {id:op.id,title:op.contract?.title||'현장 작전',date:op.created,tactical:op.fieldProgress.tactical,live:true}}
@@ -39,7 +39,7 @@
   template.content.querySelector('.field-console-head').insertAdjacentHTML('afterend','<div class="field-live-meta"><span>REAL TIME / 시각 확인 기반</span><strong data-live-field-time>00:00 / 약 15분</strong><span data-live-field-phase>출동 대기</span></div>');
   const empty=template.content.querySelector('.field-empty');
   if(empty){empty.className='field-standby';empty.innerHTML='<div><span>LIVE FIELD / STANDBY</span><h3>실시간 현장 연결 대기</h3><p data-live-departure>준비를 마친 팀이 출발하면 현재 작전만 표시됩니다.</p></div>'}
-  const info=template.content.querySelector('.field-console-head p');if(info&&record())info.textContent='현실시간 약 15분 · 접근, 수색, 경계, 교전과 복귀를 관찰합니다.';
+  const info=template.content.querySelector('.field-console-head p');if(info&&record())info.textContent='출동부터 내부 수색·과업·차량 복귀까지 · 완료 시간은 실제 현장 진행에 따라 달라집니다.';
   return template.innerHTML;
  };
  window.openFieldObservation=function(id){
@@ -67,7 +67,7 @@
  function frameAt(s,t){if(s.version>=2&&!s.done&&s.previousLiveFrame&&t>=s.previousLiveFrame.t){const a=s.previousLiveFrame,b=s.liveFrame;return {a,b,p:Math.max(0,Math.min(1,(t-a.t)/Math.max(1,b.t-a.t)))}}let a=s.frames[0],b=a;for(const f of s.frames){if(f.t<=t)a=f;if(f.t>=t){b=f;break}b=f}return {a,b,p:b.t===a.t?1:Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t)))}}
  function screen(canvas,x,y){return [(x-cameraX)*zoom/mapWidth*canvas.clientWidth+canvas.clientWidth/2,(y-cameraY)*zoom/mapHeight*canvas.clientHeight+canvas.clientHeight/2]}
  function drawMap(canvas,r,t){
-  const s=r.tactical,terrain=s?.terrain||fieldSimulation.maps?.factory||fieldSimulation.MAP,mapImage=imageFor(terrain.image),dpr=Math.min(devicePixelRatio||1,1.5),w=canvas.clientWidth,h=canvas.clientHeight;
+  const s=r.tactical;if(s?.journey&&window.FieldJourneyView)return FieldJourneyView.draw(canvas,r,t,{zoom,labels,selectedUnit,frameAt,clock,replayMode});const terrain=s?.terrain||fieldSimulation.maps?.factory||fieldSimulation.MAP,mapImage=imageFor(terrain.image),dpr=Math.min(devicePixelRatio||1,1.5),w=canvas.clientWidth,h=canvas.clientHeight;
   mapWidth=terrain.width;mapHeight=terrain.height;const scale=canvas.parentElement.querySelector('.field-map-scale');const scaleText='GRID '+mapWidth+' × '+Number(mapHeight.toFixed(1));if(scale&&scale.textContent!==scaleText)scale.textContent=scaleText;
   if(!w||!h)return;if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)}
   const c=canvas.getContext('2d');if(!c)return;c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);c.fillStyle='#e1e7dc';c.fillRect(0,0,w,h);
@@ -79,37 +79,13 @@
   const {a,b,p}=frameAt(s,t),[gx,gy]=screen(canvas,...s.goal);
   if(labels)for(const spot of terrain.positions?.highGrounds||[]){const point=screen(canvas,spot.x,spot.y);label(c,'△ '+spot.id,point[0],point[1],'#8b744a')}
   if(selectedUnit){const order=(s.orders||[]).filter(o=>o.actor===selectedUnit&&o.t<=t).slice(-1)[0];const index=s.units.findIndex(u=>u.id===selectedUnit);if(order&&a.units[index]){const from=screen(canvas,a.units[index][0],a.units[index][1]),to=screen(canvas,...order.position);c.setLineDash([4,5]);c.strokeStyle='#4c75b577';c.lineWidth=1;c.beginPath();c.moveTo(...from);c.lineTo(...to);c.stroke();c.setLineDash([]);label(c,order.kind,to[0]+5,to[1]-10,'#5275a2')}}
-  c.beginPath();c.arc(gx,gy,17+Math.sin(t*.25)*2,0,Math.PI*2);c.strokeStyle='#f8e8b8';c.lineWidth=2;c.setLineDash([5,4]);c.stroke();c.setLineDash([]);label(c,'OBJECTIVE',gx+23,gy-9,'#5b4b22');
-  for(const e of s.events){const age=t-e.t;if(age<0||age>24||e.visible===false)continue;
-   if(e.kind==='shot'&&age<(s.version>=2?.7:10)){const from=screen(canvas,...e.from),to=screen(canvas,...e.to),progress=(age*e.rounds/(s.version>=2?.7:10))%1;const x=from[0]+(to[0]-from[0])*progress,y=from[1]+(to[1]-from[1])*progress;
-    c.globalAlpha=Math.max(.12,1-age/(s.version>=2?.7:10));c.strokeStyle=e.actor.startsWith('bl')?'#ffebac':'#ffb37e';c.lineWidth=1.6;c.beginPath();c.moveTo(x-(to[0]-from[0])*.12,y-(to[1]-from[1])*.12);c.lineTo(x,y);c.stroke();c.fillStyle='#fff4bc';c.beginPath();c.arc(from[0],from[1],2.2+Math.sin(age*2),0,Math.PI*2);c.fill();if(e.hit&&age>2){c.fillStyle='#e3c48b';c.beginPath();c.arc(to[0],to[1],2,0,Math.PI*2);c.fill()}c.globalAlpha=1;
-   }
-   if(e.kind==='airstrike'||e.kind==='artillery'){
-    const [x,y]=screen(canvas,e.x,e.y);const radius=e.radius*w/mapWidth*zoom;
-    if(e.kind==='airstrike'&&age<14){const flight=age/14,px=x-w*.6+flight*w*1.2,py=y-80+flight*160;c.save();c.translate(px,py);c.rotate(.24);c.fillStyle='#607488';c.shadowColor='#30415266';c.shadowBlur=8;c.beginPath();c.moveTo(18,0);c.lineTo(-9,-4);c.lineTo(-17,-18);c.lineTo(-20,-17);c.lineTo(-16,-2);c.lineTo(-25,-1);c.lineTo(-28,-7);c.lineTo(-31,-6);c.lineTo(-29,0);c.lineTo(-31,6);c.lineTo(-28,7);c.lineTo(-25,1);c.lineTo(-16,2);c.lineTo(-20,17);c.lineTo(-17,18);c.lineTo(-9,4);c.closePath();c.fill();c.restore()}
-    if(e.kind==='artillery'&&age<4){const start=screen(canvas,4,62),q=age/4;c.beginPath();c.moveTo(start[0],start[1]);c.quadraticCurveTo((start[0]+x)/2,y-100,x,y);c.setLineDash([3,5]);c.strokeStyle='#d6a758';c.lineWidth=1.3;c.stroke();c.setLineDash([]);c.fillStyle='#fff1bc';c.beginPath();c.arc(start[0]+(x-start[0])*q,start[1]+(y-start[1])*q-Math.sin(q*Math.PI)*70,3,0,Math.PI*2);c.fill()}
-    const blastAge=age;if(blastAge>=0){const q=Math.min(1,blastAge/18);c.globalAlpha=(1-q)*.7;const grad=c.createRadialGradient(x,y,0,x,y,radius*(.2+q));grad.addColorStop(0,'#fff3c4');grad.addColorStop(.3,'#f4ae55');grad.addColorStop(.7,'#cba17899');grad.addColorStop(1,'#a89d8b00');c.fillStyle=grad;c.beginPath();c.arc(x,y,radius*(.2+q),0,Math.PI*2);c.fill();c.globalAlpha=(1-q)*.42;c.fillStyle='#c6c4bc';for(let n=0;n<5;n++){c.beginPath();c.arc(x+Math.sin(n*7)*radius*.4,y-blastAge*1.6+Math.cos(n*4)*radius*.25,radius*(.18+q*.5),0,Math.PI*2);c.fill()}c.globalAlpha=1}
-   }
-  }
+  FieldArt.marker(c,gx,gy,'임무 목표',a.objective,'#6a8bba','◆');
+  if(window.FieldArt){FieldArt.aim(c,a.aims, (x,y)=>screen(canvas,x,y),t);FieldArt.effects(c,s,t,(x,y)=>screen(canvas,x,y),'site',w,h,w/mapWidth*zoom);}
   s.units.forEach((u,i)=>{
    const v=a.units[i],next=b.units[i]||v;if(!v)return;
    if(s.version>=2&&u.faction!=='blackline'){const contact=fieldSimulation.visibleAt(s,t).find(c=>c[0]===u.id);if(!contact)return;if(!contact[4]){const point=screen(canvas,contact[1],contact[2]);c.globalAlpha=.45;c.beginPath();c.arc(point[0],point[1],8,0,Math.PI*2);c.strokeStyle=colors[u.faction];c.setLineDash([2,3]);c.stroke();c.setLineDash([]);if(labels)label(c,'마지막 관측',point[0]+10,point[1]-10,colors[u.faction]);c.globalAlpha=1;return}}const [x,y]=screen(canvas,v[0]+(next[0]-v[0])*p,v[1]+(next[1]-v[1])*p),color=colors[u.faction],down=v[2]<=0||v[4]==='captured';
-   if(selectedUnit===u.id){c.beginPath();c.arc(x,y,15,0,Math.PI*2);c.strokeStyle='#fff';c.lineWidth=2;c.stroke();c.beginPath();c.arc(x,y,18,0,Math.PI*2);c.strokeStyle=color;c.lineWidth=1;c.stroke()}
-   if(v[4]==='transporting'&&u.faction==='blackline'&&i%4!==0)return;
-   c.save();c.translate(x,y);if(down){c.strokeStyle=v[4]==='captured'?'#dcbf7e':'#a07970';c.lineWidth=2;c.beginPath();c.moveTo(-4,-4);c.lineTo(4,4);c.moveTo(4,-4);c.lineTo(-4,4);c.stroke()}else{
-    const recent=s.events.findLast?.(e=>e.kind==='shot'&&e.actor===u.id&&e.t<=t)||null;
-    const angle=v[5]??(recent?Math.atan2(recent.to[1]-v[1],recent.to[0]-v[0]):Math.atan2(next[1]-v[1],next[0]-v[0]));
-    const direction=(Math.round(angle/(Math.PI/4))+8)%8,sw=operatorImage.naturalWidth/4,sh=operatorImage.naturalHeight/2;
-    const size=(w<500?25:29)*Math.sqrt(zoom)/Math.sqrt(mapWidth/100),height=size*4/3,bob=/moving|searching|retreating/.test(v[4])?Math.sin(t*5+i)*.7:0;
-    c.fillStyle='#23394a22';c.beginPath();c.ellipse(0,3,size*.25,size*.10,0,0,Math.PI*2);c.fill();
-    c.beginPath();c.ellipse(0,2,size*.31,size*.13,0,0,Math.PI*2);c.strokeStyle=color;c.lineWidth=1.8;c.stroke();
-    if(v[4]==='transporting'){
-      c.save();c.rotate(angle);c.fillStyle='#23354344';c.fillRect(-16,-7,32,15);c.fillStyle='#4a617c';c.fillRect(-16,-7,32,13);c.fillStyle='#8fa4b9';c.fillRect(-9,-6,16,10);c.fillStyle='#cedce2';c.fillRect(8,-5,4,9);c.fillStyle='#253442';c.fillRect(-12,-9,6,3);c.fillRect(8,-9,6,3);c.fillRect(-12,6,6,3);c.fillRect(8,6,6,3);c.fillStyle='#fff1c2';c.fillRect(14,-5,2,3);c.fillRect(14,2,2,3);c.restore();
-    }else if(operatorImage.complete&&sw){c.drawImage(operatorImage,direction%4*sw,Math.floor(direction/4)*sh,sw,sh,-size/2,-height*.85+bob,size,height)}
-    else{c.fillStyle=color;c.beginPath();c.arc(0,0,4,0,Math.PI*2);c.fill()}
-   }c.restore();
-   if(labels&&!down)label(c,u.faction==='blackline'?u.name:u.faction==='pmc'?'PMC '+(i+1):'HOSTILE',x+10,y-11,color);
-   if(!down){c.fillStyle='#fff9';c.fillRect(x-7,y+9,14,2);c.fillStyle=v[2]>55?color:'#d2745a';c.fillRect(x-7,y+9,14*v[2]/100,2)}
+   if(v[4]==='transporting'&&u.faction==='blackline'){if(i%4===0)FieldArt.vehicle(c,x,y,v[5]||0,50*Math.sqrt(zoom));return;}
+   FieldArt.unit(c,u,v,x,y,(w<500?26:32)*Math.sqrt(zoom)/Math.sqrt(mapWidth/100),t,selectedUnit===u.id,labels);
   });
  }
  function label(c,text,x,y,color){c.font='600 9px -apple-system,sans-serif';const size=c.measureText(text).width;c.fillStyle='#fffffff0';c.fillRect(x-4,y-9,size+8,14);c.fillStyle=color;c.fillText(text,x,y+1)}
@@ -117,23 +93,23 @@
   const r=record(),canvas=fieldElement('field-canvas');if(!canvas)return;if(!r){drawMap(canvas,{tactical:null},0);return;}
   const s=r.tactical,max=s?(r.live?s.time:s.duration):Math.max(390,...(r.logs||[]).map(x=>x.t));playhead=Math.max(0,Math.min(max,playhead));
   drawMap(canvas,r,playhead);
-  viewRoot()?.querySelectorAll('[data-live-field-time]').forEach(el=>el.textContent=clock(playhead)+' / 약 15분');viewRoot()?.querySelectorAll('[data-live-field-phase]').forEach(el=>el.textContent=s?.phase||'현장 진행');
+  viewRoot()?.querySelectorAll('[data-live-field-time]').forEach(el=>el.textContent=clock(playhead)+(s?.journey?' / 현장 진행':' / 약 15분'));viewRoot()?.querySelectorAll('[data-live-field-phase]').forEach(el=>el.textContent=s?.journey?(frameAt(s,playhead).a.journey?.phase||s.phase):s?.phase||'현장 진행');
   const time=fieldElement('field-time');if(!time)return;
   time.textContent=clock(playhead)+' / '+clock(r.live?(s.plannedDuration||max):max);fieldElement('field-seek').max=max;fieldElement('field-seek').value=playhead;
   fieldElement('field-play').textContent=playhead>=max&&!r.live?'다시 재생':playing?'화면 일시정지':'재생 계속';
   fieldElement('field-play-status').textContent=r.live?(follow?'LIVE · 현장 수신 중':'기록 구간 관찰 · 실제 작전은 계속 진행'):(selected==='training'?'TRAINING · 사격·지원 타격 시연':'RECORDED · 저장된 현장 기록');
   const radio=(s?.radio||r.logs||[]).filter(x=>x.t<=playhead),key=String(selected)+':'+radio.length;
-  if(radioKey!==key){radioKey=key;const feed=fieldElement('field-radio');feed.innerHTML=radio.map(x=>'<div class="field-transmission '+esc(x.kind||'radio')+'"><small>'+clock(x.t)+' <span>'+esc(x.who)+'</span></small><p>'+esc(x.msg)+'</p></div>').join('')||'<p class="empty">첫 현장 무전을 기다리고 있습니다.</p>';feed.scrollTop=feed.scrollHeight}
+  if(radioKey!==key){radioKey=key;const feed=fieldElement('field-radio');feed.innerHTML=radio.map(x=>'<div class="field-transmission '+esc(x.kind||'radio')+'"><small>'+clock(x.t)+' <span>'+esc(x.from?x.from+' → '+x.to:x.who)+'</span></small><p>'+esc(x.msg)+'</p></div>').join('')||'<p class="empty">첫 현장 무전을 기다리고 있습니다.</p>';feed.scrollTop=feed.scrollHeight}
   if(s){
    const {a}=frameAt(s,playhead),blue=s.units.map((u,i)=>({...u,view:a.units[i]})).filter(u=>u.faction==='blackline');
    fieldElement('field-objective').textContent=a.objective+'%'+(a.retreat?' · 철수':'');
    fieldElement('field-strength').textContent=blue.filter(u=>u.view[2]>0).length+' / '+blue.length+'명';
    const used=s.events.filter(e=>e.kind==='shot'&&e.actor.startsWith('bl')&&e.t<=playhead).reduce((n,e)=>n+e.rounds,0);fieldElement('field-ammo').textContent=used+'발';
-   const known=s.radio.some(e=>e.kind==='contact'&&e.msg.includes(s.rival.name)&&e.t<=playhead);fieldElement('field-factions').textContent=known?(s.rival.hostile?'PMC 적대 접촉':'PMC 식별 · 중립'):'접촉 확인 중';
+   const known=s.radio.some(e=>e.kind==='contact'&&e.msg.includes(s.rival.name)&&e.t<=playhead);const jf=a.journey,enemyCount=jf?((['outbound','homebound'].includes(jf.stage)?jf.road:['entry','interior','exit'].includes(jf.stage)&&jf.inside.some(u=>u.faction==='blackline')?jf.inside:(a.contacts||[]).filter(c=>c[4]).map(c=>({faction:s.units.find(u=>u.id===c[0])?.faction}))).filter(u=>u.faction==='insurgent').length):(a.contacts||[]).filter(c=>c[4]&&s.units.find(u=>u.id===c[0])?.faction==='insurgent').length;fieldElement('field-factions').textContent=enemyCount?'적 관측 '+enemyCount+'명':known?(s.rival.hostile?'PMC 적대 접촉':'PMC 식별 · 중립'):'접촉 확인 중';
    const rosterStamp=String(selected)+':'+a.t+':'+selectedUnit;
    if(rosterKey!==rosterStamp){rosterKey=rosterStamp;fieldElement('field-roster').innerHTML=blue.map(u=>'<button type="button" class="'+(selectedUnit===u.id?'selected':'')+'" data-unit="'+esc(u.id)+'"><i style="background:'+colors.blackline+'"></i><span>'+esc(u.name)+'</span><small>'+esc(states[u.view[4]]||u.view[4])+'</small><strong>'+u.view[2]+'<em> HP</em></strong></button>').join('');
    viewRoot().querySelectorAll('[data-unit]').forEach(button=>button.onclick=()=>{selectedUnit=button.dataset.unit;update()});}
-   const unit=blue.find(u=>u.id===selectedUnit);fieldElement('field-unit-detail').innerHTML=unit?'<strong>'+esc(unit.name)+' · '+esc(unit.role)+' · '+esc((s.orders||[]).filter(o=>o.actor===unit.id&&o.t<=playhead).slice(-1)[0]?.kind||'임무 수행')+'</strong><span>좌표 '+unit.view[0].toFixed(1)+' / '+unit.view[1].toFixed(1)+' · 잔탄 '+unit.view[3]+'발 · 상대 고도 '+Number(unit.view[6]||0)+' · '+esc(states[unit.view[4]]||unit.view[4])+'</span>':'대원 또는 지도 마커를 선택하면 좌표와 잔탄을 확인할 수 있습니다.';
+   const unit=blue.find(u=>u.id===selectedUnit),aims=a.journey?([...a.journey.aims,...(a.journey.roadAims||[]),...(a.aims||[])]):(a.aims||[]),aim=aims.find(x=>x.actor===selectedUnit),targetName=aim?s.units.find(u=>u.id===aim.target)?.name:null;fieldElement('field-unit-detail').innerHTML=unit?'<strong>'+esc(unit.name)+' · '+esc(unit.role)+' · '+esc((s.orders||[]).filter(o=>o.actor===unit.id&&o.t<=playhead).slice(-1)[0]?.kind||'임무 수행')+'</strong><span>좌표 '+unit.view[0].toFixed(1)+' / '+unit.view[1].toFixed(1)+' · 잔탄 '+unit.view[3]+'발'+(targetName?' · 조준 '+esc(targetName):'')+' · 상대 고도 '+Number(unit.view[6]||0)+' · '+esc(states[unit.view[4]]||unit.view[4])+'</span>':'대원 또는 지도 마커를 선택하면 좌표와 잔탄을 확인할 수 있습니다.';
    fieldElement('field-after-action').textContent=!r.live&&playhead>=s.duration?(r.training?'훈련 종료 · 실제 정산 없음':(r.success?'임무 성공':'임무 목표 미달')+' · 탄약 '+(r.used??s.ammoUsed)+'발 · 기록 재생 완료'):'최종 결과는 작전 종료 시 확인할 수 있습니다.';
   }
  }
@@ -144,7 +120,7 @@
    if(now-painted>33){painted=now;update()}
   }if(now-lastPersist>1000){lastPersist=now;try{sessionStorage.setItem('blackline_field_view',JSON.stringify({open:selected!=='training',id:selected,time:playhead,playing,follow}))}catch(e){}}raf=requestAnimationFrame(loop);
  }
- function start(){viewRoot()?.querySelector('.field-console')?.classList.toggle('field-focus',expanded);document.body.classList.toggle('field-focus-open',expanded);if(raf)cancelAnimationFrame(raf);last=performance.now();painted=0;radioKey='';rosterKey='';raf=requestAnimationFrame(loop);const canvas=fieldElement('field-canvas');if(canvas)canvas.onclick=e=>{const r=record();if(!r?.tactical)return;const a=frameAt(r.tactical,playhead).a,box=canvas.getBoundingClientRect();let nearest=null,d=22;r.tactical.units.forEach((u,i)=>{if(u.faction!=='blackline')return;const p=screen(canvas,a.units[i][0],a.units[i][1]),distance=Math.hypot(p[0]-(e.clientX-box.left),p[1]-(e.clientY-box.top));if(distance<d){nearest=u.id;d=distance}});selectedUnit=nearest;update()}}
+ function start(){viewRoot()?.querySelector('.field-console')?.classList.toggle('field-focus',expanded);document.body.classList.toggle('field-focus-open',expanded);if(raf)cancelAnimationFrame(raf);last=performance.now();painted=0;radioKey='';rosterKey='';raf=requestAnimationFrame(loop);const canvas=fieldElement('field-canvas');if(canvas)canvas.onclick=e=>{const r=record();if(!r?.tactical)return;const a=frameAt(r.tactical,playhead).a,box=canvas.getBoundingClientRect();if(r.tactical.journey){selectedUnit=FieldJourneyView.hitTest(e.clientX-box.left,e.clientY-box.top);update();return}let nearest=null,d=22;r.tactical.units.forEach((u,i)=>{if(u.faction!=='blackline')return;const p=screen(canvas,a.units[i][0],a.units[i][1]),distance=Math.hypot(p[0]-(e.clientX-box.left),p[1]-(e.clientY-box.top));if(distance<d){nearest=u.id;d=distance}});selectedUnit=nearest;update()}}
  const oldHome=home;home=function(){const html=oldHome();return html.replace('<div class="stats">',launchMarkup()+'<div class="stats">')};
  const oldRender=render;render=function(){oldRender();if(replayMode)app.querySelectorAll('[id^="field-"]').forEach(el=>el.id='background-'+el.id);if(tab==='observation'||replayMode)start();else {if(raf)cancelAnimationFrame(raf);raf=null;expanded=false;document.body.classList.remove('field-focus-open');try{sessionStorage.removeItem('blackline_field_view')}catch(e){}}};
  const legacyOpen=window.blacklineOpenResultReplay;

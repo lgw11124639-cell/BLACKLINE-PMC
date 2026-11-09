@@ -7,16 +7,22 @@ with sync_playwright() as p:
  page.clock.pause_at(datetime(2026,11,9,0,0,10,tzinfo=timezone.utc))
  page.clock.run_for(60000)
  print('after60',page.evaluate('state.operations.map(o=>({id:o.id,status:o.status,t:o.fieldProgress?.tactical?.time}))'))
- assert page.evaluate('state.operations.some(o=>o.fieldProgress?.tactical?.version===2)')
- opid=page.evaluate('state.operations.find(o=>o.fieldProgress?.tactical).id');start=page.evaluate('state.operations[0].fieldProgress.tactical.time')
- page.evaluate('go("home")');page.clock.run_for((899-start)*1000)
- assert page.evaluate('(id)=>state.operations.find(o=>o.id===id).fieldProgress.tactical.time',opid)==899
- assert not page.evaluate('(id)=>state.history.some(h=>h.planId===id)',opid)
- print('PASS still running at 899 real-timer seconds (virtual clock)')
- page.clock.run_for(1000)
+ assert page.evaluate('state.operations.some(o=>o.fieldProgress?.tactical?.version===3)')
+ opid=page.evaluate('state.operations.find(o=>o.fieldProgress?.tactical).id')
+ page.evaluate('window.blacklineReviewCompany=()=>{};go("home")')
+ for i in range(60):
+  if page.evaluate('(id)=>state.history.some(h=>h.planId===id)',opid):break
+  page.clock.run_for(30000)
  assert page.evaluate('(id)=>state.history.some(h=>h.planId===id)',opid)
- assert page.evaluate('(id)=>state.history.find(h=>h.planId===id).tactical.time',opid)==900
- print('PASS settled at 900 seconds through production timers')
+ result=page.evaluate('(id)=>{const s=state.history.find(h=>h.planId===id).tactical;return {time:s.time,stage:s.journey.stage,manifest:s.journey.manifest.length,team:s.units.filter(u=>u.faction==="blackline").length,objective:s.objective}}',opid)
+ assert result['stage']=='complete',result
+ assert result['manifest']==result['team'],result
+ assert result['objective']==100,result
+ print('PASS production real-time timers settle after actual return:',result['time'],'seconds')
+ snapshot=page.evaluate('({cash:state.cash,count:state.history.length})')
+ page.clock.run_for(3000)
+ assert snapshot==page.evaluate('({cash:state.cash,count:state.history.length})')
+ print('PASS no duplicate settlement')
  page.evaluate('companyClock.toggle();openFieldObservation()');page.clock.run_for(100)
  assert page.get_by_role('button',name='훈련 시연 보기',exact=True).count()==0
  assert page.get_by_role('slider',name='작전 기록 시간 이동',exact=True).count()==0

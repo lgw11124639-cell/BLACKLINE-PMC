@@ -2,10 +2,10 @@
 (function(){
  const api=window.fieldSimulation,legacyCreate=api.create,legacyStep=api.step;
  const {rand,move,damage,active,dist}=api.internals,MAP=api.MAP;
- const log=(s,who,msg,kind='radio')=>s.radio.push({t:s.time,who,msg,kind});
+ const log=(s,who,msg,kind='radio')=>api.transmit?api.transmit(s,who,msg,kind):s.radio.push({t:s.time,who,msg,kind});
  const foes=(s,a,b)=>a.faction!==b.faction&&(a.faction==='insurgent'||b.faction==='insurgent'||s.rival.hostile);
- const visible=(s,a,b)=>dist(a,b)<=a.vision&&api.clearLine(a,b,s.terrain||MAP);
- function snapshot(s){const frame={t:s.time,objective:Math.round(s.objective),retreat:s.retreat,phase:s.phase,contacts:Object.entries(s.contacts).map(([id,c])=>[id,+c.x.toFixed(2),+c.y.toFixed(2),c.lastSeen,c.visible]),units:s.units.map(u=>[+u.x.toFixed(2),+u.y.toFixed(2),u.hp,u.ammo,u.status,+u.heading.toFixed(2),+(u.elevation||0).toFixed(1)])};s.previousLiveFrame=s.liveFrame||frame;s.liveFrame=frame;if(s.time%5===0||s.done)s.frames.push(frame)}
+ const visible=(s,a,b)=>!a.inside&&!b.inside&&!a.roadOnly&&!b.roadOnly&&dist(a,b)<=a.vision&&api.clearLine(a,b,s.terrain||MAP);
+ function snapshot(s){const frame={journey:api.journeyFrame?.(s),aims:s.units.filter(u=>u.target&&!u.inside&&(u.faction==='blackline'||s.contacts[u.id]?.visible)).flatMap(u=>{const target=s.units.find(v=>v.id===u.target);return target&&visible(s,u,target)?[{actor:u.id,target:target.id,from:[u.x,u.y],to:[target.x,target.y],friendly:u.faction==='blackline'}]:[]}),t:s.time,objective:Math.round(s.objective),retreat:s.retreat,phase:s.phase,contacts:Object.entries(s.contacts).map(([id,c])=>[id,+c.x.toFixed(2),+c.y.toFixed(2),c.lastSeen,c.visible,c.source||'ground']),units:s.units.map(u=>[+u.x.toFixed(2),+u.y.toFixed(2),u.hp,u.ammo,u.status,+u.heading.toFixed(2),+(u.elevation||0).toFixed(1)])};s.previousLiveFrame=s.liveFrame?.t===s.time?(s.previousLiveFrame||frame):(s.liveFrame||frame);s.liveFrame=frame;if(s.time%(s.journey?10:5)===0||s.done||s.journey&&s.frames.at(-1)?.journey?.stage!==s.journey.stage){if(s.frames.at(-1)?.t===s.time)s.frames[s.frames.length-1]=frame;else s.frames.push(frame)}}
  api.create=function(op,m,members,ammoBudget,options={}){
   const s=legacyCreate(op,m,members,ammoBudget,options);
   s.version=2;s.duration=900;s.plannedDuration=900;s.time=0;s.phase='접근';s.frames=[];s.events=[];s.radio=[];s.contacts={};s.searchStarted=null;s.securedAt=null;s.returnStarted=null;s.checkpoint=0;s.mutedLog=false;
@@ -51,7 +51,7 @@
   const rounds=Math.min(u.ammo,/저격|정밀/.test(u.role)?1:3);u.ammo-=rounds;if(u.faction==='blackline')s.ammoUsed+=rounds;
   const isObserved=u.faction==='blackline'||target.faction==='blackline'||s.contacts[u.id]?.visible;
   const hit=rand(s)<Math.max(.12,Math.min(.78,.30+u.skill/160-dist(u,target)/60+(u.elevation||0)*.005-(suppressed?.12:0)));
-  s.events.push({t:s.time,kind:'shot',actor:u.id,target:target.id,from:u.faction==='blackline'||s.contacts[u.id]?.visible?[u.x,u.y]:[target.x+(u.x-target.x)/Math.max(1,dist(u,target))*6,target.y+(u.y-target.y)/Math.max(1,dist(u,target))*6],to:[target.x,target.y],rounds,hit,visible:isObserved});
+  s.events.push({t:s.time,scene:'site',kind:'shot',actor:u.id,target:target.id,from:u.faction==='blackline'||s.contacts[u.id]?.visible?[u.x,u.y]:[target.x+(u.x-target.x)/Math.max(1,dist(u,target))*6,target.y+(u.y-target.y)/Math.max(1,dist(u,target))*6],to:[target.x,target.y],rounds,hit,visible:isObserved});
   s.mutedLog=!isObserved;const previous=target.hp;if(hit)damage(s,target,Math.round(10+rand(s)*16+(/저격|정밀/.test(u.role)?10:0)),u);s.mutedLog=false;
   if(target.faction==='blackline'&&target.hp<=55){target.woundedAt=target.woundedAt??s.time;target.worstHP=Math.min(target.worstHP??previous,target.hp)}
   if(u.tacticalRole==='support'){s.suppression[target.id]=s.time+9;if(s.time-(u.lastSuppressionReport||-100)>45){u.lastSuppressionReport=s.time;log(s,u.name,'측면 제압 사격. 아군 이동과 의무 접근을 엄호한다.','combat')}}
@@ -62,16 +62,22 @@
   if(!isObserved&&s.units.some(b=>b.faction==='blackline'&&active(b)&&dist(b,u)<19)&&s.time-(s.lastSound||0)>40){s.lastSound=s.time;log(s,'정찰 담당','인근에서 총성 청취. 정확한 위치는 미확인이다. 경계를 강화한다.','contact')}
  }
  function supports(s,op){
+  for(const e of s.events.filter(e=>e.impactAt!=null&&!e.applied&&!e.cancelledAt&&s.time>=e.impactAt)){
+   if(s.units.some(u=>!u.inside&&!u.roadOnly&&active(u)&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,{x:e.x,y:e.y})<e.radius+3)){e.cancelledAt=s.time;log(s,'작전지원본부','타격 중지. 아군·중립 인원 접근, 안전거리 재확인.','support');continue}
+   e.applied=true;for(const u of s.units)if(!u.inside&&!u.roadOnly&&active(u)&&dist(u,{x:e.x,y:e.y})<e.radius)damage(s,u,Math.round(80-dist(u,{x:e.x,y:e.y})*4),null);
+   log(s,e.kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','탄착 확인. 현장조는 피해·잔여 위협 관측 바란다.','support');
+  }
   for(const [i,o] of (op.fieldProgress?.supportOrders||[]).entries()){
+   if(o.kind==='drone')continue;
    const key=o.name+'-'+i;if(s.time<o.requestedAt+o.eta||s.supportArrived.includes(key))continue;
    s.supportArrived.push(key);const kind=/공중/.test(o.name)?'airstrike':/원거리|포병/.test(o.name)?'artillery':null;
    if(!kind){log(s,'작전지원본부',o.name+' 도착.');continue}
-   const target=s.units.find(u=>active(u)&&u.faction!=='blackline'&&(u.faction==='insurgent'||s.rival.hostile)&&s.contacts[u.id]?.visible&&s.time-s.contacts[u.id].lastSeen<=5);
+   const target=s.units.find(u=>!u.inside&&active(u)&&u.faction!=='blackline'&&(u.faction==='insurgent'||s.rival.hostile)&&s.contacts[u.id]?.visible&&s.time-s.contacts[u.id].lastSeen<=5);
    if(!target){log(s,'작전지원본부',o.name+' 타격 보류. 유효한 시각 표적 정보가 없다.','support');continue}
    const radius=kind==='airstrike'?8:6;
    if(s.units.some(u=>active(u)&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,target)<radius+3)){log(s,'작전지원본부',o.name+' 취소. 아군·중립 인원과의 안전거리 미충족.','support');continue}
-   const center={x:target.x,y:target.y};s.events.push({t:s.time,kind,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','관측 인원이 확인한 좌표에 타격. 효과 관측 바란다.','support');
-   for(const u of s.units)if(active(u)&&dist(u,center)<radius)damage(s,u,Math.round(80-dist(u,center)*4),null);
+   const center={x:target.x,y:target.y};s.events.push({t:s.time,impactAt:s.time+6,scene:'site',kind,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','확인 좌표로 진입. 6초 후 타격, 현장조는 안전거리 유지 바란다.','support');
+
   }
  }
  function headingMove(s,u,goal,speed){const x=u.x,y=u.y;move(s,u,goal,speed);if(Math.hypot(u.x-x,u.y-y)>.001)u.heading=Math.atan2(u.y-y,u.x-x)}
@@ -81,18 +87,19 @@
   if(!s.terrain)s.terrain=JSON.parse(JSON.stringify(api.maps?.factory||MAP));api.roles?.initialize(s,op);
   for(const u of s.units){u.baseVision=u.baseVision??u.vision;u.baseRange=u.baseRange??u.range;u.elevation=u.onRoof?u.assignment.height:(api.elevationAt?.(s.terrain,u)||0);u.vision=(u.baseVision||u.vision)+u.elevation*.35+(u.tacticalRole==='sniper'?12:0);u.range=(u.baseRange||u.range)+u.elevation*.2+(u.tacticalRole==='sniper'?12:0)}
   const blue=s.units.filter(u=>u.faction==='blackline'),fit=blue.filter(active);
-  perceive(s);supports(s,op);
+  perceive(s);api.journeyDrone?.(s,op);supports(s,op);
   const approach=[...(s.terrain.approach||[[34,58],[36,36]]),s.terrain.approachFinal||[Math.max(10,s.goal[0]-16),s.goal[1]+7]];
   const approachEnd=approach[2];
   if(s.phase==='접근'&&fit.some(u=>dist(u,{x:approachEnd[0],y:approachEnd[1]})<5)){s.phase='수색';s.searchStarted=s.time;log(s,'현장지휘관','목표 구역 외곽 도착. 정찰·경계 조를 분리하고 출입로를 확인한다.','command')}
-  if(s.phase==='수색'&&s.time-s.searchStarted>=150&&fit.some(u=>dist(u,{x:s.goal[0],y:s.goal[1]})<10)){s.phase='과업';s.workStarted=s.time;log(s,'현장지휘관','수색 결과를 바탕으로 의뢰 구역 인수 절차에 들어간다. 잔여 위협을 경계한다.','objective')}
+  if(s.phase==='수색'&&(s.journey?api.journeySearchReady(s):s.time-s.searchStarted>=150&&fit.some(u=>dist(u,{x:s.goal[0],y:s.goal[1]})<10))){s.phase=s.journey?'건물 진입':'과업';if(s.journey)api.journeyEntry(s);s.workStarted=s.time;log(s,'현장지휘관','수색 결과를 바탕으로 의뢰 구역 인수 절차에 들어간다. 잔여 위협을 경계한다.','objective')}
   const avg=fit.reduce((n,u)=>n+u.hp,0)/Math.max(1,fit.length),empty=fit.length&&fit.every(u=>!u.ammo);
   if(!s.retreat&&(fit.length<2||(s.contact&&(avg<35||empty)))){s.retreat=true;s.phase='복귀';s.returnStarted=s.time;log(s,'현장지휘관','전력 한계 확인. 목표보다 인원 보호를 우선하고 확인된 경로로 철수한다.','command')}
-  if((s.objective>=100&&s.time>=660||s.time>=900)&&s.phase!=='복귀'){s.phase='복귀';s.returnStarted=s.time;log(s,'현장지휘관',s.objective>=100?'임무 인계 완료. 본부로 복귀한다.':'작전 제한시간 도달. 미확인 구역 추격을 중단하고 복귀한다.','command')}
+  if(!s.journey&&(s.objective>=100&&s.time>=660||s.time>=900)&&s.phase!=='복귀'){s.phase='복귀';s.returnStarted=s.time;log(s,'현장지휘관',s.objective>=100?'임무 인계 완료. 본부로 복귀한다.':'작전 제한시간 도달. 미확인 구역 추격을 중단하고 복귀한다.','command')}
   for(const [index,u] of s.units.entries()){
-   if(!active(u))continue;
+   if(!active(u)||u.inside||u.roadOnly)continue;
    const seen=s.units.filter(v=>active(v)&&foes(s,u,v)&&u.knowledge[v.id]&&s.time-u.knowledge[v.id].lastSeen<=4&&visible(s,u,v)).sort((a,b)=>dist(u,a)-dist(u,b));
    const target=seen[0];
+   if(u.faction==='blackline'&&!target&&api.journeyMove?.(s,u,op))continue;
    if(u.faction==='blackline'&&u.tacticalRole==='medic'&&api.roles?.handle(s,u,op))continue;
    if(u.faction==='blackline'&&u.tacticalRole==='sniper'&&!u.positionReported&&s.phase!=='접근'&&s.phase!=='복귀'&&(!target||dist(u,target)>6)&&api.roles?.handle(s,u,op))continue;
    if(target&&u.ammo>0&&dist(u,target)<=u.range&&!(s.phase==='복귀'&&u.faction==='blackline')){
@@ -101,6 +108,7 @@
    }
    u.target=null;u.aimSince=null;
    if(u.faction==='blackline'){
+    if(api.journeyMove?.(s,u,op))continue;
     if(api.roles?.handle(s,u,op))continue;
     if(s.time<u.waitUntil){u.status='scanning';u.heading+=.018;continue}
     let goal;
@@ -122,17 +130,19 @@
     if(s.time>=u.waitUntil)headingMove(s,u,goal,.14);u.status='patrol';
    }
   }
-  if(s.phase==='과업'){
+  if(s.phase==='과업'&&!s.journey){
    // Progress pauses when the team has observed a nearby active threat.
    const threat=Object.entries(s.contacts).some(([id,c])=>c.visible&&s.units.some(u=>u.id===id&&active(u)&&(u.faction==='insurgent'||s.rival.hostile))&&Math.hypot(c.x-s.goal[0],c.y-s.goal[1])<15);
    if(!threat&&fit.some(u=>dist(u,{x:s.goal[0],y:s.goal[1]})<10))s.objective=Math.min(100,s.objective+100/150);
   }
   if(!fit.length)finish(s);
-  else if(s.phase==='복귀'&&fit.every(u=>dist(u,{x:s.terrain.base[0],y:s.terrain.base[1]})<5)&&(s.retreat||s.time>=900))finish(s);
-  else if(s.time>=1080){s.retreat=true;finish(s)}
+  else if(!s.journey&&s.phase==='복귀'&&fit.every(u=>dist(u,{x:s.terrain.base[0],y:s.terrain.base[1]})<5)&&(s.retreat||s.time>=900))finish(s);
+  else if(!s.journey&&s.time>=1080){s.retreat=true;finish(s)}
   snapshot(s);
-  if(s.time%60===0&&!s.done)log(s,'현장지휘관',s.phase+' 진행 중. 인원·통신 확인, 확인되지 않은 위치를 단정하지 않는다.','radio');
+  if(!s.journey&&s.time%60===0&&!s.done)log(s,'현장지휘관',s.phase+' 진행 중. 인원·통신 확인, 확인되지 않은 위치를 단정하지 않는다.','radio');
  }
+ api.defendExtraction=function(s,op){perceive(s);api.journeyDrone?.(s,op);supports(s,op);for(const u of s.units){u.target=null;if(!active(u)||u.inside||u.roadOnly||u.boarded)continue;const target=s.units.filter(v=>active(v)&&!v.inside&&!v.roadOnly&&!v.boarded&&foes(s,u,v)&&u.knowledge[v.id]&&s.time-u.knowledge[v.id].lastSeen<=4&&visible(s,u,v)&&dist(u,v)<=u.range).sort((a,b)=>dist(u,a)-dist(u,b))[0];if(target&&u.ammo>0){u.target=target.id;u.heading=Math.atan2(target.y-u.y,target.x-u.x);fire(s,u,target)}else if(u.faction!=='blackline'){const memory=Object.entries(u.knowledge).find(([id,k])=>s.time-k.lastSeen<25&&s.units.some(v=>v.id===id&&foes(s,u,v)));if(memory)headingMove(s,u,[memory[1].x,memory[1].y],.14)}}};
+ api.processSupports=supports;api.captureFrame=snapshot;api.tacticalFire=fire;
  const originalOutcome=api.outcome;api.outcome=function(s){const result=originalOutcome(s);if(s.version>=2){result.usedMed=s.medUsed||0;result.casualties=s.units.filter(u=>u.faction==='blackline'&&(u.woundedAt!=null||u.hp<=55||u.status==='dead')).map(u=>({id:u.personId,name:u.name,dead:u.status==='dead',hp:u.hp,stabilized:!!u.stabilized,severity:(u.worstHP??u.hp)<=0?'중상':(u.worstHP??u.hp)<30?'보통':'경상'}))}return result};
  api.step=(s,op)=>s.version>=2?step(s,op):legacyStep(s,op);
  api.upgrade=function(op){

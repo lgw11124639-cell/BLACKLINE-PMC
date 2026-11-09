@@ -24,7 +24,7 @@
   const path=[];let at=goal;while(at!==start){path.push([at%cols*grid,Math.floor(at/cols)*grid]);at=visited[at]}return path.reverse();
  }
  function rand(s){s.rng=(Math.imul(s.rng,1664525)+1013904223)>>>0;return s.rng/4294967296}
- function log(s,who,msg,kind='radio'){if(s.mutedLog)return;s.radio.push({t:s.time,who,msg,kind})}
+ function log(s,who,msg,kind='radio'){if(s.mutedLog)return;if(window.fieldSimulation?.transmit)return window.fieldSimulation.transmit(s,who,msg,kind);s.radio.push({t:s.time,who,msg,kind})}
  function event(s,e){s.events.push({t:s.time,...e})}
  function factions(){
   if(!Array.isArray(state.rivalPMCs))state.rivalPMCs=[

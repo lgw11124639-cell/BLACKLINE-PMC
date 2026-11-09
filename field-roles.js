@@ -3,7 +3,7 @@
  const api=window.fieldSimulation,{dist,active}=api.internals;
  const role=u=>/저격|정밀사수/.test(u.role)?'sniper':/정찰|수색|정보/.test(u.role)?'scout':/의무|의료|구급/.test(u.role)?'medic':/지원|기관총/.test(u.role)?'support':/팀장|지휘/.test(u.role)?'commander':'assault';
  const labels={sniper:'후방 저격 엄호',scout:'선행 정찰·고지 확인',medic:'후방 의료 대기',support:'측면 엄호',commander:'현장 지휘',assault:'주축선 진입'};
- const radio=(s,who,msg,kind='command')=>s.radio.push({t:s.time,who,msg,kind});
+ const radio=(s,who,msg,kind='command')=>api.transmit?api.transmit(s,who,msg,kind):s.radio.push({t:s.time,who,msg,kind});
  function order(s,u,kind,point,extra={}){u.assignment={kind,position:point,...extra};s.orders.push({t:s.time,actor:u.id,kind,position:point,...extra});}
  function initialize(s,op){
   if(s.rolesInitialized)return;s.rolesInitialized=true;s.orders=[];s.medUsed=s.medUsed||0;s.medicalBudget=s.medicalBudget??Math.min(2,Number(state.med)||0);s.suppression={};s.commander=op.leaderName||'현장지휘관';
@@ -31,7 +31,7 @@
   // Confirmed contacts trigger a command report, without disclosing unobserved positions.
   if(s.contact&&!s.contactOrders){s.contactOrders=true;radio(s,s.commander,'접촉 보고 접수. 선두는 엄폐, 저격조는 후방 사격선 유지. 지원조는 측면 엄호, 의무 담당은 후방에서 대기한다.')}
   if(u.tacticalRole==='medic'){
-   const casualty=s.units.filter(p=>p.faction==='blackline'&&p.id!==u.id&&p.status!=='dead'&&!p.stabilized&&(p.hp<=55||p.woundedAt!=null)).sort((a,b)=>a.hp-b.hp)[0];
+   const casualty=s.units.filter(p=>p.faction==='blackline'&&!p.inside&&p.id!==u.id&&p.status!=='dead'&&!p.stabilized&&(p.hp<=55||p.woundedAt!=null)).sort((a,b)=>a.hp-b.hp)[0];
    if(casualty&&s.medUsed<s.medicalBudget){
     const unsafe=Object.entries(s.contacts).some(([id,c])=>c.visible&&Math.hypot(c.x-casualty.x,c.y-casualty.y)<8&&s.units.some(p=>p.id===id&&active(p)&&(p.faction==='insurgent'||s.rival.hostile)));
     if(unsafe){if(s.time-(u.lastMedicalRequest||-100)>45){u.lastMedicalRequest=s.time;radio(s,u.name,'부상자 접근로에 관측된 위협이 남아 있다. 엄호 확보를 요청한다.','medical')}u.status='medical-hold';return true}

@@ -102,20 +102,20 @@
      if(fp.supportOrders&&fp.medical&&fp.reorganization){fp.stage=4;save();render();return;}
      if(roll<30)fp.lateRisk+=6;
      const m=op.contract||state.missions.find(x=>x.id===op.missionId);
-     const requests=[];
+     const requests=[];const observedEnemies=fp.tactical?.units.filter(u=>!u.inside&&!u.roadOnly&&u.hp>0&&fp.tactical.contacts?.[u.id]?.visible&&(u.faction==='insurgent'||u.faction==='pmc'&&fp.tactical.rival.hostile))||[];
      if(fp.commandDecision!=='철수'&&m){
        const budget=Math.max(0,Number(op.budget)||0);
-       if(budget>=1800000&&(state.ammo<500||roll<35))requests.push({name:'현장 물자 재보급',cost:1800000,effect:4});
+       if(budget>=1800000&&(fp.tactical?.version>=3?fp.tactical.units.filter(u=>u.faction==='blackline').reduce((n,u)=>n+u.ammo,0)<op.teamIds.length*15:state.ammo<500||roll<35))requests.push({name:'현장 물자 재보급',cost:1800000,effect:4});
        if(m.risk>1&&op.teamIds.length<4&&budget>=requests.reduce((a,x)=>a+x.cost,0)+6000000)requests.push({name:'추가 인력 지원',cost:6000000,effect:9});
      }
-     if(fp.tactical&&m&&fp.commandDecision!=='철수'){
+     if(fp.tactical&&m&&fp.commandDecision!=='철수'&&(fp.tactical.version<3||observedEnemies.length>0)){
        const budget=Math.max(0,Number(op.budget)||0),spent=requests.reduce((a,x)=>a+x.cost,0);
-       const preferArtillery=fp.tactical.rng%2===0;
+       const preferArtillery=fp.tactical.version>=3?op.artillery!=='off'&&observedEnemies.length>=2:fp.tactical.rng%2===0;
        if(preferArtillery&&op.artillery!=='off'&&budget>=spent+11000000)requests.push({name:'승인된 원거리 지원',cost:11000000,effect:6});
        else if(op.air!=='off'&&m.risk>=2&&budget>=spent+14000000)requests.push({name:'승인된 공중 지원',cost:14000000,effect:8});
      }
      // Commit support expenses when the commander orders them; do not charge twice on completion.
-     fp.supportOrders=[];
+     fp.supportOrders=(fp.supportOrders||[]).filter(o=>o.kind==='drone');
      fp.reservedSupportCost=Number(fp.reservedSupportCost)||0;
      for(const [i,r] of requests.entries()){
        if(fp.reservedSupportCost+r.cost>Math.max(0,Number(op.budget)||0)||state.cash<r.cost)continue;
