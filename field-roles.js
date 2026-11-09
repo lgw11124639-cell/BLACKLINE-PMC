@@ -1,12 +1,34 @@
 /* Commander orders use terrain and reported contacts; never hidden enemy coordinates. */
 (function(){
  const api=window.fieldSimulation,{dist,active}=api.internals;
- const role=u=>/저격|정밀사수/.test(u.role)?'sniper':/정찰|수색|정보/.test(u.role)?'scout':/의무|의료|구급/.test(u.role)?'medic':/지원|기관총/.test(u.role)?'support':/팀장|지휘/.test(u.role)?'commander':'assault';
+ const role=u=>/저격|정밀사수|지정사수/.test(u.role)?'sniper':/정찰|수색|정보/.test(u.role)?'scout':/메딕|의무|의료|구급/.test(u.role)?'medic':/지원|기관총/.test(u.role)?'support':/팀장|지휘/.test(u.role)?'commander':'assault';
  const labels={sniper:'후방 저격 엄호',scout:'선행 정찰·고지 확인',medic:'후방 의료 대기',support:'측면 엄호',commander:'현장 지휘',assault:'주축선 진입'};
  const radio=(s,who,msg,kind='command')=>api.transmit?api.transmit(s,who,msg,kind):s.radio.push({t:s.time,who,msg,kind});
  function order(s,u,kind,point,extra={}){u.assignment={kind,position:point,...extra};s.orders.push({t:s.time,actor:u.id,kind,position:point,...extra});}
+ function separateSnipers(s){
+  const snipers=s.units.filter(u=>u.faction==='blackline'&&role(u)==='sniper'),signature=snipers.map(u=>u.id).join('|');
+  if(s.sniperAllocation?.version===1&&s.sniperAllocation.signature===signature)return;
+  const map=s.terrain||api.MAP,used=[],roofKey=p=>p.roof?'roof:'+((map.buildings||[]).findIndex(b=>p.x>=b[0]&&p.x<=b[2]&&p.y>=b[1]&&p.y<=b[3]))+':'+(p.entry||[]).join(','):null;
+  // Coordinates sharing a building reserve that whole roof, even with different entry doors.
+  const buildingKey=p=>{if(!p.roof)return null;const n=(map.buildings||[]).findIndex(b=>p.x>=b[0]&&p.x<=b[2]&&p.y>=b[1]&&p.y<=b[3]);return n>=0?'building:'+n:roofKey(p)};
+  const free=p=>used.every(q=>Math.hypot(p.x-q.x,p.y-q.y)>=3&&(!p.roof||buildingKey(p)!==buildingKey(q)));
+  const candidates=(map.positions?.sniper||[]).slice().sort((a,b)=>Math.hypot(b.x-s.goal[0],b.y-s.goal[1])-Math.hypot(a.x-s.goal[0],a.y-s.goal[1]));
+  for(const [index,u]of snipers.entries()){
+   const old=u.assignment,original=old&&{x:old.position[0],y:old.position[1],roof:old.roof,entry:old.entry,height:old.height};
+   let p=original&&free(original)?original:candidates.find(free);
+   if(!p){for(let k=0;k<96&&!p;k++){const angle=(index+k)*2.39996,radius=12+Math.floor(k/12)*3,raw=[Math.max(2,Math.min(map.width-2,s.goal[0]+Math.cos(angle)*radius)),Math.max(2,Math.min(map.height-2,s.goal[1]+Math.sin(angle)*radius))],g=api.projectToGround?.(map,raw)||raw,candidate={x:g[0],y:g[1],roof:false,height:0};if(free(candidate))p=candidate}}
+   if(!p)continue;used.push(p);u.tacticalRole='sniper';
+   if(!original||original.x!==p.x||original.y!==p.y||!!original.roof!==!!p.roof){
+    if(u.onRoof&&old?.entry)u.sniperRelocation={entry:old.entry.slice(),until:s.time+12};
+    order(s,u,'후방 저격 엄호',[p.x,p.y],{entry:p.entry,roof:!!p.roof,height:p.height||0});
+    u.positionedAt=null;u.positionReported=false;u.setupUntil=null;u.path=[];u.destination='';
+    radio(s,s.commander,u.name+', 저격 위치 분산. '+(p.roof?'별도 건물 관측층':'독립 엄호 지점')+'을 확보하라.');
+   }
+  }
+  s.sniperAllocation={version:1,signature};
+ }
  function initialize(s,op){
-  if(s.rolesInitialized)return;s.rolesInitialized=true;s.orders=[];s.medUsed=s.medUsed||0;s.medicalBudget=s.medicalBudget??Math.min(2,Number(state.med)||0);s.suppression={};s.commander=op.leaderName||'현장지휘관';
+  if(s.rolesInitialized){separateSnipers(s);return;}s.rolesInitialized=true;s.orders=[];s.medUsed=s.medUsed||0;s.medicalBudget=s.medicalBudget??Math.min(2,Number(state.med)||0);s.suppression={};s.commander=op.leaderName||'현장지휘관';
   const map=s.terrain||api.maps?.factory||api.MAP,positions=map.positions||{};
   const candidates=(positions.sniper||[]).filter(p=>Math.hypot(p.x-s.goal[0],p.y-s.goal[1])<=34);const high=(candidates.length?candidates:positions.sniper||[]).slice().sort((a,b)=>Math.hypot(b.x-s.goal[0],b.y-s.goal[1])-Math.hypot(a.x-s.goal[0],a.y-s.goal[1]));
   const scoutHigh=(positions.highGrounds||[]).filter(p=>!p.roof&&(!high[0]||Math.hypot(p.x-high[0].x,p.y-high[0].y)>5)).sort((a,b)=>Math.hypot(a.x-s.goal[0],a.y-s.goal[1])-Math.hypot(b.x-s.goal[0],b.y-s.goal[1]))[0];
@@ -21,7 +43,7 @@
  }
  function moveRole(s,u,goal,speed){const x=u.x,y=u.y;api.internals.move(s,u,goal,speed/(1+(u.elevation||0)/80));if(Math.hypot(u.x-x,u.y-y)>.001)u.heading=Math.atan2(u.y-y,u.x-x);if(!u.onRoof)u.elevation=api.elevationAt?.(s.terrain||api.MAP,u)||0;}
  function handle(s,u,op){
-  initialize(s,op);if(u.health?.aid){u.status='treating';return true;}
+  initialize(s,op);if(u.sniperRelocation){u.status='descending';if(s.time>=u.sniperRelocation.until){[u.x,u.y]=u.sniperRelocation.entry;u.onRoof=false;u.elevation=0;delete u.sniperRelocation;}return true;}if(u.health?.aid){u.status='treating';return true;}
   const a=u.assignment;if(!a)return false;
   if(s.phase==='복귀'){
    if(u.onRoof){if(!u.descendingUntil){u.descendingUntil=s.time+12;radio(s,u.name,'후방 엄호 종료. 관측층에서 내려와 복귀 경로에 합류한다.')}u.status='descending';if(s.time>=u.descendingUntil){u.x=a.entry[0];u.y=a.entry[1];u.onRoof=false;u.elevation=0;u.path=[];u.destination=''}return true}

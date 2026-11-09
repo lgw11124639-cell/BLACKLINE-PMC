@@ -16,7 +16,9 @@
   let rendered=false;
   if(u.faction==='blackline'&&(wounded&&!treated||care||carry)){const vertical=Math.abs(Math.sin(heading))>.7,cell=carry?(vertical?7:6):care?(vertical?5:4):down?(vertical?3:2):(vertical?1:0);rendered=sprite(c,'images/operators/pmc-casualties.webp',cell,4,2,0,0,size*(care||carry?1.65:1.35),size*(care||carry?1.2:1.05))}
   if(!rendered&&['civilian','unknown'].includes(u.faction)){const direction=(Math.round(heading/(Math.PI/2))+4)%4;rendered=sprite(c,'images/operators/civilians.webp',direction,4,2,0,0,size,size*4/3)}
-  if(!rendered){c.save();if(down&&!treated&&u.faction!=='blackline'){c.rotate(Math.PI*.45);c.globalAlpha=.6}const direction=(Math.round(heading/(Math.PI/4))+8)%8;rendered=sprite(c,u.faction==='insurgent'?'images/operators/hostile-directions.webp':'images/operators/pmc-directions.webp',direction,4,2,0,0,size,size*4/3);c.restore()}
+  if(!rendered){c.save();if(down&&!treated&&u.faction!=='blackline'){c.rotate(Math.PI*.45);c.globalAlpha=.6}const direction=(Math.round(heading/(Math.PI/4))+8)%8;const specialist=u.faction==='blackline'?(/저격|정밀사수|지정사수/.test(u.role)||u.tacticalRole==='sniper'?'sniper':/메딕|의무|의료|구급/.test(u.role)||u.tacticalRole==='medic'?'medic':null):null;
+   if(specialist)rendered=sprite(c,'images/operators/role-directions.webp',direction+(specialist==='medic'?8:0),4,4,0,0,size,size*4/3);
+   if(!rendered)rendered=sprite(c,u.faction==='insurgent'?'images/operators/hostile-directions.webp':'images/operators/pmc-directions.webp',direction,4,2,0,0,size,size*4/3);c.restore()}
   if(!rendered){c.fillStyle=color;c.fillRect(-3,-9,6,12)}
   c.fillStyle=color;c.beginPath();c.moveTo(-4,7);c.lineTo(4,7);c.lineTo(0,11);c.closePath();c.fill();
   if(labels)smartLabel(c,u.name+(wounded?' · '+(v[4]==='dead'?'사망':treated?(down?'후송 대기':'처치 완료'):down?'후송 필요':'부상'):''),size*.32,-size*.35,wounded?'#b36d4b':color);
