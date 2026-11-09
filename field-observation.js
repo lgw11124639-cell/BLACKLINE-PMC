@@ -33,9 +33,9 @@
  };
  window.observation=function(){
   const mode=replayMode,old=selected;replayMode=false;
-  const template=document.createElement('template');template.innerHTML=archiveMarkup();replayMode=mode;if(mode)selected=old;
+  const session=record()?.id||'standby';const template=document.createElement('template');template.innerHTML=archiveMarkup();replayMode=mode;if(mode)selected=old;
   template.content.querySelector('.field-sessionbar')?.remove();
-  const consoleEl=template.content.querySelector('.field-console');consoleEl.classList.add('live-only');
+  const consoleEl=template.content.querySelector('.field-console');consoleEl.classList.add('live-only');consoleEl.dataset.session=String(session);
   template.content.querySelectorAll('.field-playback').forEach(el=>el.hidden=true);
   template.content.querySelector('.field-console-head').insertAdjacentHTML('afterend','<div class="field-live-meta"><span>REAL TIME / 시각 확인 기반</span><strong data-live-field-time>00:00 / 약 15분</strong><span data-live-field-phase>출동 대기</span></div>');
   const empty=template.content.querySelector('.field-empty');
@@ -101,7 +101,11 @@
   fieldElement('field-play').textContent=playhead>=max&&!r.live?'다시 재생':playing?'화면 일시정지':'재생 계속';
   fieldElement('field-play-status').textContent=r.live?(follow?'LIVE · 현장 수신 중':'기록 구간 관찰 · 실제 작전은 계속 진행'):(selected==='training'?'TRAINING · 사격·지원 타격 시연':'RECORDED · 저장된 현장 기록');
   const radio=(s?.radio||r.logs||[]).filter(x=>x.t<=playhead),key=String(selected)+':'+radio.length;
-  if(radioKey!==key){radioKey=key;const feed=fieldElement('field-radio');feed.innerHTML=radio.map(x=>'<div class="field-transmission '+esc(x.kind||'radio')+'"><small>'+clock(x.t)+' <span>'+esc(x.from?x.from+' → '+x.to:x.who)+'</span></small><p>'+esc(x.msg)+'</p></div>').join('')||'<p class="empty">첫 현장 무전을 기다리고 있습니다.</p>';feed.scrollTop=feed.scrollHeight}
+  if(radioKey!==key){radioKey=key;const feed=fieldElement('field-radio'),top=feed.scrollTop,nearBottom=feed.scrollHeight-feed.clientHeight-top<40,previous=feed._fieldMessages||[],append=previous.length>0&&previous.length<=radio.length&&previous.every((m,i)=>m===radio[i]);
+   const markup=messages=>messages.map(x=>'<div class="field-transmission '+esc(x.kind||'radio')+'"><small>'+clock(x.t)+' <span>'+esc(x.from?x.from+' → '+x.to:x.who)+'</span></small><p>'+esc(x.msg)+'</p></div>').join('');
+   if(append){if(radio.length>previous.length)feed.insertAdjacentHTML('beforeend',markup(radio.slice(previous.length)))}else feed.innerHTML=markup(radio)||'<p class="empty">첫 현장 무전을 기다리고 있습니다.</p>';
+   feed._fieldMessages=radio;feed.scrollTop=nearBottom?feed.scrollHeight:top;
+  }
   if(s){
    const {a}=frameAt(s,playhead),sceneUnits=a.journey?[...a.journey.inside,...(a.journey.road||[])]:[],blue=s.units.map((u,i)=>{const scene=sceneUnits.find(v=>v.id===u.id),transport=a.journey&&['outbound','homebound','complete'].includes(a.journey.stage)&&!a.journey.transport.stopped?a.journey.transport:null;return {...u,view:scene?[scene.x,scene.y,scene.hp,scene.ammo,scene.status,scene.heading,0]:transport&&u.faction==='blackline'&&!['wounded','evacuated','medevac','evac-home','dead'].includes(a.units[i][4])?[transport.x,transport.y,a.units[i][2],a.units[i][3],transport.kind==='helicopter'?'airlifting':'transporting',transport.heading,0]:a.units[i]}}).filter(u=>u.faction==='blackline'&&(u.joinedAt||0)<=playhead);
    fieldElement('field-objective').textContent=a.objective+'%'+(a.retreat?' · 철수':'');
@@ -124,7 +128,9 @@
  }
  function start(){viewRoot()?.querySelectorAll('[data-camera-toggle]').forEach(b=>{b.textContent=window.fieldCameraState.follow?'추적 고정':'자유 시점';b.setAttribute('aria-pressed',String(window.fieldCameraState.follow))});viewRoot()?.querySelector('.field-console')?.classList.toggle('field-focus',expanded);document.body.classList.toggle('field-focus-open',expanded);if(raf)cancelAnimationFrame(raf);last=performance.now();painted=0;radioKey='';rosterKey='';raf=requestAnimationFrame(loop);const canvas=fieldElement('field-canvas');if(canvas){let drag=null;canvas.onpointerdown=e=>{window.fieldCameraState.dragged=false;if(!window.fieldCameraState.follow){drag={x:e.clientX,y:e.clientY};canvas.setPointerCapture?.(e.pointerId)}};canvas.onpointermove=e=>{if(!drag)return;const camera=window.fieldCameraState,dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>2)camera.dragged=true;camera.x-=dx/canvas.clientWidth*camera.width/zoom;camera.y-=dy/canvas.clientHeight*camera.height/zoom;drag={x:e.clientX,y:e.clientY};update()};canvas.onpointerup=canvas.onpointercancel=()=>drag=null;}if(canvas)canvas.onclick=e=>{if(window.fieldCameraState.dragged)return;const r=record();if(!r?.tactical)return;const a=frameAt(r.tactical,playhead).a,box=canvas.getBoundingClientRect();if(r.tactical.journey){selectedUnit=FieldJourneyView.hitTest(e.clientX-box.left,e.clientY-box.top);update();return}let nearest=null,d=22;r.tactical.units.forEach((u,i)=>{if(u.faction!=='blackline')return;const p=screen(canvas,a.units[i][0],a.units[i][1]),distance=Math.hypot(p[0]-(e.clientX-box.left),p[1]-(e.clientY-box.top));if(distance<d){nearest=u.id;d=distance}});selectedUnit=nearest;update()}}
  const oldHome=home;home=function(){const html=oldHome();return html.replace('<div class="stats">',launchMarkup()+'<div class="stats">')};
- const oldRender=render;render=function(){oldRender();if(replayMode)app.querySelectorAll('[id^="field-"]').forEach(el=>el.id='background-'+el.id);if(tab==='observation'||replayMode)start();else {if(raf)cancelAnimationFrame(raf);raf=null;expanded=false;document.body.classList.remove('field-focus-open');try{sessionStorage.removeItem('blackline_field_view')}catch(e){}}};
+ let mountedCanvas=null;
+ window.blacklineRefreshObservation=function(){const canvas=fieldElement('field-canvas');if(tab==='observation'||replayMode){if(canvas!==mountedCanvas||!raf){mountedCanvas=canvas;start()}}else{if(raf)cancelAnimationFrame(raf);raf=null;mountedCanvas=null;expanded=false;document.body.classList.remove('field-focus-open');try{sessionStorage.removeItem('blackline_field_view')}catch(e){}}};
+ const oldRender=render;render=function(){oldRender();if(replayMode)app.querySelectorAll('[id^="field-"]').forEach(el=>el.id='background-'+el.id);if(window.blacklineRenderingView)return;if(tab==='observation'||replayMode)start();else {if(raf)cancelAnimationFrame(raf);raf=null;expanded=false;document.body.classList.remove('field-focus-open');try{sessionStorage.removeItem('blackline_field_view')}catch(e){}}};
  const legacyOpen=window.blacklineOpenResultReplay;
  window.blacklineOpenResultReplay=i=>{const report=state.reports[Number(i)];if(!report)return;const title=String(report.title||'').replace(/^.*?보고\s*[·ㆍ]\s*/,'').trim();const h=state.history.find(h=>h.title===title&&h.date===report.date)||state.history.find(h=>h.title===title);if(!h)return legacyOpen(i);if(window.closeCompanyReport)window.closeCompanyReport();openFieldObservation(h.planId||h.id)};
  const legacyClose=window.blacklineCloseResultReplay;window.blacklineCloseResultReplay=()=>{legacyClose();if(tab==='observation'||replayMode)start()};

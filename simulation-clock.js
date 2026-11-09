@@ -22,13 +22,13 @@
   paint();
  }
  const baseRender=render;render=function(){baseRender();mount()};
- window.companyClock={toggle(){clock.paused=!clock.paused;last=performance.now();save();paint()},speed(){clock.speed=clock.speed===1?3:clock.speed===3?12:clock.speed===12?48:1;save();paint()},text};
+ window.companyClock={paint,toggle(){clock.paused=!clock.paused;last=performance.now();save();paint()},speed(){clock.speed=clock.speed===1?3:clock.speed===3?12:clock.speed===12?48:1;save();paint()},text};
  setInterval(()=>{
   const now=performance.now(),delta=Math.min(1,Math.max(0,(now-last)/1000));last=now;
   if(window.blacklineImportingSave||clock.paused||document.hidden||document.body.classList.contains('start-visible'))return;
   const live=state.operations.some(o=>o.status==='현장 진행 중'&&o.fieldProgress?.tactical?.version>=2);clock.minutes+=delta*2*clock.speed;
   if(clock.minutes>=1440){clock.minutes-=1440;nextDay()}
-  if(now-lastReview>1000){lastReview=now;const bucket=Math.floor((state.day*1440+clock.minutes)/30);if(bucket!==lastMarket){lastMarket=bucket;window.contractWorld.refresh();save();render()}if(window.blacklineReviewHR)window.blacklineReviewHR();if(window.blacklineReviewCompany)window.blacklineReviewCompany();if(window.blacklineRunScheduled)window.blacklineRunScheduled()}
+  if(now-lastReview>1000){lastReview=now;const bucket=Math.floor((state.day*1440+clock.minutes)/30);if(bucket!==lastMarket){lastMarket=bucket;const before=JSON.stringify([state.missions,state.reports.length,state.cash,state.reputation]);window.contractWorld.refresh();save();if(JSON.stringify([state.missions,state.reports.length,state.cash,state.reputation])!==before)render()}if(window.blacklineReviewHR)window.blacklineReviewHR();if(window.blacklineReviewCompany)window.blacklineReviewCompany();if(window.blacklineRunScheduled)window.blacklineRunScheduled()}
   paint();if(now-lastSave>5000){lastSave=now;save()}
  },250);
  document.addEventListener('visibilitychange',()=>{last=performance.now();if(document.hidden&&!window.blacklineImportingSave)save()});

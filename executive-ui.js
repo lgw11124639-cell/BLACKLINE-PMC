@@ -5,7 +5,7 @@
  const pages={observation:['작전 관찰실','LIVE FIELD OBSERVATION','입체 지도 위에서 이동과 교전, 무전과 현장 판단의 흐름을 관찰하세요.'],home:['회사 운영 현황','EXECUTIVE OVERVIEW'],people:['인사본부','PEOPLE & ORGANIZATION','회사의 역량은 사람에서 시작됩니다. 인력 현황과 팀 편제, 개인별 기록을 확인하세요.'],logistics:['군수본부','LOGISTICS & RESOURCES','현장을 뒷받침하는 자원. 무장 지급과 보급 재고를 한곳에서 확인하세요.'],missions:['작전본부','OPERATIONS & INTELLIGENCE','지역의 변화가 새로운 의뢰로 이어집니다. 계약과 현장 지휘의 흐름을 살펴보세요.']};
  const originalRender=render;
  function decorate(){
-  const nav=document.getElementById('tabs');
+  const nav=window.blacklineViewNav||document.getElementById('tabs');
   nav.setAttribute('aria-label','주요 메뉴');
   nav.querySelectorAll('button').forEach(button=>{
    const key=Object.keys(pages).find(key=>button.getAttribute('onclick')?.includes("'"+key+"'"));if(!key)return;
