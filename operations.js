@@ -55,14 +55,18 @@
  const stageLabels=['현장 투입 및 상태 확인','현장 위험 평가','지휘관 상황 판단','지원·후속 상황 확인'];
  function fieldStep(op){
    if(op.status!=='현장 진행 중'){clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);return}
-   const fp=op.fieldProgress;if(!fp)return;
+   const fp=op.fieldProgress;if(!fp){clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);return;}
+   if(fp.processing)return;
+   fp.processing=true;
+   try{
    const stage=fp.stage;
    if(stage>=stageLabels.length){
      clearInterval(fieldTimers.get(op.id));fieldTimers.delete(op.id);
      const m=state.missions.find(x=>x.id===op.missionId);
      const members=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&!p.dead&&!p.retired&&!p.injured);
      if(!m||members.length<2){if(op.fieldProgress?.reservedSupportCost){state.cash+=op.fieldProgress.reservedSupportCost;op.fieldProgress.reservedSupportCost=0;}op.status='작전 보류';report('작전','작전 중단 보고 · '+op.id,'작전 진행 중 투입 가능 인원이 부족하거나 의뢰가 종료되어 작전을 보류했습니다.');save();render();return}
-     finalizeOperation(op,m,members);save();render();return;
+     if(fp.finalized||op.resolution){op.status='작전 완료';save();render();return;}
+     finalizeOperation(op,m,members);fp.finalized=true;save();render();return;
    }
    // Each checkpoint is evaluated only when its timer fires, not before deployment.
    const roll=(fp.seed+stage*173+(fp.teamSnapshot?.length||op.teamIds.length)*11)%100;
@@ -77,6 +81,7 @@
      fp.commandDecision=readiness-fp.riskShift-(state.missions.find(m=>m.id===op.missionId)?.risk||1)*9<36&&leadScore>=40?'철수':'계속';
    }
    if(stage===3){
+     if(fp.supportOrders&&fp.medical&&fp.reorganization){fp.stage=4;save();render();return;}
      if(roll<30)fp.lateRisk+=6;
      const m=state.missions.find(x=>x.id===op.missionId);
      const requests=[];
@@ -134,10 +139,12 @@
    op.status='현장 진행 중';
    if(stage===0)report('작전','작전 개시 보고 · '+op.id,op.leaderName+' 지휘관이 현장 지휘권을 인수했습니다. 이후 상황은 현장 판단에 따라 진행됩니다.');
    save();render();
+   }finally{fp.processing=false;}
  }
  function startField(op){
    if(op.status!=='현장 진행 중'||fieldTimers.has(op.id))return;
-   fieldTimers.set(op.id,setInterval(()=>fieldStep(op),1800));
+   const timer=setInterval(()=>{try{fieldStep(op)}catch(err){clearInterval(timer);fieldTimers.delete(op.id);console.error('BLACKLINE field operation failed',op.id,err)}},1800);
+   fieldTimers.set(op.id,timer);
  }
  function finalizeOperation(op,m,members){
     // Stage-based, deterministic mission resolution. Support changes actual outcome.
@@ -238,8 +245,10 @@
     if(casualtyName)report('인사','긴급 인명 피해 보고 · '+casualtyName,casualtyName+' 용병이 '+m.title+' 수행 중 사망했습니다. 계약 종료 및 추모 기록에 반영했습니다.');
  }
  nextDay=function(){oldNextDay();autoRecruit();runScheduled();state.operations.filter(o=>o.status==='현장 진행 중').forEach(startField);save();render()};
- // Resume any unfinished field operation after a reload without advancing the date.
- setTimeout(()=>{state.operations.filter(o=>o.status==='현장 진행 중').forEach(startField)},0);
+ // Resume unfinished operations without advancing the simulation date.
+ function resumeFields(){if(typeof state==='undefined'||!Array.isArray(state.operations))return;state.operations.filter(o=>o.status==='현장 진행 중'&&o.fieldProgress).forEach(startField)}
+ setTimeout(resumeFields,0);
+ if(typeof document!=='undefined')document.addEventListener('visibilitychange',()=>{if(!document.hidden)resumeFields()});
  const oldHire=hire;hire=function(id){oldHire(id);const p=state.team.find(x=>x.id===id);if(p)p.dead=false};
  const oldPrepare=prepare;prepare=function(id){if(available().length<2){alert('출동 가능한 용병이 최소 2명 필요합니다.');return}if(state.operations.some(x=>x.missionId===id&&x.status!=='작전 완료'&&x.status!=='작전 보류')){alert('이미 준비 중인 작전입니다.');return}const m=state.missions.find(x=>x.id===id);if(!m)return;state.pending={id,air:'restricted',artillery:'off',budget:20000000,plan:planFor(m)};save();render()};
  approval=function(){const op=state.pending?.plan;if(!op)return '<p class="empty">작전계획이 없습니다.</p>';const m=state.missions.find(x=>x.id===op.missionId);return '<h2>팀장 사전 작전계획서</h2><div class="card"><div class="muted">작전번호 '+op.id+' · 계획 제출 '+op.created+'</div><h2>'+escapeHTML(m.title)+'</h2><div class="line"><span>작전팀장</span><strong>'+escapeHTML(op.leaderName)+'</strong></div><div class="line"><span>투입 예정일</span><strong>'+op.deployDate+'</strong></div><div class="line"><span>사전 연습 예정일</span><strong>'+op.rehearsalDate+'</strong></div><div class="line"><span>투입 방식</span><strong>'+escapeHTML(op.method)+'</strong></div><div class="line"><span>투입 인원</span><strong>'+op.teamIds.length+'명</strong></div><h3>팀장 브리핑</h3><p class="empty">'+escapeHTML(op.briefing)+'</p><h3>사전 연습 계획</h3><p class="empty">'+escapeHTML(op.rehearsal)+'</p><h3>안전·교전 제한</h3><p class="empty">'+escapeHTML(op.rules)+'</p><label>공중 지원 제한<select id="air"><option value="off">금지</option><option value="restricted" selected>조건부 허용</option><option value="authorized">사전 승인 범위 내 허용</option></select></label><label>포병 지원 제한<select id="artillery"><option value="off" selected>금지</option><option value="restricted">조건부 허용</option><option value="authorized">사전 승인 범위 내 허용</option></select></label><label>지원 예산 상한 (원)<input id="budget" type="number" min="0" max="200000000" step="1000000" value="'+op.budget+'"></label><p class="empty">승인 후 즉시 전투하지 않습니다. 예정일에 사전 연습과 작전 투입이 진행됩니다.</p><div class="btnrow">'+btn('작전계획 승인 · 일정 등록','approveScheduled()')+btn('반려','cancel()','secondary')+'</div></div>'};
