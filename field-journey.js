@@ -42,6 +42,29 @@
   if(u.faction==='blackline'&&!s.contact){s.contact=true;say(s,u.name,'건물 내부 무장 인원 확인. 엄폐 후 대응 사격한다.','contact')}
  }
  function searchTick(s){const j=s.journey,search=j.siteSearch;if(s.phase!=='수색'||search.discovered)return;const sector=search.points[search.index];if(!sector)return;const observers=blue(s).filter(u=>active(u)&&j.team.includes(u.id)&&dist(u,point(sector.position))<3);const threat=Object.entries(s.contacts).some(([id,c])=>c.visible&&dist(point([c.x,c.y]),point(sector.position))<15&&s.units.some(u=>u.id===id&&active(u)&&(u.faction==='insurgent'||s.rival.hostile)));if(!observers.length||threat)return;sector.worked+=observers.reduce((n,u)=>n+(u.tacticalRole==='scout'?1.4:1)*(Number(u.skill)||50)/70,0)/Math.sqrt(observers.length);if(sector.worked<18)return;sector.cleared=true;if(sector.target){search.discovered=true;s.goal=j.building.entrance;say(s,observers[0].name,(j.mode&&j.mode!=='interior'?'야외 수색으로 의뢰 대상을 확인했다. 보호·과업 위치를 공유한다.':'현장 수색으로 의뢰 대상 건물을 확인했다. 출입구 위치를 공유한다.'),'objective')}else{say(s,observers[0].name,'수색 구역 확인. 의뢰 대상 단서는 없다. 다음 구역으로 이동한다.');if(s.version>=4)api.chooseSearchSector(s);else search.index++}}
+ function recoverStalledSite(s){
+  const j=s.journey;if(!j||!['site','entry','outdoor'].includes(j.stage)||s.retreat)return;
+  const fit=blue(s).filter(u=>active(u)&&!u.boarded&&!u.evacComplete);
+  if(!fit.length)return;
+  const snapshot=fit.map(u=>[u.id,Math.round(u.x*2),Math.round(u.y*2),u.status]).join('|')+';'+Math.floor((s.objective||0)/2)+';'+j.stage+';'+(j.siteSearch?.index??-1)+';'+(j.siteSearch?.discovered?1:0);
+  const monitor=j.stallMonitor||(j.stallMonitor={snapshot,at:s.time,lastAction:s.time});
+  if(monitor.snapshot!==snapshot){monitor.snapshot=snapshot;monitor.at=s.time;return;}
+  if(s.time-monitor.at<90||s.time-monitor.lastAction<90)return;
+  monitor.lastAction=s.time;monitor.at=s.time;
+  const search=j.siteSearch;
+  if(search&&!search.discovered&&search.points?.length){
+   const sector=search.points[search.index];
+   if(sector){
+    const near=fit.some(u=>dist(u,point(sector.position))<8);
+    if(near){sector.worked=Math.max(sector.worked||0,17);say(s,'현장지휘관','현장 수색 정체 확인. 인접 정찰조의 확인 정보를 통합해 해당 구역 수색을 재개한다.','command');}
+    else {for(const u of fit.filter(u=>j.team.includes(u.id))){u.path=[];u.destination='';}say(s,'현장지휘관','수색조 경로 정체. 이동 경로를 재계산하고 재접근한다.','command');}
+    return;
+   }
+   search.discovered=true;s.goal=j.building.entrance;say(s,'현장지휘관','수색 구역 확인 완료. 목표 건물로 이동한다.','command');return;
+  }
+  for(const u of fit){u.path=[];u.destination='';}
+  say(s,'현장지휘관','작전조 이동 정체 확인. 이동 경로 초기화 후 목표 접근을 재시도한다.','command');
+ }
  function interiorTick(s){const j=s.journey,ind=j.interior,occupants=s.units.filter(u=>u.inside);let fit=occupants.filter(u=>u.faction==='blackline'&&active(u));ind.aims=[];api.indoorBefore?.(s);
   for(const u of occupants){u.interiorTarget=null;if(!active(u))continue;if(api.indoorRecover?.(s,u)||api.agentAction?.(s,u,'interior'))continue;const enemies=occupants.filter(v=>active(v)&&v.faction!==u.faction&&(v.faction==='insurgent'||u.faction==='insurgent')&&dist(indoorPoint(u),indoorPoint(v))<24&&api.canSeeActor?.(s,u,v,'interior')!==false&&api.clearLine(indoorPoint(u),indoorPoint(v),ind.map)).sort((a,b)=>dist(indoorPoint(u),indoorPoint(a))-dist(indoorPoint(u),indoorPoint(b)));
    const target=enemies[0];if(target&&u.ammo>0){u.interiorRecognized=u.interiorRecognized||{};u.interiorRecognized[target.id]=(u.interiorRecognized[target.id]||0)+1;if(u.faction==='blackline')api.observeContact?.(s,u,target,'interior',{identified:u.interiorRecognized[target.id]>=(api.identificationTicks?.(s,u)||3)});if(u.interiorRecognized[target.id]>=(api.identificationTicks?.(s,u)||3)){if(u.faction==='blackline'){target.interiorSeen=true;target.interiorLastSeen=s.time;target.interiorLastPosition=[target.interior.x,target.interior.y]};shoot(s,u,target);ind.aims.push({actor:u.id,target:target.id,from:[u.interior.x,u.interior.y],to:[target.interior.x,target.interior.y],friendly:u.faction==='blackline'});u.status=api.contactStatus?.(s,u,target,'interior')||'engaging';continue}}
@@ -279,7 +302,7 @@
    else if(j.stage==='homebound'){j.transport.returnDistance=(j.transport.returnDistance||0)+(api.vehicleTravel?.(s,op)===false||api.airTravel?.(s,'homebound')===false?0:j.transport.speed);j.transport.progress=Math.min(1,j.transport.returnDistance/Math.max(.001,measure(j.transport.path)*(j.transport.returnFrom??1)));j.transport.vehicle=along(j.transport.path,(j.transport.returnFrom??1)*(1-j.transport.progress));j.transport.vehicle.heading+=Math.PI;j.transport.returnHeadingCorrected=true;if(j.transport.progress>=1&&api.airArrival?.(s)!==false&&(!j.medevac||j.medevac.stage==='complete')){stage(s,'complete','복귀 완료');s.done=true;s.duration=s.time;say(s,'현장지휘관',(j.transport.kind==='helicopter'?'헬기 본부 착륙. ':'차량 본부 도착. ')+'하차·인원 확인 및 작전 종료를 보고한다.','result')}}
    else {api.defendExtraction(s,op);extractTick(s,op);}
   }else{
-   step(s,op);searchTick(s);api.outdoorTick?.(s,op);
+   step(s,op);searchTick(s);api.outdoorTick?.(s,op);recoverStalledSite(s);
    if(s.retreat&&!s.done)beginExtraction(s);
    if(['entry','interior','exit'].includes(j.stage)&&blue(s).some(u=>u.inside))interiorTick(s);
    if(j.stage==='exit'&&!blue(s).some(u=>u.inside&&u.status!=='dead'))beginExtraction(s);
