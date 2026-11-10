@@ -3,7 +3,7 @@
  const frame=api.journeyFrame;api.journeyFrame=function(s){const f=frame(s);if(f&&s.rivalMission?.reported)f.rivalMission={objective:s.rivalMission.objective,stage:s.rivalMission.stage,company:s.rival.name};return f;};
  const point=p=>({x:p[0],y:p[1]}),pmcs=s=>s.units.filter(u=>u.faction==='pmc'&&active(u)),blue=s=>s.units.filter(u=>u.faction==='blackline'&&active(u)&&!u.inside&&!u.roadOnly&&!u.boarded);
  const sees=(s,u,v)=>dist(u,v)<=u.vision&&api.canSeeActor(s,u,v,'site')&&api.clearLine(u,v,s.terrain);
- function initialize(s,m){if(s.rivalMission||!s.journey)return;const protection=['rescue','escort'].includes(s.scenario?.mode),objective=m?.rivalObjective||(protection&&((s.scenario.seed>>>3)%3===0)?'target-elimination':'area-security');s.rivalMission={version:1,objective,area:s.goal.slice(),reported:false,withdraw:false,stage:'approach',knownTarget:null,shots:0};
+ function initialize(s,m){if(s.rivalMission||!s.journey)return;const protection=['rescue','escort','joint'].includes(s.scenario?.mode),objective=m?.rivalObjective||(protection&&((s.scenario.seed>>>3)%3===0)?'target-elimination':'area-security');s.rivalMission={version:1,objective,area:s.goal.slice(),reported:false,withdraw:false,stage:'approach',knownTarget:null,shots:0};
   s.units.filter(u=>u.faction==='pmc').forEach((u,i)=>{u.contractRole=['leader','flanker','overwatch'][i%3];u.contractSlot=i;});
  }
  api.create=function(...args){const s=create(...args);initialize(s,args[1]);return s};

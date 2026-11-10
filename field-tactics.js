@@ -30,8 +30,8 @@
    for(const target of s.units){
     if(target.faction===u.faction||!active(target))continue;
     if(!visible(s,u,target)){delete u.recognition[target.id];continue}
-    u.recognition[target.id]=(u.recognition[target.id]||0)+1;if(s.version>=4&&u.faction==='blackline'&&u.recognition[target.id]>=2&&u.recognition[target.id]<4&&api.radioLinked(s,u)&&s.contacts[target.id]?.identified!==true)s.contacts[target.id]={x:target.x,y:target.y,lastSeen:s.time,firstSeen:s.time,visible:true,identified:false,confidence:35};
-    if(u.faction==='blackline'&&u.recognition[target.id]>=2)api.observeContact?.(s,u,target,'site',{identified:u.recognition[target.id]>=(/정찰/.test(u.role)?2:4)});if(u.recognition[target.id]<(/정찰/.test(u.role)?2:4))continue;
+    u.recognition[target.id]=(u.recognition[target.id]||0)+1;if(s.version>=4&&u.faction==='blackline'&&u.recognition[target.id]>=1&&u.recognition[target.id]<(api.identificationTicks?.(s,u)||4)&&api.radioLinked(s,u)&&s.contacts[target.id]?.identified!==true)s.contacts[target.id]={x:target.x,y:target.y,lastSeen:s.time,firstSeen:s.time,visible:true,identified:false,confidence:35};
+    if(u.faction==='blackline'&&u.recognition[target.id]>=2)api.observeContact?.(s,u,target,'site',{identified:u.recognition[target.id]>=(api.identificationTicks?.(s,u)||(/정찰/.test(u.role)?2:4))});if(u.recognition[target.id]<(api.identificationTicks?.(s,u)||(/정찰/.test(u.role)?2:4)))continue;
     const previous=u.knowledge[target.id];u.knowledge[target.id]={x:target.x,y:target.y,lastSeen:s.time};
     if(u.faction==='blackline'&&(s.version<4||api.radioLinked(s,u))){
      const first=!s.contacts[target.id];s.contacts[target.id]={firstSeen:s.contacts[target.id]?.firstSeen??s.time,x:target.x,y:target.y,lastSeen:s.time,visible:true,faction:target.faction,identified:true,confidence:100};
@@ -107,7 +107,7 @@
    if(u.faction==='blackline'&&u.tacticalRole==='sniper'&&!u.positionReported&&s.phase!=='접근'&&s.phase!=='복귀'&&(!target||dist(u,target)>6)&&api.roles?.handle(s,u,op))continue;
    if(target&&u.ammo>0&&dist(u,target)<=u.range&&!(s.phase==='복귀'&&u.faction==='blackline')){
     if(u.target!==target.id){u.target=target.id;u.aimSince=s.time}u.heading=Math.atan2(target.y-u.y,target.x-u.x);u.status=api.contactStatus?.(s,u,target,'site')||'engaging';
-    if(s.time-u.aimSince>=2)fire(s,u,target);continue;
+    if(s.time-u.aimSince>=(api.reactionDelay?.(s,u)||2))fire(s,u,target);continue;
    }
    u.target=null;u.aimSince=null;
    if(u.faction==='blackline'){

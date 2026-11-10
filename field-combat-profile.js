@@ -1,0 +1,12 @@
+/* Shared weapon envelopes and independent reactions. Neither faction receives free hits. */
+(function(){const api=window.fieldSimulation,create=api.create,range=api.effectiveRange,vision=api.observationRange,cycle=api.weaponCycle,step=api.step;
+ const weapon=u=>(api.activeWeaponState?.(u)||u.weaponState)?.weapon||u.loadout?.primary||'소총',working=(u,key)=>{const i=u.fieldEquipment?.slots[key];return i&&i.condition>15&&(i.battery==null||i.battery>0)?i:null;};
+ api.effectiveRange=function(s,u){if(u.activeWeapon==='secondary')return range(s,u);if(api.isPrecisionWeapon?.(u))return range(s,u);const name=weapon(u),base=/MP7/.test(name)?16:/SCAR/.test(name)?30:/MCX/.test(name)?26:28;return base+Math.min(4,(u.elevation||0)*.2);};
+ api.observationRange=function(s,u){const original=vision(s,u);if(api.isPrecisionWeapon?.(u))return original;const trained=16+(u.skill||50)/8+(u.tacticalRole==='scout'?5:0)+(working(u,'optic')?3:0)+(u.elevation||0)*.35,night=s.lightLevel==='night'?(working(u,'nightVision')?.9:working(u,'light')?.65:.48):1;return Math.max(original,trained*night);};
+ api.roadEngagementRange=(s,u)=>Math.min(u.range||api.effectiveRange(s,u),u.vision||api.observationRange(s,u));
+ api.identificationTicks=(s,u)=>Math.max(2,((u.skill||50)>=75||u.tacticalRole==='scout'||api.isPrecisionWeapon?.(u)?2:3)+(s.lightLevel==='night'&&!working(u,'nightVision')?1:0));
+ api.reactionDelay=(s,u)=>u.reactionSeconds??(u.reactionSeconds=Math.max(.8,2.2-(u.skill||50)/100)+(String(u.id).split('').reduce((n,c)=>n+c.charCodeAt(0),0)%7)/10);
+ api.weaponCycle=function(u){if(u.activeWeapon==='secondary')return cycle?.(u)||3;if(api.isPrecisionWeapon?.(u))return 6;return (/MP7/.test(weapon(u))?2.3:2.8)+(u.fireStagger??(u.fireStagger=(String(u.id).split('').reduce((n,c)=>n+c.charCodeAt(0),0)%9)/10));};
+ api.create=function(...args){const s=create(...args);for(const u of s.units){u.reactionSeconds= .8+(100-(u.skill||50))/80+api.internals.rand(s)*1.1;u.fireStagger=api.internals.rand(s)*.8;}return s;};
+ api.step=function(s,op){if(!s.done)for(const u of s.units){u.baseVision=u.baseVision??u.vision;u.baseRange=u.baseRange??u.range;const map=u.inside?s.journey.interior.map:u.road?s.journey.transport.map:s.terrain,p=u.inside?u.interior:u.road||u;u.elevation=u.onRoof?(u.assignment?.height||0):(api.elevationAt?.(map,p)||0);u.range=api.effectiveRange(s,u);u.vision=api.observationRange(s,u);}return step(s,op);};
+})();

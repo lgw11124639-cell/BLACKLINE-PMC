@@ -15,12 +15,13 @@
   return Math.min(200000000,proposed,cashLimit,rewardLimit);
  }
  function plan(m){
+  m=window.blacklineJointContract?.(m)||m;
   const people=active();const staffing=window.blacklineCheckStaffing?.(m,people);if(staffing&&!staffing.ready){const demand=state.staffingDemand=state.staffingDemand||{};demand.minimum=staffing.requirement.minimum;demand.missing=staffing.missing;demand.mission=m.title;demand.reason=staffing.requirement.reason;demand.date=state.date;const key=state.date+':'+staffing.missing.join(',');if(demand.reportedDate!==state.date){demand.reportedDate=state.date;demand.reported={}}demand.reported=demand.reported||{};if(!demand.reported[key]){demand.reported[key]=true;demand.reportKey=key;report('작전','작전본부 출동 편제 보류',m.title+' 검토: '+staffing.missing.join(' · ')+'. '+staffing.requirement.reason+' 확보 후 재검토합니다.');save()}return null}if(people.length<2||state.ammo<120||state.med<1)return null;
   const leader=people.find(p=>/팀장|지휘/.test(p.role||''))||people.find(p=>p.id===state.leaderId)||people[0];
   const risk=Math.max(1,Number(m.risk)||1);
   const budget=budgetFor(m);
   if(budget<3000000)return null;
-  const op={id:'OP-'+String(state.day).padStart(4,'0')+'-'+m.id,missionId:m.id,leaderId:leader.id,leaderName:leader.name,teamIds:people.slice(0,Math.min(12,Math.max(staffing?.requirement.minimum||6,people.length))).map(p=>p.id),created:state.date,deployDate:addDays(state.date,risk>1?4:3),rehearsalDate:addDays(state.date,1),method:window.fieldSimulation.chooseTransport?.({},m)==='helicopter'?'헬기 수송':'지상 차량 이동',rehearsal:'통신·후송·민간인 보호 모의훈련',status:'작전 승인',briefing:'작전본부가 자율적으로 의뢰 조건을 검토했습니다.',readiness:75,rehearsalQuality:null,rehearsalIssue:null,rules:'민간인 보호 및 인원 안전 우선. 현장지휘관은 위험 시 임무를 중단할 수 있습니다.',air:risk>1?'restricted':'off',artillery:risk>=3?'restricted':'off',budget};
+  const op={id:'OP-'+String(state.day).padStart(4,'0')+'-'+m.id,missionId:m.id,leaderId:leader.id,leaderName:leader.name,teamIds:people.slice(0,Math.min(m.jointOperation?24:12,Math.max(staffing?.requirement.minimum||6,people.length))).map(p=>p.id),created:state.date,deployDate:addDays(state.date,risk>1?4:3),rehearsalDate:addDays(state.date,1),method:window.fieldSimulation.chooseTransport?.({},m)==='helicopter'?'헬기 수송':'지상 차량 이동',rehearsal:'통신·후송·민간인 보호 모의훈련',status:'작전 승인',briefing:'작전본부가 자율적으로 의뢰 조건을 검토했습니다.',readiness:75,rehearsalQuality:null,rehearsalIssue:null,rules:'민간인 보호 및 인원 안전 우선. 현장지휘관은 위험 시 임무를 중단할 수 있습니다.',air:risk>1?'restricted':'off',artillery:risk>=3?'restricted':'off',budget};
   op.departmentBudget={personnel:Math.round(budget*.22),logistics:Math.round(budget*.25),transport:Math.round(budget*.18),medical:Math.round(budget*.15),reserve:budget-Math.round(budget*.22)-Math.round(budget*.25)-Math.round(budget*.18)-Math.round(budget*.15)};
   op.contract={...m,mapId:window.fieldSimulation?.selectMap?.(m)?.id||m.mapId};
   if(state.simClock&&!window.blacklinePrepareRecon){const now=state.day*1440+state.simClock.minutes;op.rehearsalAt=now+240;op.deployAt=now+720;}else{op.rehearsalDate=op.deployDate='계획 수립 후 확정';}
@@ -32,7 +33,7 @@
   config.lastReview=state.date;
   // Do not replace an active operation or flood reports when resources are inadequate.
   if(state.pending)state.pending=null;
-  const busy=state.operations.filter(o=>!['작전 완료','작전 보류'].includes(o.status)).length>=3;
+  const busy=state.operations.filter(o=>!['작전 완료','작전 보류'].includes(o.status)).reduce((n,o)=>n+(o.contract?.jointOperation?3:1),0)>=3;
   if(busy||!state.missions.length)return;
   const candidates=state.missions.filter(m=>m.contractStatus==='검토 가능'&&(!m.expiresDate||m.expiresDate>=state.date)&&!state.operations.some(o=>o.missionId===m.id&&o.status!=='작전 완료'&&o.status!=='작전 보류'));
   const score=m=>{const mode=window.fieldSimulation.missionMode?.(m),repeat=state.history.slice(0,6).filter(h=>h.title===m.title).length,same=state.operations.filter(o=>!['작전 완료','작전 보류'].includes(o.status)&&window.fieldSimulation.missionMode?.(o.contract||{})===mode).length;return (Number(m.reward)||0)/Math.max(1,Number(m.risk)||1)/(1+repeat*.75+same*.6);};
