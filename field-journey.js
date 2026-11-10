@@ -69,7 +69,7 @@
   stage(s,'extraction','복귀 집결');s.returnStarted=s.time;s.phase='복귀';j.pickup={requestedAt:null,arrived:false,path:route(s.terrain,s.terrain.base,j.exfil),vehicle:{...point(s.terrain.base),heading:0},boarding:0};api.preparePickup?.(s);say(s,'현장지휘관','복귀 집결지로 이동한다. 수송조는 선두 도착 보고 후 접근, 전원 탑승을 확인한다.');
  }
  function extractTick(s,op){const j=s.journey,pick=j.pickup,fit=blue(s).filter(active),down=blue(s).filter(u=>!u.boarded&&!active(u)&&u.status!=='dead'&&!u.evacComplete&&!u.stagedForPickup);
-  if(!fit.length&&j.medevac&&j.medevac.stage!=='complete'){s.retreat=true;s.phase='의료 후송 대기';return;}if(!fit.length){s.retreat=true;s.done=true;s.duration=s.time;stage(s,'lost','긴급 구조 요청');say(s,'본부','전투 가능 인원 상실. 현 위치를 구조 요청 지점으로 등록, 작전을 중단한다.','result');return}
+  if(!fit.length&&j.medevac&&j.medevac.stage!=='complete'){s.retreat=true;s.phase='의료 후송 대기';return;}if(!fit.length){s.retreat=true;s.phase='본부 긴급 구조 요청 · 구조대 출동 대기';say(s,'본부','전투 가능 인원 상실. 긴급 구조대를 요청한다. 관전은 후송 완료까지 유지한다.','command');return}
   for(const [index,u]of fit.entries()){if(u.boarded||u.medicalOverride===s.time||u.contactOverride===s.time)continue;if(u.onRoof&&api.roles.handle(s,u,op))continue;if(down.some(v=>v.carriedBy===u.id))continue;u.inside=false;const station=api.projectToGround(s.terrain,[j.exfil[0]+Math.cos(index*2.4)*2.2,j.exfil[1]+Math.sin(index*2.4)*2.2]);moveTo(s,u,station,u.hp<=55?.34:.58);u.status=dist(u,point(j.exfil))<3?'pickup-security':'retreating';}
   const assigned=new Set(fit.filter(u=>u.onRoof||u.medicalOverride===s.time).map(u=>u.id));for(const u of down){if(j.medevac&&j.medevac.stage!=='complete'&&j.medevac.patients.includes(u.id))continue;const carrier=fit.find(v=>v.id===u.carriedBy&&!assigned.has(v.id))||fit.filter(v=>!v.boarded&&!assigned.has(v.id)).sort((a,b)=>dist(a,u)-dist(b,u))[0];if(!carrier)continue;assigned.add(carrier.id);u.carriedBy=carrier.id;
    const location=u.inside?j.building.entrance:[u.x,u.y];if(dist(carrier,point(location))>2){moveTo(s,carrier,location,.58);carrier.status='medical-moving';continue}
@@ -153,7 +153,7 @@
  // HQ automatically launches a separate emergency recovery when every deployed operator is down.
  function emergencyRescue(s){
   const j=s.journey,original=blue(s).filter(u=>!u.rescueReinforcement);
-  if(!original.length||original.some(active)||s.done||j.stage==='complete'||j.stage==='lost')return false;
+  if(j.emergencyRescue&&j.emergencyRescue.stage!=='complete'){}else if(!original.length||original.some(active)||s.done||j.stage==='complete'||j.stage==='lost')return false;
   if(!j.emergencyRescue){
    const survivors=original.filter(u=>u.status!=='dead'&&!u.evacComplete);
    if(!survivors.length)return false;
@@ -195,7 +195,7 @@
     say(s,'본부 작전상황실','적이 전투불능 대원 '+captured.length+'명을 확보해 이송 중인 것으로 판단. 포로 구출작전 준비를 지시한다.','command');
    }
   }
-  if(r.stage==='no-team')return true;
+  if(r.stage==='no-team'){if(s.time-r.started>=30){r.started=s.time;r.stage='dispatch';r.captureChecked=false;delete j.emergencyRescue;return emergencyRescue(s);}return true;}
   if(r.stage==='dispatch'){
    const origin=r.origin||[8,8],progress=Math.min(1,elapsed/(r.transport==='helicopter'?22:38));
    for(let i=0;i<r.reinforcements.length;i++){const u=s.units.find(x=>x.id===r.reinforcements[i]);if(u){u.x=origin[0]+(s.goal[0]-origin[0])*progress+i*.6;u.y=origin[1]+(s.goal[1]-origin[1])*progress+i*.6;}}
@@ -206,12 +206,24 @@
    for(const u of original){if(u.status==='dead'||u.captured||u.evacComplete)continue;u.evacComplete=true;u.status='medical-evacuation';u.evacuationHold=false;u.carriedBy=null;}
    say(s,'긴급구조대','생존자 수습 완료. 응급 처치 후 후송 차량으로 이송한다.','support');
   }
-  if(elapsed>=(r.transport==='helicopter'?72:93)&&r.stage==='evacuation'){
-   r.stage='complete';s.retreat=true;
-   for(const u of s.units.filter(u=>u.rescueReinforcement))u.status='rescue-returning';
-   for(const id of r.personnelIds||[]){const p=(state?.team||[]).find(x=>x.id===id);if(p){p.onMission=false;p.fatigue=Math.min(100,(p.fatigue||0)+25);}}
-   stage(s,'complete','긴급 구조·후송 완료');s.done=true;s.duration=s.time;
-   say(s,'본부 작전상황실',r.captured?.length?'긴급 구조대 복귀. 적에게 붙잡힌 '+r.captured.length+'명은 미회수 상태. 포로 구출작전 요청.':'긴급 구조대 복귀. 생존자 후송 완료, 원작전 실패 처리. 사상자 및 부상 상태를 보고한다.','result');
+  const departAt=r.transport==='helicopter'?72:93,returnDuration=r.transport==='helicopter'?24:42;
+  if(elapsed>=departAt&&r.stage==='evacuation'){
+   r.stage='returning';r.returnStarted=s.time;
+   stage(s,'emergency-return','긴급 구조대 생존자 후송 중');
+   say(s,'긴급구조대','생존자 후송을 시작한다. 본부 도착 전까지 관전과 구조작전은 계속된다.','support');
+  }
+  if(r.stage==='returning'){
+   const progress=Math.min(1,(s.time-r.returnStarted)/returnDuration),origin=r.origin||[8,8];
+   for(let i=0;i<r.reinforcements.length;i++){
+    const u=s.units.find(x=>x.id===r.reinforcements[i]);
+    if(u){u.x=s.goal[0]+(origin[0]-s.goal[0])*progress+i*.6;u.y=s.goal[1]+(origin[1]-s.goal[1])*progress+i*.6;u.status='rescue-returning';}
+   }
+   if(progress>=1){
+    r.stage='complete';s.retreat=true;
+    for(const id of r.personnelIds||[]){const p=(state?.team||[]).find(x=>x.id===id);if(p){p.onMission=false;p.fatigue=Math.min(100,(p.fatigue||0)+25);}}
+    stage(s,'complete','긴급 구조·후송 완료');s.done=true;s.duration=s.time;
+    say(s,'본부 작전상황실',r.captured?.length?'구조대 복귀 완료. 포로 '+r.captured.length+'명은 미회수 상태로 구출작전 필요.':'긴급 구조대 복귀 완료. 생존자 후송 및 인계 완료.','result');
+   }
   }
   return true;
  }
