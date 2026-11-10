@@ -8,6 +8,7 @@
  // Retain earlier data; the director no longer makes personnel decisions.
  state.recruitPolicy.enabled=false;
  function recruit(){
+  if(state.overseasCommand)return;
   const employed=active();
   const required=Math.max(18,Number(state.staffingDemand?.minimum)||6)+6,needsMedic=employed.filter(p=>!p.injured&&/의무|의료|구급/.test(p.role||'')).length<Math.ceil(required/6);if(employed.filter(p=>!p.injured).length>=required&&!needsMedic||!state.candidates.length)return;
   const candidate=state.candidates.filter(p=>state.cash>=p.salary/12).sort((a,b)=>(needsMedic?( /의무|의료|구급/.test(b.role)?1:0)-( /의무|의료|구급/.test(a.role)?1:0):0)||fit(b)-fit(a)||a.salary-b.salary)[0];

@@ -11,7 +11,7 @@
   const risk=Math.max(1,Number(m.risk)||1);
   const proposed=Math.round((5500000+risk*4500000+team*1300000)/1000000)*1000000;
   const cashLimit=Math.max(0,Math.floor((state.cash-30000000)*.22/1000000)*1000000);
-  const rewardLimit=Math.max(0,Math.floor((Number(m.reward)||0)*.7/1000000)*1000000);
+  const rewardLimit=state.overseasCommand?200000000:Math.max(0,Math.floor((Number(m.reward)||0)*.7/1000000)*1000000);
   return Math.min(200000000,proposed,cashLimit,rewardLimit);
  }
  function plan(m){
@@ -29,6 +29,7 @@
  }
  function review(force=false){
   window.blacklineReviewMissionPlans?.();
+  if(window.blacklineCanAcceptOperation&&!window.blacklineCanAcceptOperation())return;
   if(!force&&config.lastReview===state.date)return;
   config.lastReview=state.date;
   // Do not replace an active operation or flood reports when resources are inadequate.
@@ -36,7 +37,7 @@
   const busy=state.operations.filter(o=>!['작전 완료','작전 보류'].includes(o.status)).reduce((n,o)=>n+(o.contract?.jointOperation?3:1),0)>=3;
   if(busy||!state.missions.length)return;
   const candidates=state.missions.filter(m=>m.contractStatus==='검토 가능'&&(!m.expiresDate||m.expiresDate>=state.date)&&!state.operations.some(o=>o.missionId===m.id&&o.status!=='작전 완료'&&o.status!=='작전 보류'));
-  const score=m=>{const mode=window.fieldSimulation.missionMode?.(m),repeat=state.history.slice(0,6).filter(h=>h.title===m.title).length,same=state.operations.filter(o=>!['작전 완료','작전 보류'].includes(o.status)&&window.fieldSimulation.missionMode?.(o.contract||{})===mode).length;return (Number(m.reward)||0)/Math.max(1,Number(m.risk)||1)/(1+repeat*.75+same*.6);};
+  const score=m=>{const mode=window.fieldSimulation.missionMode?.(m),repeat=state.history.slice(0,6).filter(h=>h.title===m.title).length,same=state.operations.filter(o=>!['작전 완료','작전 보류'].includes(o.status)&&window.fieldSimulation.missionMode?.(o.contract||{})===mode).length;return (state.overseasCommand?(m.eventId?180:100)+Number(m.risk||1)*10:(Number(m.reward)||0)/Math.max(1,Number(m.risk)||1))/(1+repeat*.75+same*.6);};
   const ordered=candidates.slice().sort((a,b)=>score(b)-score(a));
   for(const m of ordered){
    const op=plan(m);if(!op)continue;

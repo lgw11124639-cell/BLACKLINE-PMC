@@ -1,11 +1,12 @@
 /* Individually tracked company equipment; old save keys and existing property are retained. */
 (function(){
- const primaryPrices={'HK416':4500000,'M4A1':3700000,'SIG MCX':5100000,'FN SCAR-L':4900000,'HK G36':3900000,'HK MP7':4200000,'Accuracy International AXMC':11800000,'Barrett MRAD':12500000,'Sako TRG 42':9800000};
+ const primaryPrices={'K2C1':2400000,'K1A':1700000,'K14':6800000,'K15':7800000,'HK416':4500000,'M4A1':3700000,'SIG MCX':5100000,'FN SCAR-L':4900000,'HK G36':3900000,'HK MP7':4200000,'Accuracy International AXMC':11800000,'Barrett MRAD':12500000,'Sako TRG 42':9800000};
  const catalog={},add=(name,slot,price,weight,extra={})=>catalog[name]={name,slot,price,weight,repairable:true,...extra};
- for(const [n,p]of Object.entries(primaryPrices))add(n,'primary',p,/AXMC|MRAD|TRG/.test(n)?6.5:3.4);
- const rifles=Object.keys(primaryPrices),precision=rifles.filter(n=>/AXMC|MRAD|TRG/.test(n)),light=rifles.filter(n=>!precision.includes(n)&&n!=='HK MP7');
+ for(const [n,p]of Object.entries(primaryPrices))add(n,'primary',p,/AXMC|MRAD|TRG|K14/.test(n)?6.5:n==='K15'?7.2:n==='K1A'?2.9:3.4);
+ const rifles=Object.keys(primaryPrices),precision=rifles.filter(n=>/AXMC|MRAD|TRG|K14/.test(n)),light=rifles.filter(n=>!precision.includes(n)&&n!=='HK MP7');
+ add('K5','secondary',550000,.8,{capacity:12,magazines:3,range:14});
  add('Glock 19 Gen5','secondary',950000,.7,{capacity:15,magazines:3,range:14});add('SIG Sauer P320','secondary',1050000,.85,{capacity:17,magazines:3,range:15});
- add('SureFire SOCOM556-RC2','suppressor',1350000,.48,{compatible:light});add('ASE UTRA SL7i .338','suppressor',1750000,.7,{compatible:precision});add('B&T ROTEX-II 4.6','suppressor',1100000,.4,{compatible:['HK MP7']});
+ add('SureFire SOCOM556-RC2','suppressor',1350000,.48,{compatible:light});add('ASE UTRA SL7i .338','suppressor',1750000,.7,{compatible:precision});add('B&T ROTEX-V 7.62','suppressor',1500000,.65,{compatible:['K14']});add('B&T ROTEX-II 4.6','suppressor',1100000,.4,{compatible:['HK MP7']});
  add('Aimpoint CompM5','optic',1150000,.25,{compatible:rifles,optical:'reflex'});add('Nightforce ATACR 5-25x56','optic',3200000,1.1,{compatible:precision,optical:'magnified'});
  add('L3Harris ATPIAL-C','laser',1800000,.21,{compatible:rifles,electronic:true});add('SureFire M600 Scout','light',480000,.16,{compatible:rifles,electronic:true});add('Harris S-BRM','bipod',260000,.37,{compatible:precision});
  add('Crye JPC 2.0','armor',550000,1);add('NIJ IV 세라믹 방탄판','plate',700000,5.5,{repairable:false});add('Ops-Core FAST SF','helmet',850000,1.2,{repairable:false});
@@ -33,7 +34,7 @@
   if(!m.repairable||i.repairs>=5||i.condition<=3){i.status='discarded';record('폐기',i);return;}
   const cost=Math.ceil(m.price*(charge&&i.condition>=35?.002:.1));if(Number(state.cash)-cost<20000000)return;i.status='repair';i.personId=null;i.readyAt=now()+(charge&&i.condition>=35?60:120);i.serviceCondition=charge&&i.condition>=35?i.condition:Math.max(65,95-i.repairs*5);i.repairs+=i.condition<35?1:0;state.cash-=cost;record(charge?'충전·점검':'수리 접수',i,{cost,readyAt:i.readyAt});
  }
- const desiredPrimary=p=>/저격|정밀사수|지정사수/.test(p.role||'')?'Accuracy International AXMC':/정찰/.test(p.role||'')?'SIG MCX':/의무|메딕|통신/.test(p.role||'')?'M4A1':/지원/.test(p.role||'')?'FN SCAR-L':'HK416';
+ const desiredPrimary=p=>window.blacklineMilitaryPrimary?window.blacklineMilitaryPrimary(p):/저격|정밀사수|지정사수/.test(p.role||'')?'Accuracy International AXMC':/정찰/.test(p.role||'')?'SIG MCX':/의무|메딕|통신/.test(p.role||'')?'M4A1':/지원/.test(p.role||'')?'FN SCAR-L':'HK416';
  function issue(p,slot,name,notes){const m=catalog[name];if(!m)return;let i=byId(p.equipmentSlots?.[slot]);if(i?.status==='issued'&&i.model===name&&i.condition>=35&&(i.battery==null||i.battery>=35))return;
   if(i?.status==='issued'&&i.model!==name&&i.condition>=35&&!store.items.some(x=>x.model===name&&x.status==='stock'&&x.condition>=35)&&Number(state.cash)-m.price<20000000)return;
   if(i?.status==='issued'){i.personId=null;service(i);if(i.status==='issued')i.status='stock';delete p.equipmentSlots[slot];if(p.loadout)p.loadout[slot]='미지급';record('회수',i,{personId:p.id});}
@@ -48,8 +49,8 @@
    if(['armor','plate','helmet'].some(k=>!p.equipmentSlots[k])&&state.gear>0){state.gear--;for(const [slot,n]of [['armor','Crye JPC 2.0'],['plate','NIJ IV 세라믹 방탄판'],['helmet','Ops-Core FAST SF']]){const existing=item(n);if(!p.equipmentSlots[slot]){existing.status='issued';existing.personId=p.id;p.equipmentSlots[slot]=existing.id;}record('기존 보호장비 세트 분해',existing,{personId:existing.personId});}}
    issue(p,'primary',desiredPrimary(p),notes);
    const gun=byId(p.equipmentSlots.primary)?.model||l.primary;
-   for(const [slot,n]of [['armor','Crye JPC 2.0'],['plate','NIJ IV 세라믹 방탄판'],['helmet','Ops-Core FAST SF'],['radio','L3Harris AN/PRC-152A'],['secondary','Glock 19 Gen5'],['eyewear','ESS Crossbow'],['hearing','3M PELTOR ComTac VI'],['gloves','Mechanix M-Pact'],['boots','Salomon Quest 4D Forces']])issue(p,slot,n,notes);
-   for(const slot of ['optic','suppressor','laser','light','bipod']){const old=byId(p.equipmentSlots[slot]);if(old&&catalog[old.model]?.compatible&&!catalog[old.model].compatible.includes(gun)){old.status='stock';old.personId=null;delete p.equipmentSlots[slot];record('총기 호환 불일치 회수',old,{personId:p.id});}let choice=slot==='optic'?(/AXMC|MRAD|TRG/.test(gun)?'Nightforce ATACR 5-25x56':'Aimpoint CompM5'):slot==='suppressor'?(/AXMC|MRAD|TRG/.test(gun)?'ASE UTRA SL7i .338':gun==='HK MP7'?'B&T ROTEX-II 4.6':'SureFire SOCOM556-RC2'):slot==='laser'?'L3Harris ATPIAL-C':slot==='light'?'SureFire M600 Scout':'Harris S-BRM';
+   for(const [slot,n]of [['armor','Crye JPC 2.0'],['plate','NIJ IV 세라믹 방탄판'],['helmet','Ops-Core FAST SF'],['radio','L3Harris AN/PRC-152A'],['secondary',state.overseasCommand?'K5':'Glock 19 Gen5'],['eyewear','ESS Crossbow'],['hearing','3M PELTOR ComTac VI'],['gloves','Mechanix M-Pact'],['boots','Salomon Quest 4D Forces']])issue(p,slot,n,notes);
+   for(const slot of ['optic','suppressor','laser','light','bipod']){const old=byId(p.equipmentSlots[slot]);if(old&&catalog[old.model]?.compatible&&!catalog[old.model].compatible.includes(gun)){old.status='stock';old.personId=null;delete p.equipmentSlots[slot];record('총기 호환 불일치 회수',old,{personId:p.id});}let choice=slot==='optic'?(/AXMC|MRAD|TRG|K14/.test(gun)?'Nightforce ATACR 5-25x56':'Aimpoint CompM5'):slot==='suppressor'?(gun==='K14'?'B&T ROTEX-V 7.62':/AXMC|MRAD|TRG/.test(gun)?'ASE UTRA SL7i .338':gun==='HK MP7'?'B&T ROTEX-II 4.6':'SureFire SOCOM556-RC2'):slot==='laser'?'L3Harris ATPIAL-C':slot==='light'?'SureFire M600 Scout':'Harris S-BRM';
     if(catalog[choice].compatible?.includes(gun))issue(p,slot,choice,notes);
    }
    if(/정찰|저격|정밀/.test(p.role||''))issue(p,'nightVision','L3Harris AN/PVS-31A',notes);rebuild(p);

@@ -49,7 +49,7 @@
   op.operationalPlan={version:1,requiresEntry:api.missionMode?.(m)==='interior',entryPlan:m.jointOperation?'동일 작전지역 · 알파 구출 → 브라보 인계·호송 / 찰리 지역 안전 확보·상호 지원':api.missionMode?.(m)==='interior'?'목표 건물 식별 → 외곽·출입구 통제 → 진입조 CQB → 실내 과업 → 출입구 철수':'야외 과업 · 건물 진입 불필요',createdAt:now(),objective:m.type==='구조'?'대상 확인·안정화·보호 인계':m.type==='호송'?'보호 대상 확인·호송·안전 인계':m.type==='시설 보안'?'외곽 경계·시설 인수':'위협 식별·의뢰 목표 수행',identifiedContacts:(r?.findings||[]).length,hostileContacts:(r?.findings||[]).filter(f=>f.hostile).length,unknownAreas:['건물 내부','미관측 접근로'],groups:groups(op,chosen),method:op.method,air:op.air,artillery:op.artillery,withdrawal:'전투 가용 인원 부족·중대한 부상·탄약 소진 시 인원 보호와 철수 우선'};
   say('정찰 기반 본 작전계획 · '+m.title,chosen.length+'명 · '+op.taskGroups.map(t=>t.name+' '+t.memberIds.length+'명 ('+t.purpose+')').join(' / ')+'. 훈련과 최종 준비를 마친 뒤 투입합니다.');if(state.hrDepartment)state.hrDepartment.teams=state.operations.filter(unfinished).flatMap(o=>o.taskGroups||[]);return true;
  }
- window.blacklineReviewOperationWorkflow=function(op){const f=op.workflow;if(!f)return false;const stage=f.stage;
+ window.blacklineReviewOperationWorkflow=function(op){if(window.blacklineCampaignCanSchedule&&!window.blacklineCampaignCanSchedule(op))return false;const f=op.workflow;if(!f)return false;const stage=f.stage;
   if(op.status==='현장 진행 중'){if(stage!=='operation'){f.stage='operation';f.since=now();f.dueAt=null;f.history.push({stage:'operation',at:now()});return true;}return false;}
   if(op.status==='작전 완료'){f.stage='done';f.dueAt=null;return false;}
   if(stage==='recon')return false;
@@ -64,7 +64,7 @@
   else return false;return true;
  };
  window.blacklineReviewMissionPlans=function(){let changed=false;for(const op of state.operations||[])if(window.blacklineReviewOperationWorkflow(op))changed=true;if(changed){save();render();}};
- window.blacklineCanDeployWorkflow=function(op){if(!op.workflow)return true;const freeIds=new Set(free(op).map(p=>p.id)),people=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&freeIds.has(p.id)),check=window.blacklineCheckStaffing(op.contract||{},people);if(!check.ready){op.teamIds=[];enter(op,'mainPlan');return wait(op,'출동 인원 변동으로 편제를 다시 검토합니다.');}
+ window.blacklineCanDeployWorkflow=function(op){if(window.blacklineCampaignCanSchedule&&!window.blacklineCampaignCanSchedule(op))return false;if(!op.workflow)return true;const freeIds=new Set(free(op).map(p=>p.id)),people=op.teamIds.map(id=>state.team.find(p=>p.id===id)).filter(p=>p&&freeIds.has(p.id)),check=window.blacklineCheckStaffing(op.contract||{},people);if(!check.ready){op.teamIds=[];enter(op,'mainPlan');return wait(op,'출동 인원 변동으로 편제를 다시 검토합니다.');}
   window.blacklineReviewArmory?.();const missing=window.blacklineEquipmentReadiness?.(people)||[],ammo=api.ammoPlan?.(people).total||120;if(missing.length||state.ammo<ammo||state.med<1){wait(op,missing.join(' · ')||'출동 탄약·의료물자 확보 필요.');op.deployAt=now()+60;op.workflow.dueAt=op.deployAt;op.deployDate=stamp(op.deployAt).slice(0,10);return false;}
   if(window.blacklineReserveTransport&&!window.blacklineReserveTransport(op,api.chooseTransport(op,op.contract||{}))){wait(op,'수송 승무원·기체·급유 비용 확보 필요.');op.deployAt=now()+60;op.workflow.dueAt=op.deployAt;return false;}
   op.workflow.waitingReason='';return true;

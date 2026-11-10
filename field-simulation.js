@@ -66,7 +66,7 @@
   if(u.destination!==destination||!u.path.length){u.destination=destination;u.path=pathTo(u,target,s.terrain||MAP)}
   let left=amount;
   while(left>0&&u.path.length){const p=u.path[0],d=Math.hypot(p[0]-u.x,p[1]-u.y),next=u.path[1],map=s.terrain||MAP;if(next&&d<(map.grid||2)*.7&&clearLine(u,{x:next[0],y:next[1]},map)&&!blocked((u.x+next[0])/2,(u.y+next[1])/2,map)){u.path.shift();continue}if(d<=left){u.x=p[0];u.y=p[1];u.path.shift();left-=d}else{u.x+=(p[0]-u.x)*left/d;u.y+=(p[1]-u.y)*left/d;left=0}}
-  if(Math.hypot(u.x-previousX,u.y-previousY)>.001)u.movingAt=s.time;
+  if(Math.hypot(u.x-previousX,u.y-previousY)>.001){u.movingAt=s.time;u.motionHeading=Math.atan2(u.y-previousY,u.x-previousX);}
  }
  function damage(s,target,amount,source,shot=null){
   amount=window.fieldSimulation?.adjustDamage?.(s,target,amount,source)??amount;if(window.fieldSimulation?.applyWound){const count=target.health?.wounds.length||0,result=window.fieldSimulation.applyWound(s,target,amount,source,undefined,shot);if(shot&&(target.health?.wounds.length||0)>count){const wound=target.health.wounds.at(-1);shot.woundId=wound.id;shot.damageType=wound.type;}return result}const was=target.hp;target.hp=Math.max(0,target.hp-amount);if(target.faction==='blackline'&&target.hp<=55){target.mobility='immobile';target.fitForDuty=false;if(target.hp>0)target.status='wounded';if(was>55)target.stabilized=false;}

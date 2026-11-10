@@ -70,7 +70,7 @@
    log(s,e.kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','탄착 확인. 현장조는 피해·잔여 위협 관측 바란다.','support');
   }
   for(const [i,o] of (op.fieldProgress?.supportOrders||[]).entries()){
-   if(['drone','vehicle-recovery','ground-recovery','medevac','reinforcement','resupply'].includes(o.kind))continue;
+   if(['armored-support','drone','vehicle-recovery','ground-recovery','medevac','reinforcement','resupply'].includes(o.kind))continue;
    const key=o.id||o.name+'-'+i;if(s.time<o.requestedAt+o.eta||s.supportArrived.includes(key))continue;
    const kind=/공중/.test(o.name)?'airstrike':/원거리|포병/.test(o.name)?'artillery':null;
    if(!kind){s.supportArrived.push(key);log(s,'작전지원본부',o.name+' 도착.');continue}
@@ -79,7 +79,7 @@
    s.supportArrived.push(key);
    const radius=kind==='airstrike'?8:6;
    if((s.civilians||[]).some(c=>c.found&&c.hp>0&&dist(c,target)<radius+3)||s.units.some(u=>!u.health?.dead&&u.status!=='dead'&&!u.evacComplete&&!u.boarded&&(u.faction==='blackline'||u.faction==='pmc'&&!s.rival.hostile)&&dist(u,target)<radius+3)){log(s,'작전지원본부',o.name+' 취소. 아군·중립 인원과의 안전거리 미충족.','support');continue}
-   const center={x:target.x,y:target.y};s.events.push({t:s.time,impactAt:s.time+6,scene:'site',kind,target:target.id,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','확인 좌표로 진입. 6초 후 타격, 현장조는 안전거리 유지 바란다.','support');
+   const center={x:target.x,y:target.y};s.events.push({t:s.time,impactAt:s.time+6,scene:'site',kind,supportOrderId:key,supportAssetId:o.assetId||null,target:target.id,x:center.x,y:center.y,radius,visible:true});log(s,kind==='airstrike'?'FALCON / 항공 지원':'HAMMER / 화력 지원','확인 좌표로 진입. 6초 후 타격, 현장조는 안전거리 유지 바란다.','support');
 
   }
  }

@@ -1,10 +1,10 @@
 /* Physical magazines and carried ammunition. The old ammo field remains a conserved total. */
 (function(){
  const api=window.fieldSimulation,create=api.create,step=api.step;
- const spec=p=>{const name=p.loadout?.primary||p.weaponState?.weapon||(/저격|정밀/.test(p.role||'')?'정밀소총':'소총'),sniper=/AXMC|MRAD|TRG|정밀소총/.test(name),support=/지원|기관총/.test(p.role||''),capacity=/TRG 42/.test(name)?5:sniper?10:/MP7/.test(name)?40:30,magazines=sniper?5:support?10:/의무/.test(p.role||'')?5:7;return {weapon:name,capacity,magazines,load:capacity*magazines,reloadSeconds:sniper?4:3,mode:sniper?'정밀 단발':support?'짧은 제압 점사':'조준 단발',sniper,support}};
+ const spec=p=>{const name=p.loadout?.primary||p.weaponState?.weapon||(/저격|정밀/.test(p.role||'')?'정밀소총':'소총'),sniper=/AXMC|MRAD|TRG|K14|정밀소총/.test(name),support=/지원|기관총/.test(p.role||''),capacity=/TRG 42|K14/.test(name)?5:/K15/.test(name)?100:sniper?10:/MP7/.test(name)?40:30,magazines=sniper?5:/K15/.test(name)?4:support?10:/의무/.test(p.role||'')?5:7;return {weapon:name,capacity,magazines,load:capacity*magazines,reloadSeconds:/K15/.test(name)?6:sniper?4:3,mode:sniper?'정밀 단발':support?'짧은 제압 점사':'조준 단발',sniper,support}};
  api.ammoPlan=function(members){const allocations=members.map(p=>({id:p.id,...spec(p)}));return {allocations,total:allocations.reduce((n,p)=>n+p.load,0)}};
  const pack=(count,size)=>{const magazines=[];while(count>0){const rounds=Math.min(size,count);magazines.push(rounds);count-=rounds}return magazines};
- const concrete=name=>/^(HK416|M4A1|SIG MCX|HK MP7|FN SCAR-L|HK G36|Accuracy International AXMC|Barrett MRAD|Sako TRG 42)$/.test(name||'');
+ const concrete=name=>/^(K2C1|K1A|K14|K15|HK416|M4A1|SIG MCX|HK MP7|FN SCAR-L|HK G36|Accuracy International AXMC|Barrett MRAD|Sako TRG 42)$/.test(name||'');
  api.resolveIssuedWeapon=function(u){const p=state.team?.find(p=>p.id===u.personId),name=p?.loadout?.primary;return concrete(name)?spec(p):null};
  api.migrateWeaponIdentity=function(u){const w=u.weaponState;if(!w||concrete(w.weapon))return;const actual=api.resolveIssuedWeapon(u);if(!actual)return;const total=w.loaded+w.reserve,loaded=Math.min(w.loaded,actual.capacity);Object.assign(w,actual);w.loaded=loaded;w.reserve=Math.max(0,total-loaded);w.spareMagazines=pack(w.reserve,w.capacity);w.identitySource='issued-loadout';};
  const reload=w=>{w.spareMagazines=w.spareMagazines||pack(w.reserve,w.capacity);const rounds=w.spareMagazines.shift()||0;w.loaded=rounds;w.reserve-=rounds;w.reloadUntil=null;};

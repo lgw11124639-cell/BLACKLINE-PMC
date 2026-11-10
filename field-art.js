@@ -16,13 +16,14 @@
   c.save();c.translate(x,y);c.fillStyle='#24394a20';c.beginPath();c.ellipse(0,4,size*.28,size*.09,0,0,Math.PI*2);c.fill();
   if(selected){c.strokeStyle=color;c.lineWidth=1.5;const d=size*.43;for(const [sx,sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]){c.beginPath();c.moveTo(sx*d,sy*d*.7-sy*5);c.lineTo(sx*d,sy*d*.7);c.lineTo(sx*d-sx*6,sy*d*.7);c.stroke()}}
   let rendered=false;
-  const selfAid=care&&v[7]?.care==='self';if(u.faction==='blackline'&&(down||wounded&&!treated||selfAid)){const vertical=Math.abs(Math.sin(heading))>.7,cell=down?(vertical?3:2):(vertical?1:0);rendered=sprite(c,'images/operators/pmc-casualties.webp',cell,4,2,0,0,size*1.35,size*1.05)}
+  const selfAid=care&&v[7]?.care==='self';if(u.faction==='blackline'&&(down||wounded&&!treated||selfAid)){const vertical=Math.abs(Math.sin(heading))>.7,cell=down?(vertical?3:2):(vertical?1:0);rendered=(window.blacklineROKArt?sprite(c,'images/operators/rok-special-operations.png',24+cell,4,8,0,0,size*1.35,size*1.05):sprite(c,'images/operators/pmc-casualties.webp',cell,4,2,0,0,size*1.35,size*1.05))}
   if(!rendered&&['civilian','unknown'].includes(u.faction)){const direction=(Math.round(heading/(Math.PI/2))+4)%4;rendered=sprite(c,'images/operators/civilians.webp',direction,4,2,0,0,size,size*4/3)}
   if(!rendered){c.save();if(down&&!treated&&u.faction!=='blackline'){c.rotate(Math.PI*.45);c.globalAlpha=.6}const direction=(Math.round(heading/(Math.PI/4))+8)%8;const specialist=u.faction==='blackline'?(/저격|정밀사수|지정사수/.test(u.role)||u.tacticalRole==='sniper'?'sniper':/메딕|의무|의료|구급/.test(u.role)||u.tacticalRole==='medic'?'medic':null):null;
-   if(specialist)rendered=sprite(c,'images/operators/role-directions.webp',direction+(specialist==='medic'?8:0),4,4,0,0,size,size*4/3);
+   if(u.faction==='blackline'&&window.blacklineROKArt)rendered=sprite(c,'images/operators/rok-special-operations.png',direction+(specialist==='sniper'?8:specialist==='medic'?16:0),4,8,0,0,size,size*4/3);
+   if(!rendered&&specialist)rendered=sprite(c,'images/operators/role-directions.webp',direction+(specialist==='medic'?8:0),4,4,0,0,size,size*4/3);
    if(!rendered)rendered=sprite(c,u.faction==='insurgent'?'images/operators/hostile-directions.webp':'images/operators/pmc-directions.webp',direction,4,2,0,0,size,size*4/3);c.restore()}
   if(!rendered){c.fillStyle=color;c.fillRect(-3,-9,6,12)}
-  if(carry&&(v[7]?.carry||u.renderPatientId))sprite(c,'images/operators/pmc-casualties.webp',2,4,2,size*.5,size*.22,size*.85,size*.65);if(care&&(selfAid||v[7]?.patient)){c.strokeStyle='#4f9e88';c.lineWidth=1.5;c.globalAlpha=.55+.35*Math.sin(t*5);c.beginPath();c.arc(0,0,size*.44,-Math.PI/2,-Math.PI/2+Math.PI*1.6);c.stroke();c.globalAlpha=1;}
+  if(carry&&(v[7]?.carry||u.renderPatientId))(window.blacklineROKArt?sprite(c,'images/operators/rok-special-operations.png',26,4,8,size*.5,size*.22,size*.85,size*.65):sprite(c,'images/operators/pmc-casualties.webp',2,4,2,size*.5,size*.22,size*.85,size*.65));if(care&&(selfAid||v[7]?.patient)){c.strokeStyle='#4f9e88';c.lineWidth=1.5;c.globalAlpha=.55+.35*Math.sin(t*5);c.beginPath();c.arc(0,0,size*.44,-Math.PI/2,-Math.PI/2+Math.PI*1.6);c.stroke();c.globalAlpha=1;}
   c.fillStyle=color;c.strokeStyle='#ffffffd9';c.lineWidth=1;c.beginPath();c.arc(0,8,2.5,0,Math.PI*2);c.fill();c.stroke();
   if(labels||selected)smartLabel(c,u.name+(wounded?' · '+(v[4]==='dead'?'사망':treated?(down?'후송 대기':'처치 완료'):down?'후송 필요':'부상'):''),size*.32,-size*.35,wounded?'#b36d4b':color,selected?3:0);
   if(wounded){c.fillStyle='#c77555';c.font='bold 10px sans-serif';c.fillText('+',-3,20)}c.restore();
