@@ -49,6 +49,15 @@
   const positions=[[57,31],[61,35],[80,29],[89,29],[70,39],[92,33]];
   const risk=Math.max(1,Math.min(5,Math.round(Number(m.risk)||1))),region=(state.contractWorld?.regions||[]).find(r=>r.id===m.regionId),regionalPressure=region?.conflict>=65?2:region?.conflict>=45?1:0,strength=[0,3,6,10,14,18][risk]+Math.abs(seed)%Math.max(3,risk+1)+(m.type==='무장세력 대응'?3:0)+regionalPressure;s.enemyForcePlan={version:1,risk,regionalPressure,regionId:m.regionId||null,scaled:!!window.fieldSimulation?.missionMode,strength:contact?(window.fieldSimulation?.missionMode?Math.min(26,strength):Math.min(6,2+risk)):0,generatedAt:0};
   if(contact)for(let i=0;i<s.enemyForcePlan.strength;i++){const pos=positions[i%positions.length];s.units.push({id:'red-'+i,name:'무장세력 '+(i+1),faction:'insurgent',role:'무장 인원',x:pos[0],y:pos[1],hp:100,ammo:window.fieldSimulation?.missionMode?(risk>=3?120:90):36,skill:42+risk*3,vision:25,range:22,status:'guarding',path:[],destination:''})}
+  // Organized opposing regulars appear only in major engagements; their training remains below our force.
+  if(contact&&risk>=4&&s.enemyForcePlan.strength>=12){
+   const count=Math.min(10,Math.max(4,Math.floor(s.enemyForcePlan.strength*.42)));
+   s.enemyRegularArmy={name:'적 정규군 전투단',strength:count,fireSupport:{artillery:Math.max(2,risk-2),armor:1,helicopter:risk>=5?1:0},lastFireAt:0};
+   for(let i=0;i<count;i++){
+    const pos=positions[(i+2)%positions.length];
+    s.units.push({id:'regular-'+i,name:'적 정규군 '+(i+1),faction:'insurgent',role:i===0?'분대장':i%4===0?'기관총 사수':'정규군 소총수',x:pos[0]+i*.75,y:pos[1]+Math.floor(i/5)*1.4,hp:100,ammo:100,skill:Math.min(66,49+risk*3),vision:27,range:25,status:'guarding',path:[],destination:''});
+   }
+  }
   // A separate PMC is present independently of local armed groups. Neutral firms are not enemy targets.
   for(let i=0;i<3;i++)s.units.push({id:'pmc-'+i,name:rival.name+' '+(i+1),faction:'pmc',role:rival.doctrine,x:90+i*1.6,y:36+i*1.2,hp:100,ammo:45,skill:62,vision:28,range:26,status:'patrol',path:[],destination:''});
   log(s,op.leaderName||'팀장','본부 출발. 작전 좌표로 이동한다. 민간 시설을 우회하고 교전 규칙을 유지한다.');
