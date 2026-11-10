@@ -61,6 +61,22 @@
   for(const asset of f.commandAssets||[])if(scene==='site'&&asset.state!=='preparing')markAsset(asset.id,screen(asset.position.x,asset.position.y));
   for(const vehicle of f.convoy||[])if(vehicle.position.scene===scene){const p=vehicle.position;art.vehicle(c,...screen(p.x,p.y),p.heading||0,Math.max(22,scale*(regional?5.5:4)));art.label(c,['알파','브라보','찰리'][vehicle.teamIndex]+' 수송',...screen(p.x+3,p.y-3),'#708a92');}
   for(const service of f.transportServices||[])if(service.scene===scene){const p=service.position;art.vehicle(c,...screen(p.x,p.y),p.heading||0,Math.max(22,scale*(regional?5.5:4)));art.label(c,service.stage==='returning'?'급유 차량 · 복귀':service.waitReason||'급유 지원 차량',...screen(p.x+3,p.y-3),'#708a92');}
+  // Keep the rescue operation visible on the same live observation map until HQ return.
+  const rescue=j.emergencyRescue;
+  if(scene==='site'&&rescue&&rescue.stage!=='complete'&&rescue.stage!=='no-team'){
+   const elapsed=Math.max(0,t-rescue.started),origin=rescue.origin||s.terrain.base||[8,8];
+   const arrival=rescue.transport==='helicopter'?22:38,departure=rescue.transport==='helicopter'?72:93,returnLength=rescue.transport==='helicopter'?24:42;
+   const toward=Math.min(1,elapsed/arrival),back=Math.min(1,Math.max(0,elapsed-departure)/returnLength),ratio=elapsed<departure?toward:1-back;
+   const x=origin[0]+(s.goal[0]-origin[0])*ratio,y=origin[1]+(s.goal[1]-origin[1])*ratio;
+   const xy=screen(x,y),heading=Math.atan2(s.goal[1]-origin[1],s.goal[0]-origin[0])+(elapsed>=departure?Math.PI:0);
+   if(rescue.transport==='helicopter')art.helicopter(c,...xy,heading,Math.max(35,scale*7),t,elapsed<arrival?30:elapsed>=departure?25:0);
+   else art.vehicle(c,...xy,heading,Math.max(28,scale*6));
+   art.label(c,(rescue.transport==='helicopter'?'긴급 구조 헬기':'긴급 구조 차량')+' · '+(elapsed<arrival?'출동 중':elapsed<departure?'현장 구조 중':'본부 복귀 중'),xy[0]+8,xy[1]-12,'#2b8b79');
+   if(elapsed>=arrival&&elapsed<departure)for(let i=0;i<(rescue.personnelIds||[]).length;i++){
+    const u=s.units.find(u=>u.personnelId===rescue.personnelIds[i]&&u.rescueReinforcement);
+    if(u){const pos=screen(u.x,u.y);art.unit(c,u,[u.x,u.y,u.hp,u.ammo,u.status,u.heading||0],...pos,Math.max(20,scale*3.2),t,false,true);}
+   }
+  }
   art.effects(c,s,t,screen,scene,w,h,scale);const activity=window.fieldSimulation.contactActivity?.(s,t,scene);if(activity){c.fillStyle='#fff5e8ee';c.fillRect(w/2-100,12,200,25);c.fillStyle='#a87a4d';c.font='600 10px -apple-system,sans-serif';c.textAlign='center';c.fillText(activity.label,w/2,29);c.textAlign='left'}
   window.fieldSimulation.drawCommandAssets?.(c,s,f,scene,screen,scale,t);
   art.endFrame?.(c);updateHud(root,s,f,scene,r.id);
