@@ -21,5 +21,16 @@
  };
  api.step=function(s,op){for(const u of s.units){const w=u.weaponState||api.initializeWeapon(u,state.team?.find(p=>p.id===u.personId));api.migrateWeaponIdentity(u);if(w.reloadUntil!=null&&s.time>=w.reloadUntil){reload(w);if(u.status==='reloading')u.status='guarding';}}return step(s,op)};
  for(const op of state.operations||[])for(const s of [op.fieldProgress?.tactical,op.preRecon?.operation.fieldProgress.tactical])if(s&&!s.done){for(const u of s.units){if(!u.weaponState)api.initializeWeapon(u,state.team?.find(p=>p.id===u.personId));api.migrateWeaponIdentity(u);}}
- window.blacklineReviewMunitions=function(){const people=(state.team||[]).filter(p=>!p.dead&&!p.retired),target=Math.max(1200,api.ammoPlan(people).total*2),needed=Math.max(0,target-state.ammo);if(needed<300||state.cash<30000000+needed*900)return;state.ammo+=needed;state.cash-=needed*900;state.reports.unshift({date:state.date,category:'군수',title:'출동 탄약 예비분 조달',body:'보직별 휴대량과 다음 출동 예비분을 검토해 통합 탄약 '+needed+'발을 조달했습니다. 집행 '+money(needed*900)+'. 창고에서 개인 지급한 탄약은 즉시 차감합니다.',amount:-needed*900})};
+ window.blacklineReviewMedicalSupplies=function(){
+  const minimum=30,target=90,current=Math.max(0,Number(state.med)||0);
+  if(current>=minimum)return false;
+  const unitCost=15000,needed=target-current,cost=needed*unitCost;
+  if(!Number.isFinite(state.cash)||state.cash<cost)return false;
+  state.cash-=cost;state.med=current+needed;
+  state.reports=state.reports||[];
+  state.reports.unshift({date:state.date,category:'군수',title:'의료물자 재보급 완료',body:'재정비 기준 '+minimum+'개 미달로 의료물자 '+needed+'개를 조달했습니다. 현재 보유 '+state.med+'개. 집행 '+money(cost)+'.',amount:-cost});
+  state.reports=state.reports.slice(0,160);
+  return true;
+ };
+ window.blacklineReviewMunitions=function(){window.blacklineReviewMedicalSupplies();const people=(state.team||[]).filter(p=>!p.dead&&!p.retired),target=Math.max(1200,api.ammoPlan(people).total*2),needed=Math.max(0,target-state.ammo);if(needed<300||state.cash<30000000+needed*900)return;state.ammo+=needed;state.cash-=needed*900;state.reports.unshift({date:state.date,category:'군수',title:'출동 탄약 예비분 조달',body:'보직별 휴대량과 다음 출동 예비분을 검토해 통합 탄약 '+needed+'발을 조달했습니다. 집행 '+money(needed*900)+'. 창고에서 개인 지급한 탄약은 즉시 차감합니다.',amount:-needed*900})};
 })();
