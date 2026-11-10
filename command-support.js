@@ -66,22 +66,40 @@
  function enemySupportTick(s){
   const army=s.enemyRegularArmy;if(!army||s.done||s.retreat||!largeBattle(s))return;
   const hostile=s.units.filter(u=>u.faction==='insurgent'&&active(u));
-  if(hostile.length<3||s.time<(army.lastFireAt||0)+48)return;
-  const friendlies=s.units.filter(u=>u.faction==='blackline'&&active(u)&&!u.inside&&!u.boarded);
-  const target=friendlies.find(u=>!s.units.some(v=>v.faction==='insurgent'&&active(v)&&dist(v,u)<12)&&!(s.civilians||[]).some(v=>v.found&&v.hp>0&&dist(v,u)<10));
-  if(!target)return;
-  const kind=army.fireSupport.artillery>0?'포병':army.fireSupport.armor>0?'전차':army.fireSupport.helicopter>0?'공격헬기':null;
-  if(!kind)return;
-  if(kind==='포병')army.fireSupport.artillery--;else if(kind==='전차')army.fireSupport.armor--;else army.fireSupport.helicopter--;
-  army.lastFireAt=s.time;
-  const source=hostile[0];
-  s.events.push({id:'enemy-support-'+s.time,kind:'artillery',faction:'insurgent',from:[source.x,source.y],t:s.time,impactAt:s.time+4,scene:'site',target:target.id,x:target.x,y:target.y,radius:kind==='포병'?4:3,visible:true});
-  api.transmit(s,'현장지휘관','적 정규군 '+kind+' 화력지원 징후. 아군 분산 및 엄폐 지시.','contact');
+  if(hostile.length<3)return;
+  const goal=s.goal||s.terrain.base;
+  if(!army.assets){
+   const roster=[{kind:'artillery',name:'적 자주포',ammo:Math.min(4,army.fireSupport.artillery||2),range:500},{kind:'tank',name:'적 전차',ammo:Math.min(3,army.fireSupport.armor||1),range:65}];
+   if(army.fireSupport.helicopter)roster.push({kind:'airstrike',name:'적 공격헬기',ammo:Math.min(3,army.fireSupport.helicopter),range:95});
+   army.assets=roster.map((a,i)=>({...a,id:'enemy-asset-'+i,state:'deploying',since:s.time,position:{x:goal[0]+(i-1)*18,y:goal[1]+20+i*7,heading:0},nextShot:s.time+22+i*12,shots:0,fuel:180}));
+  }
+  const friendlies=s.units.filter(u=>u.faction==='blackline'&&active(u)&&!u.inside&&!u.boarded&&!u.evacComplete);
+  for(const a of army.assets){
+   if(a.state==='withdrawn')continue;
+   const old={...a.position};
+   if(a.kind==='airstrike'){
+    const angle=(s.time-a.since)*.045;
+    a.position.x=goal[0]+Math.cos(angle)*22;a.position.y=goal[1]+Math.sin(angle)*15;
+   }else if(a.kind==='tank'&&friendlies.length){
+    const target=friendlies[0],d=dist(a.position,target);
+    if(d>30){a.position.x+=(target.x-a.position.x)/d*.34;a.position.y+=(target.y-a.position.y)/d*.34;}
+   }
+   const dx=a.position.x-old.x,dy=a.position.y-old.y;
+   if(Math.hypot(dx,dy)>.001)a.position.heading=Math.atan2(dy,dx);
+   a.state='on-station';
+   if(s.time<a.nextShot||a.ammo<=0)continue;
+   const target=friendlies.find(u=>dist(a.position,u)<=a.range&&!hostile.some(v=>dist(v,u)<(a.kind==='artillery'?12:9))&&!(s.civilians||[]).some(v=>v.found&&v.hp>0&&dist(v,u)<10));
+   if(!target)continue;
+   a.ammo--;a.shots++;a.nextShot=s.time+(a.kind==='artillery'?48:a.kind==='tank'?36:30);
+   s.events.push({id:a.id+'-shot-'+a.shots,kind:'artillery',faction:'insurgent',enemySupportAssetId:a.id,from:[a.position.x,a.position.y],t:s.time,impactAt:s.time+4,scene:'site',target:target.id,x:target.x,y:target.y,radius:a.kind==='artillery'?4:3,visible:true});
+   api.transmit(s,'현장지휘관',a.name+' 화력지원 탐지. 엄폐 및 분산 지시.','contact');
+   if(!a.ammo)a.state='withdrawn';
+  }
  }
  api.sceneTick=function(s,op){tick?.(s,op);jobsTick(s,op);enemySupportTick(s);};
  api.step=function(s,op){if(s.commandSupportReturnPending){s.time++;jobsTick(s,op);if((s.commandAssetJobs||[]).every(j=>j.state==='complete')){s.commandSupportReturnPending=false;s.done=true;s.duration=s.time;s.phase='전구 지원전력 복귀 완료';}api.captureFrame(s);return;}const result=step(s,op);if(s.done&&(s.commandAssetJobs||[]).some(j=>j.state!=='complete')){s.commandSupportReturnPending=true;s.done=false;s.phase='전구 지원전력 복귀 확인';for(const j of s.commandAssetJobs)if(j.state!=='complete')returning(s,j);api.captureFrame(s);}return result;};
- api.journeyFrame=function(s){const f=frame(s);if(f){f.transportCrew=[...(f.transportCrew||[]),...(s.commandAssetJobs||[]).filter(j=>j.state!=='complete'&&j.state!=='preparing').flatMap(j=>j.actors.map(u=>({id:u.id,personId:u.personId,name:u.name,role:u.role,hp:u.hp,status:u.status,health:api.healthSnapshot(u),asset:j.assetId,supportAsset:true})))];f.commandAssets=(s.commandAssetJobs||[]).filter(j=>j.state!=='complete').map(j=>({id:j.assetId,model:get(j.assetId).model,sprite:get(j.assetId).sprite,position:{...j.position},state:j.state,kind:j.kind,actors:j.actors.map(u=>({id:u.id,personId:u.personId,name:u.name,health:api.healthSnapshot(u)}))}));}return f;};
+ api.journeyFrame=function(s){const f=frame(s);if(f){f.transportCrew=[...(f.transportCrew||[]),...(s.commandAssetJobs||[]).filter(j=>j.state!=='complete'&&j.state!=='preparing').flatMap(j=>j.actors.map(u=>({id:u.id,personId:u.personId,name:u.name,role:u.role,hp:u.hp,status:u.status,health:api.healthSnapshot(u),asset:j.assetId,supportAsset:true})))];f.enemyCommandAssets=(s.enemyRegularArmy?.assets||[]).filter(a=>a.state!=='withdrawn').map(a=>({id:a.id,model:a.name,kind:a.kind,state:a.state,position:{...a.position}}));f.commandAssets=(s.commandAssetJobs||[]).filter(j=>j.state!=='complete').map(j=>({id:j.assetId,model:get(j.assetId).model,sprite:get(j.assetId).sprite,position:{...j.position},state:j.state,kind:j.kind,actors:j.actors.map(u=>({id:u.id,personId:u.personId,name:u.name,health:api.healthSnapshot(u)}))}));}return f;};
  const hr=window.blacklineReviewHR;window.blacklineReviewHR=function(...args){for(const a of store.assets){if(a.state==='servicing')for(let i=0;i<a.crewIds.length;i++){const old=state.transportCrew.find(p=>p.id===a.crewIds[i]);if(old&&(old.dead||old.retired)&&state.cash-250000>=20000000){const id=store.nextCrewId=(store.nextCrewId||960000)+1;state.cash-=250000;const p={...old,id,name:'김'+['민준','도윤','지호','태준','현우','서진'][id%6],dead:false,retired:false,injured:false,transportReservation:null,injuryHistory:[],medicalCase:null,transportHistory:[],birthDate:(Number(state.date.slice(0,4))-29)+'-04-12',assignment:{...old.assignment,assignedDate:state.date}};state.transportCrew.push(p);a.crewIds[i]=id;log('지원전력 승무원 전입 보충',p.rank+' '+p.name+' · '+p.role+' 배속. 전입 비용 25만원.');}}if(a.state==='servicing'&&now()>=a.readyAt){const fuel=a.fuelCapacity-a.fuel,rounds=a.ammoCapacity-a.ammo,cost=Math.ceil(fuel*1750+rounds*(a.kind==='airstrike'?2800000:a.kind==='tank'?900000:180000));if(state.cash-cost>=20000000&&people(a).every(p=>!p.dead&&!p.injured)){state.cash-=cost;a.fuel=a.fuelCapacity;a.ammo=a.ammoCapacity;a.condition=Math.max(85,a.condition);a.state='ready';log('지원전력 정비·재보급 완료 · '+a.model,'급유 '+Math.ceil(fuel)+'L · 탄약 '+rounds+'발 보충 · 비용 '+money(cost));}}}return hr?.(...args);};
  window.blacklineCommandSupportPanel=()=>'<h2>전구 기갑·포병·항공 지원전력</h2><div class="command-assets">'+store.assets.map(a=>'<article class="command-asset"><span class="military-equipment-image" role="img" aria-label="'+a.model+'" style="--equipment-x:'+(a.sprite%4)+';--equipment-y:1"></span><strong>'+a.model+'</strong><p>'+({ready:'출동 가능',deployed:'임무 중',servicing:'정비·급유·탄약 보충 중'}[a.state]||a.state)+' · 내구도 '+Math.round(a.condition)+'%</p><p>승무원 '+people(a).filter(p=>!p.dead&&!p.injured).length+'/'+a.crew+'명 · 연료 '+Math.floor(a.fuel)+'L · 탄약 '+a.ammo+'발</p><p>'+people(a).map(p=>p.rank+' '+p.name+' · '+p.role).join('<br>')+'</p></article>').join('')+'<article class="command-asset"><span class="military-equipment-image" role="img" aria-label="KUH-1 수리온" style="--equipment-x:3;--equipment-y:1"></span><strong>KUH-1 수리온</strong><p>병력 항공수송·의료후송 · 수송반 승무원과 기존 실시간 비행·안전 착륙 절차 연동</p></article></div>';
- api.drawCommandAssets=function(c,s,f,scene,screen,scale,t){if(scene!=='site')return;const orient=(pos)=>{const p=screen(pos.x,pos.y),q=screen(pos.x+Math.cos(pos.heading||0),pos.y+Math.sin(pos.heading||0));return Math.atan2(q[1]-p[1],q[0]-p[0]);};for(const a of f.commandAssets||[]){if(a.state==='preparing')continue;const xy=screen(a.position.x,a.position.y),size=Math.max(32,Math.min(95,scale*(a.kind==='airstrike'?8:6)));if(a.kind==='airstrike'){FieldArt.helicopter(c,xy[0],xy[1],orient(a.position),size,t,30);}else{FieldArt.vehicle(c,xy[0],xy[1],orient(a.position),size*.85);if(a.kind==='artillery'){c.save();c.translate(...xy);c.rotate(orient(a.position));c.fillStyle='#536c5a';c.fillRect(-size*.08,-size*.035,size*.55,size*.07);c.restore();}}FieldArt.smartLabel(c,a.model,xy[0]+size*.25,xy[1]-size*.2,'#527b61');}for(const e of api.eventsAround?.(s,t,3)||[]){if(!e.supportAssetId||!e.from||e.t>t||t-e.t>2)continue;const a=screen(...e.from),b=screen(e.x,e.y);c.save();c.strokeStyle='#e4a45f';c.lineWidth=2;c.beginPath();c.moveTo(...a);c.lineTo(...b);c.stroke();c.restore();}};
+ api.drawCommandAssets=function(c,s,f,scene,screen,scale,t){if(scene!=='site')return;const orient=(pos)=>{const p=screen(pos.x,pos.y),q=screen(pos.x+Math.cos(pos.heading||0),pos.y+Math.sin(pos.heading||0));return Math.atan2(q[1]-p[1],q[0]-p[0]);};for(const a of f.commandAssets||[]){if(a.state==='preparing')continue;const xy=screen(a.position.x,a.position.y),size=Math.max(32,Math.min(95,scale*(a.kind==='airstrike'?8:6)));if(a.kind==='airstrike'){FieldArt.helicopter(c,xy[0],xy[1],orient(a.position),size,t,30);}else{FieldArt.vehicle(c,xy[0],xy[1],orient(a.position),size*.85);if(a.kind==='artillery'){c.save();c.translate(...xy);c.rotate(orient(a.position));c.fillStyle='#536c5a';c.fillRect(-size*.08,-size*.035,size*.55,size*.07);c.restore();}}FieldArt.smartLabel(c,a.model,xy[0]+size*.25,xy[1]-size*.2,'#527b61');}for(const a of f.enemyCommandAssets||[]){const xy=screen(a.position.x,a.position.y),size=Math.max(28,Math.min(75,scale*(a.kind==='airstrike'?7:5)));const p=screen(a.position.x+Math.cos(a.position.heading||0),a.position.y+Math.sin(a.position.heading||0));const heading=Math.atan2(p[1]-xy[1],p[0]-xy[0]);if(a.kind==='airstrike')FieldArt.helicopter(c,xy[0],xy[1],heading,size,t,24);else FieldArt.vehicle(c,xy[0],xy[1],heading,size*.8);FieldArt.smartLabel(c,a.model,xy[0]+size*.22,xy[1]-size*.25,'#b96c5c');}for(const e of api.eventsAround?.(s,t,3)||[]){if(!e.supportAssetId||!e.from||e.t>t||t-e.t>2)continue;const a=screen(...e.from),b=screen(e.x,e.y);c.save();c.strokeStyle='#e4a45f';c.lineWidth=2;c.beginPath();c.moveTo(...a);c.lineTo(...b);c.stroke();c.restore();}};
 })();
