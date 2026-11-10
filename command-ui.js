@@ -3,7 +3,7 @@
  const text=s=>String(s).replace(/PRIVATE MILITARY COMPANY/g,'REPUBLIC OF KOREA · OVERSEAS SPECIAL OPERATIONS').replace(/BLACKLINE PMC/g,'BLACKLINE 해외특수전사령부').replace(/THE EXECUTIVE EDITION|EXECUTIVE EDITION/g,'OVERSEAS COMMAND').replace(/계약시장/g,'파견 임무 지시서').replace(/계약 보수|계약 수입|계약 수익/g,'임무 배정 기준액').replace(/계약 연봉|연봉/g,'연간 인건비').replace(/계약 인력/g,'파견 장병').replace(/고객사|거래처|고객/g,'협조기관').replace(/회사/g,'파견부대').replace(/사장/g,'사령관').replace(/용병/g,'특전대원').replace(/신규 채용|채용/g,'전입 보충').replace(/수주/g,'임무 접수').replace(/계약 종료 예정/g,'파견 종료 예정').replace(/계약 시작/g,'파견 시작').replace(/계약 및 퇴직/g,'복무 및 전출').replace(/계약 중/g,'파견 복무 중').replace(/계약 종료/g,'파견 종료').replace(/계약/g,'임무').replace(/지원자/g,'전입 후보').replace(/의뢰/g,'임무').replace(/수익성과 위험도/g,'상급부대 임무 우선순위와 위험도').replace(/수익성/g,'임무 우선순위').replace(/사전 계약/g,'사전 명령').replace(/최종 계급/g,'현재 계급');
  window.blacklineMilitaryText=text;
  const rank=p=>{
-  const name=String(p.rank||'').replace(/\\(환산\\)/g,'').trim(),i=ranks.indexOf(name);
+  const name=String(p.rank||'').replace('(환산)','').trim(),i=ranks.indexOf(name);
   if(i<0)return '<span class="rank-badge rank-unknown" aria-label="계급 미확인">—</span>';
   const gold='#b79736',dark='#354b3c';
   let shapes='';
