@@ -45,8 +45,21 @@
   const s={version:1,map:'sera',time:0,duration:390,rng:seed>>>0,units:[],frames:[],events:[],radio:[],objective:0,retreat:false,done:false,ammoBudget,ammoUsed:0,supportArrived:[],rival:{...rival,hostile:hostility,identified:false},missionType:m.type||'시설 보안',goal:MAP.goals[m.type]||MAP.goals['시설 보안'],contact:false,reserves:members.slice(m.jointOperation&&!m.preRecon?24:12).map(p=>p.name)};
   const deployed=members.slice(0,m.jointOperation&&!m.preRecon?24:12),allocation=Math.floor(ammoBudget/Math.max(1,deployed.length));
   deployed.forEach((p,i)=>{const ev=typeof personnelEvaluation==='function'?personnelEvaluation(p):{};s.units.push({id:'bl-'+p.id,personId:p.id,name:p.name,role:p.role||'대원',faction:'blackline',x:26+(i%4)*1.1,y:61+Math.floor(i/4),hp:100,ammo:allocation+(i===0?ammoBudget-allocation*deployed.length:0),skill:ev.marksmanship||p.skill||65,medical:ev.medical||40,vision:/정찰|저격/.test(p.role)?30:24,range:/저격|정밀/.test(p.role)?35:23,status:'moving',kills:0,detained:0,actions:[],path:[],destination:''})});
-  const contact=options.forceContact??(m.type==='무장세력 대응'||m.risk>=2&&seed%100<35+m.risk*13);
-  const positions=[[57,31],[61,35],[80,29],[89,29],[70,39],[92,33]];
+  const riskLevel=Math.max(1,Math.min(5,Math.round(Number(m.risk)||1)));
+  const encounterChance=Math.min(0.82,0.10+riskLevel*.115+(m.type==='무장세력 대응'?.13:0));
+  const contact=options.forceContact??(rand(s)<encounterChance);
+  // Every operation receives a distinct hostile staging area; do not repeatedly spawn at fixed coordinates.
+  const mapW=Number(MAP.width)||110,mapH=Number(MAP.height)||85;
+  const objectives=[s.goal,MAP.base].filter(Array.isArray);
+  const centers=[];
+  for(let attempt=0;attempt<50&&centers.length<3;attempt++){
+   const x=12+rand(s)*Math.max(8,mapW-24),y=10+rand(s)*Math.max(8,mapH-20);
+   if(objectives.some(p=>Math.hypot(x-p[0],y-p[1])<17))continue;
+   if(centers.some(p=>Math.hypot(x-p[0],y-p[1])<15))continue;
+   centers.push([x,y]);
+  }
+  if(!centers.length)centers.push([Math.min(mapW-8,s.goal[0]+20),Math.max(8,s.goal[1]-18)]);
+  const positions=Array.from({length:30},(_,i)=>{const p=centers[Math.floor(i/10)%centers.length],a=rand(s)*Math.PI*2,d=2+rand(s)*9;return [Math.max(5,Math.min(mapW-5,p[0]+Math.cos(a)*d)),Math.max(5,Math.min(mapH-5,p[1]+Math.sin(a)*d))]});
   const risk=Math.max(1,Math.min(5,Math.round(Number(m.risk)||1))),region=(state.contractWorld?.regions||[]).find(r=>r.id===m.regionId),regionalPressure=region?.conflict>=65?2:region?.conflict>=45?1:0,strength=[0,3,6,10,14,18][risk]+Math.abs(seed)%Math.max(3,risk+1)+(m.type==='무장세력 대응'?3:0)+regionalPressure;s.enemyForcePlan={version:1,risk,regionalPressure,regionId:m.regionId||null,scaled:!!window.fieldSimulation?.missionMode,strength:contact?(window.fieldSimulation?.missionMode?Math.min(26,strength):Math.min(6,2+risk)):0,generatedAt:0};
   if(contact)for(let i=0;i<s.enemyForcePlan.strength;i++){const pos=positions[i%positions.length];s.units.push({id:'red-'+i,name:'무장세력 '+(i+1),faction:'insurgent',role:'무장 인원',x:pos[0],y:pos[1],hp:100,ammo:window.fieldSimulation?.missionMode?(risk>=3?120:90):36,skill:42+risk*3,vision:25,range:22,status:'guarding',path:[],destination:''})}
   // Organized opposing regulars appear only in major engagements; their training remains below our force.
