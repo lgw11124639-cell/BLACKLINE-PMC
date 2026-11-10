@@ -107,12 +107,35 @@
   if(!j.roadStopped)return true;
   const team=blue(s).filter(active);
   for(const u of [...team,...guards]){if(u.faction==='blackline'&&u.medicalOverride===s.time)continue;const enemies=(u.faction==='blackline'?guards:team).filter(v=>dist(u.road,v.road)<(api.roadEngagementRange?.(s,u)??(u.tacticalRole==='scout'?30:26))&&api.clearLine(u.road,v.road,map)).sort((a,b)=>dist(u.road,a.road)-dist(u.road,b.road)),target=enemies[0];
-   if(api.agentAction?.(s,u,'regional'))continue;if(!target){u.roadTarget=null;continue}u.roadTarget=target.id;u.road.heading=Math.atan2(target.road.y-u.road.y,target.road.x-u.road.x);if(u.faction==='blackline'){target.roadSeenAt=s.time;j.roadContacts[target.id]={x:target.road.x,y:target.road.y,lastSeen:s.time,visible:true};if(!target.roadReported){target.roadReported=true;if(!api.observeContact)say(s,u.name,'도로 인근 무장 인원 시각 확인. 엄폐 위치에서 대응 사격한다.','contact')}}
+   if(api.agentAction?.(s,u,'regional'))continue;if(!target){
+    u.roadTarget=null;
+    // Dismounted troops must actively clear the threat, not stand by the parked truck forever.
+    if(u.faction==='blackline'&&guards.length){
+     const hostile=guards.filter(g=>active(g)&&g.road).sort((a,b)=>dist(u.road,a.road)-dist(u.road,b.road))[0];
+     if(hostile){
+      const d=dist(u.road,hostile.road);
+      if(d>12){
+       const dx=hostile.road.x-u.road.x,dy=hostile.road.y-u.road.y;
+       const step=Math.min(.85,Math.max(0,d-12));
+       const next=api.projectToGround(map,[u.road.x+dx/d*step,u.road.y+dy/d*step]);
+       u.road.x=next[0];u.road.y=next[1];u.road.heading=Math.atan2(dy,dx);
+       u.status='road-advance';
+      }
+     }
+    }
+    continue
+   }u.roadTarget=target.id;u.road.heading=Math.atan2(target.road.y-u.road.y,target.road.x-u.road.x);if(u.faction==='blackline'){target.roadSeenAt=s.time;j.roadContacts[target.id]={x:target.road.x,y:target.road.y,lastSeen:s.time,visible:true};if(!target.roadReported){target.roadReported=true;if(!api.observeContact)say(s,u.name,'도로 인근 무장 인원 시각 확인. 엄폐 위치에서 대응 사격한다.','contact')}}
    if(u.ammo>0){roadFire(s,u,target);u.status=api.contactStatus?.(s,u,target,'regional')||'engaging';if(u.faction==='blackline'||u.roadSeenAt===s.time)j.roadAims.push({actor:u.id,target:target.id,from:[u.road.x,u.road.y],to:[target.road.x,target.road.y],friendly:u.faction==='blackline'})}
   }
   if(!team.length&&j.medevac&&j.medevac.stage!=='complete'){s.retreat=true;s.phase='의료 후송 대기';return false;}if(!team.length){s.retreat=true;s.done=true;s.duration=s.time;stage(s,'lost','이동 중 긴급 구조 요청');say(s,'현장지휘관','수송 중 전투 가능 인원 상실. 긴급 구조 요청, 작전 중단.','result');return false}
   const contact=guards.some(u=>active(u)&&team.some(b=>dist(b.road,u.road)<30&&api.clearLine(b.road,u.road,map)));
-  if(contact&&team.some(u=>u.ammo>0)&&!s.retreat)return false;if(j.medevac?.scene==='regional'&&['inbound','landed'].includes(j.medevac.stage))return false;
+  if(contact&&team.some(u=>u.ammo>0)&&!s.retreat){
+   // Stop an endless contact loop if opponents cannot be reached or damaged.
+   j.lastRoadCombatAt=j.lastRoadCombatAt??s.time;
+   if(s.time-j.lastRoadCombatAt<45)return false;
+   s.retreat=true;j.roadReturning=true;
+   say(s,'현장지휘관','교전 장기화. 적 제압 실패로 차량 회수 후 철수를 명령한다.','command');
+  }if(j.medevac?.scene==='regional'&&['inbound','landed'].includes(j.medevac.stage))return false;
   if((contact||s.retreat)&&!j.roadReturning){s.retreat=true;j.roadReturning=true;say(s,'현장지휘관','잔탄·전력 한계. 현장 진입을 취소하고 차량으로 이탈한다.','command')}
   j.roadRegroup=j.roadRegroup??s.time;for(const u of team){u.status='road-boarding';const dx=vehicle.x-u.road.x,dy=vehicle.y-u.road.y,d=Math.hypot(dx,dy);if(d>1){u.road.x+=dx/d*Math.min(.6,d);u.road.y+=dy/d*Math.min(.6,d)}}
   if(s.time-j.roadRegroup<12||team.some(u=>dist(u.road,vehicle)>3))return false;
