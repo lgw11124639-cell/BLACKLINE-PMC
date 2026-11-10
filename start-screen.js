@@ -32,15 +32,21 @@ async function restore(file){
  }catch(e){alert('불러오기 실패: '+e.message)}
 }
 function resetGame(){
- if(!confirm('회사를 초기화하고 새 게임을 시작할까요? 현재 진행은 초기화 전 저장으로 보관됩니다.'))return;
- window.blacklineCancelPendingSave?.();const primary=localStorage.getItem(KEY),backup=localStorage.getItem(KEY+'_backup');
+ if(!confirm('게임을 초기화할까요? 현재 진행 데이터를 먼저 파일로 백업합니다.'))return;
  try{
-  localStorage.setItem(KEY+'_before_reset',JSON.stringify({game:'BLACKLINE PMC',schema:1,exportedAt:new Date().toISOString(),state}));
+  // Download the in-memory save before changing browser storage.
+  download();
+  if(!confirm('백업 파일 다운로드를 확인했나요? 확인을 누르면 브라우저 저장 데이터를 초기화합니다.'))return;
   window.blacklineSaveBlocked=true;
-  localStorage.removeItem(KEY);localStorage.removeItem(KEY+'_backup');location.reload();
+  window.blacklineCancelPendingSave?.();
+  localStorage.removeItem(KEY);
+  localStorage.removeItem(KEY+'_backup');
+  localStorage.removeItem(KEY+'_before_reset');
+  // Prevent pagehide/beforeunload from re-saving the old campaign.
+  location.reload();
  }catch(e){
-  if(primary!==null)localStorage.setItem(KEY,primary);if(backup!==null)localStorage.setItem(KEY+'_backup',backup);
-  window.blacklineSaveBlocked=false;alert('초기화하지 못했습니다. 기존 진행은 유지됩니다: '+e.message);
+  window.blacklineSaveBlocked=false;
+  alert('초기화 실패. 기존 저장은 유지됩니다: '+e.message);
  }
 }
 function downloadBeforeReset(){
