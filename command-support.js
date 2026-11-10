@@ -10,7 +10,19 @@
   const job={id:op.id+'-'+a.id,assetId:a.id,kind:a.kind,state:'preparing',since:s.time,readyAt:s.time+(a.kind==='artillery'?0:a.kind==='airstrike'?5:3),path,length,distance:0,position:{x:base[0],y:base[1],heading:0},targetId:target.id,shots:0,usedFuel:0,actors:people(a).map(p=>{const u={id:'crew-'+p.id,personId:p.id,name:p.name,role:p.role,faction:'blackline',x:base[0],y:base[1],hp:100,ammo:0,status:'crew-duty',actions:[],knowledge:{}};api.initializeActorHealth(s,u,p);return u;})};
   (s.commandAssetJobs=s.commandAssetJobs||[]).push(job);const order={id:job.id,kind:a.kind==='tank'?'armored-support':a.kind,name:a.model+(a.kind==='artillery'?' 포병 지원':a.kind==='airstrike'?' 공중 지원':' 직접화력 지원'),cost:a.cost,charged:true,resourceReservation:true,assetId:a.id,requestedAt:s.time,eta:(a.kind==='airstrike'?5:3)+Math.ceil(length/(a.kind==='airstrike'?3.8:a.speed)),targetId:target.id};(fp.supportOrders=fp.supportOrders||[]).push(order);job.orderId=order.id;api.transmit(s,s.commander,a.model+' 지원 요청 승인. 승무원 '+a.crew+'명, 출동 준비·이동 후 표적 재확인. 도착 예상 '+order.eta+'초.','support',true);store.ledger.push({id:job.id,date:state.date,kind:'출동 예약',cost:a.cost});store.ledger=store.ledger.slice(-120);return job;}
  api.reserveCommandAsset=reserve;
- api.reviewFireSupport=function(s,op){if(!state.overseasCommand)return review(s,op);if(!s.journey||s.done||!['site','outdoor','extraction'].includes(s.journey.stage)||!op.fieldProgress||s.remoteRecon)return;const threats=known(s);if(!threats.length){if(s.time<=12){const goal=s.goal||s.terrain.base;for(const a of store.assets){if((a.kind==='airstrike'&&op.air==='off')||(a.kind==='artillery'&&op.artillery==='off'))continue;if(!(s.commandAssetJobs||[]).some(j=>j.assetId===a.id))reserve(s,op,a,{id:'initial-cover',x:goal[0],y:goal[1]});}}return;}const incoming=(api.eventsAround?.(s,s.time,15)||s.events).some(e=>e.kind==='shot'&&s.time-e.t<15&&s.units.some(u=>u.faction==='blackline'&&u.id===e.target)),sniper=threats.some(u=>api.isPrecisionWeapon(u));if(threats.length<2&&!incoming&&!sniper&&s.time>12)return;
+ // Heavy assets are reserved for battles involving organized, substantial hostile forces.
+ const largeBattle=s=>{const plan=s.enemyForcePlan||{},enemy=s.units.filter(u=>u.faction==='insurgent'||u.faction==='pmc'&&s.rival?.hostile);return Number(plan.risk)>=4&&Number(plan.strength)>=12||enemy.length>=14||!!s.enemyRegularArmy;};
+ function interdictionPoint(s,job){
+  const goal=s.goal||s.terrain.base,terrain=s.terrain;
+  const candidates=[[goal[0]+19,goal[1]+12],[goal[0]-17,goal[1]+21],[goal[0]+26,goal[1]-18],[goal[0]-25,goal[1]-12]];
+  for(let n=0;n<candidates.length;n++){
+   const p=api.projectToGround(terrain,candidates[(Math.floor(s.time/32)+n)%candidates.length]);
+   const t={x:p[0],y:p[1]};
+   if(safe(s,t,8)&&dist(job.position,t)<=get(job.assetId).range)return t;
+  }
+  return null;
+ }
+ api.reviewFireSupport=function(s,op){if(!state.overseasCommand)return review(s,op);if(!largeBattle(s))return;if(!s.journey||s.done||!['site','outdoor','extraction'].includes(s.journey.stage)||!op.fieldProgress||s.remoteRecon)return;const threats=known(s);if(!threats.length){if(s.time<=12){const goal=s.goal||s.terrain.base;for(const a of store.assets){if((a.kind==='airstrike'&&op.air==='off')||(a.kind==='artillery'&&op.artillery==='off'))continue;if(!(s.commandAssetJobs||[]).some(j=>j.assetId===a.id))reserve(s,op,a,{id:'initial-cover',x:goal[0],y:goal[1]});}}return;}const incoming=(api.eventsAround?.(s,s.time,15)||s.events).some(e=>e.kind==='shot'&&s.time-e.t<15&&s.units.some(u=>u.faction==='blackline'&&u.id===e.target)),sniper=threats.some(u=>api.isPrecisionWeapon(u));if(threats.length<2&&!incoming&&!sniper&&s.time>12)return;
   for(const a of store.assets){if((s.commandAssetJobs||[]).some(j=>j.assetId===a.id))continue;if(a.kind==='airstrike'&&op.air==='off'||a.kind==='artillery'&&op.artillery==='off')continue;const radius=a.kind==='tank'?3:a.kind==='artillery'?6:8,target=threats.find(t=>safe(s,t,radius));if(target&&reserve(s,op,a,target))continue;}
  };
  function returning(s,job){if(['returning','complete'].includes(job.state))return;job.state='returning';job.path=job.kind==='airstrike'?[[job.position.x,job.position.y],s.terrain.base]:api.journeyTools.route(s.terrain,[job.position.x,job.position.y],s.terrain.base);job.length=job.kind==='airstrike'?Math.hypot(job.position.x-s.terrain.base[0],job.position.y-s.terrain.base[1]):api.journeyTools.measure(job.path);job.distance=0;}
@@ -39,11 +51,11 @@
     continue;
    }
    if(job.state==='on-station'&&a.kind==='artillery'){
-    const target=known(s).find(t=>safe(s,t,6)&&dist(job.position,t)<=a.range);
+    const target=known(s).find(t=>safe(s,t,6)&&dist(job.position,t)<=a.range)||((s.time-job.onStationAt)%64<30?interdictionPoint(s,job):null);
     if(target&&a.ammo>=1&&s.time>=(job.nextShot||0)){
      a.ammo--;job.shots++;job.nextShot=s.time+28;
      s.events.push({id:job.id+'-shell-'+job.shots,kind:'artillery',supportAssetId:a.id,supportOrderId:job.id,from:[job.position.x,job.position.y],t:s.time,impactAt:s.time+3,scene:'site',target:target.id,x:target.x,y:target.y,radius:6,visible:true});
-     api.transmit(s,a.model,'원거리 포격 지원. 관측 표적 확인, 아군 안전거리 확보.','combat');
+     api.transmit(s,a.model,target.id?'원거리 포격 지원. 관측 표적 확인, 아군 안전거리 확보.':'접근로 차단용 예정 좌표 포격. 아군 안전거리 확인.','combat');
     }
     if(a.ammo<=0||s.time-job.onStationAt>260||s.retreat)returning(s,job);
     continue;
