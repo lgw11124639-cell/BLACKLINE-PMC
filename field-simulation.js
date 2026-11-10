@@ -60,16 +60,19 @@
   }
   if(!centers.length)centers.push([Math.min(mapW-8,s.goal[0]+20),Math.max(8,s.goal[1]-18)]);
   const positions=Array.from({length:30},(_,i)=>{const p=centers[Math.floor(i/10)%centers.length],a=rand(s)*Math.PI*2,d=2+rand(s)*9;return [Math.max(5,Math.min(mapW-5,p[0]+Math.cos(a)*d)),Math.max(5,Math.min(mapH-5,p[1]+Math.sin(a)*d))]});
-  const risk=Math.max(1,Math.min(5,Math.round(Number(m.risk)||1))),region=(state.contractWorld?.regions||[]).find(r=>r.id===m.regionId),regionalPressure=region?.conflict>=65?2:region?.conflict>=45?1:0,strength=[0,3,6,10,14,18][risk]+Math.abs(seed)%Math.max(3,risk+1)+(m.type==='무장세력 대응'?3:0)+regionalPressure;s.enemyForcePlan={version:1,risk,regionalPressure,regionId:m.regionId||null,scaled:!!window.fieldSimulation?.missionMode,strength:contact?(window.fieldSimulation?.missionMode?Math.min(26,strength):Math.min(6,2+risk)):0,generatedAt:0};
-  if(contact)for(let i=0;i<s.enemyForcePlan.strength;i++){const pos=positions[i%positions.length];s.units.push({id:'red-'+i,name:'무장세력 '+(i+1),faction:'insurgent',role:'무장 인원',x:pos[0],y:pos[1],hp:100,ammo:window.fieldSimulation?.missionMode?(risk>=3?120:90):36,skill:42+risk*3,vision:25,range:22,status:'guarding',path:[],destination:''})}
-  // Organized opposing regulars appear only in major engagements; their training remains below our force.
-  if(contact&&risk>=4&&s.enemyForcePlan.strength>=12){
-   const count=Math.min(10,Math.max(4,Math.floor(s.enemyForcePlan.strength*.42)));
-   s.enemyRegularArmy={name:'적 정규군 전투단',strength:count,fireSupport:{artillery:Math.max(2,risk-2),armor:1,helicopter:risk>=5?1:0},lastFireAt:0};
-   for(let i=0;i<count;i++){
-    const pos=positions[(i+2)%positions.length];
-    s.units.push({id:'regular-'+i,name:'적 정규군 '+(i+1),faction:'insurgent',role:i===0?'분대장':i%4===0?'기관총 사수':'정규군 소총수',x:pos[0]+i*.75,y:pos[1]+Math.floor(i/5)*1.4,hp:100,ammo:100,skill:Math.min(66,49+risk*3),vision:27,range:25,status:'guarding',path:[],destination:''});
-   }
+  const risk=riskLevel,region=(state.contractWorld?.regions||[]).find(r=>r.id===m.regionId);
+  const pressure=region?.conflict>=65?2:region?.conflict>=45?1:0;
+  const strength=contact?Math.min(96,Math.max(60,60+risk*6+pressure*3+Math.floor(rand(s)*9))):0;
+  const squadSize=8,squadCount=Math.ceil(strength/squadSize);
+  s.enemyForcePlan={version:2,risk,regionalPressure:pressure,regionId:m.regionId||null,scaled:true,strength,generatedAt:0,squads:squadCount,doctrine:'분산 경계·순찰·증원·철수'};
+  s.enemyCompany={strength,squads:Array.from({length:squadCount},(_,i)=>({id:i,role:i%5===0?'reserve':i%4===0?'patrol':'defend',alert:false,anchor:centers[i%centers.length],deployedAt:i<Math.min(4,squadCount)?0:35+i*5}))};
+  if(contact)for(let i=0;i<strength;i++){
+   const squad=Math.floor(i/squadSize),plan=s.enemyCompany.squads[squad],a=rand(s)*Math.PI*2,d=2+rand(s)*7;
+   const x=Math.max(5,Math.min(mapW-5,plan.anchor[0]+Math.cos(a)*d)),y=Math.max(5,Math.min(mapH-5,plan.anchor[1]+Math.sin(a)*d));
+   s.units.push({id:'red-'+i,name:'적 '+(squad+1)+'분대 '+(i%squadSize+1)+'번',faction:'insurgent',role:i%squadSize===0?'분대장':i%squadSize===1?'기관총 사수':'소총수',squadId:squad,x,y,hp:100,ammo:risk>=3?110:75,skill:Math.min(62,37+risk*4),vision:24,range:21,status:plan.deployedAt?'reserve':'guarding',reserveUntil:plan.deployedAt,path:[],destination:'',anchor:[x,y]});
+  }
+  if(contact&&risk>=4){
+   s.enemyRegularArmy={name:'적 정규군 중대',strength,fireSupport:{artillery:Math.max(2,risk-2),armor:1,helicopter:risk>=5?1:0},lastFireAt:0};
   }
   // A separate PMC is present independently of local armed groups. Neutral firms are not enemy targets.
   for(let i=0;i<3;i++)s.units.push({id:'pmc-'+i,name:rival.name+' '+(i+1),faction:'pmc',role:rival.doctrine,x:90+i*1.6,y:36+i*1.2,hp:100,ammo:45,skill:62,vision:28,range:26,status:'patrol',path:[],destination:''});
@@ -118,8 +121,37 @@
   const blue=s.units.filter(u=>u.faction==='blackline'),available=blue.filter(active);
   if(!s.rival.identified&&s.units.some(u=>u.faction==='pmc'&&available.some(a=>dist(a,u)<a.vision))){s.rival.identified=true;log(s,'정찰 담당',s.rival.name+' 식별. '+(s.rival.hostile?'독점 경계구역 진입을 저지하며 사격. 적대 접촉으로 판단.':'별도 계약 수행 중. 상호 식별 후 충돌 회피.'),'contact');event(s,{kind:'contact',faction:'pmc'})}
   support(s,op);
+  const company=s.enemyCompany;
+  if(company){
+   const friendlies=available.filter(u=>!u.inside&&!u.evacComplete);
+   for(const plan of company.squads){
+    const squad=s.units.filter(u=>u.faction==='insurgent'&&u.squadId===plan.id&&active(u));
+    const spotted=friendlies.some(b=>squad.some(e=>dist(b,e)<e.vision+8));
+    if(spotted){plan.alert=true;plan.lastContact=s.time;}
+    else if(plan.alert&&s.time-(plan.lastContact||0)>80)plan.alert=false;
+    const losses=s.units.filter(u=>u.faction==='insurgent'&&u.squadId===plan.id&&!active(u)).length;
+    plan.withdraw=losses>=5;
+    for(const u of squad){
+     if(u.status==='reserve'&&s.time<(u.reserveUntil||0)&&!plan.alert)continue;
+     if(u.status==='reserve')u.status='guarding';
+     const nearest=friendlies.slice().sort((a,b)=>dist(u,a)-dist(u,b))[0];
+     if(plan.withdraw){u.tacticalGoal=[Math.max(5,u.anchor[0]-12),Math.max(5,u.anchor[1]-9)];u.tacticalMode='withdraw';}
+     else if(nearest&&plan.alert&&dist(u,nearest)<48){
+      const d=dist(u,nearest);
+      if(d>u.range*.85)u.tacticalGoal=[nearest.x+(u.x-nearest.x)*.5,nearest.y+(u.y-nearest.y)*.5];
+      else if(d<9)u.tacticalGoal=[u.x+(u.x-nearest.x)*.8,u.y+(u.y-nearest.y)*.8];
+      else u.tacticalGoal=[u.x,u.y];
+      u.tacticalMode='engage';
+     }else{
+      const angle=s.time*.014+plan.id*2.4;
+      u.tacticalGoal=plan.role==='patrol'?[u.anchor[0]+Math.cos(angle)*6,u.anchor[1]+Math.sin(angle)*6]:u.anchor;
+      u.tacticalMode='guard';
+     }
+    }
+   }
+  }
   for(const u of s.units){
-   if(!active(u))continue;
+   if(!active(u)||(u.faction==='insurgent'&&u.status==='reserve'))continue;
    const enemies=s.units.filter(v=>active(v)&&hostile(s,u,v)&&dist(u,v)<=u.vision&&clearLine(u,v)).sort((a,b)=>dist(u,a)-dist(u,b));
    const target=enemies[0];
    if(target&&u.faction==='blackline'&&!s.contact){s.contact=true;log(s,u.name,'전방 무장 접촉. 엄폐 확보, 팀별 대응 개시.','contact')}
@@ -135,11 +167,11 @@
     if(u.faction==='blackline'&&Math.floor(s.time/13)%3===0)log(s,u.name,(hit?'명중 관측.':'적 엄폐 중. 사격 통제 유지.')+' 잔탄 '+u.ammo+'발.','combat');
    }else{
     u.target=null;
-    let goal=u.faction==='blackline'?(s.retreat?MAP.base:s.goal):u.faction==='pmc'?[72,36]:[66,33];
+    let goal=u.faction==='blackline'?(s.retreat?MAP.base:s.goal):u.faction==='pmc'?[72,36]:(u.tacticalGoal||u.anchor||[66,33]);
     if(u.faction==='blackline'&&s.missionType==='구조'&&s.objective>=65)goal=MAP.base;
-    if(target&&u.ammo>0&&u.faction!=='blackline')goal=[target.x,target.y];
+    if(target&&u.ammo>0&&u.faction!=='blackline'&&u.faction!=='insurgent')goal=[target.x,target.y];
     if(u.faction==='pmc'&&!s.rival.hostile&&!target)goal=[73,37];
-    const speed=u.faction==='blackline'?4.8:2.5;
+    const speed=u.faction==='blackline'?4.8:u.faction==='insurgent'?1.3:2.5;
     move(s,u,goal,u.hp<55?speed*.55:speed);u.status=s.retreat&&u.faction==='blackline'?'retreating':dist(u,{x:goal[0],y:goal[1]})<4?'holding':'moving';
    }
   }
