@@ -176,7 +176,17 @@
  // HQ automatically launches a separate emergency recovery when every deployed operator is down.
  function emergencyRescue(s){
   const j=s.journey,original=blue(s).filter(u=>!u.rescueReinforcement);
-  if(j.emergencyRescue&&j.emergencyRescue.stage!=='complete'){}else if(!original.length||original.some(active)||s.done||j.stage==='complete'||j.stage==='lost')return false;
+  const casualty=u=>u.hp<=0||u.captured||['dead','wounded','medevac','incapacitated','unconscious','critical','captured'].includes(u.status);
+  // Transport, boarding, recovery holds and completed evacuation are not combat incapacitation.
+  const stranded=original.filter(u=>!u.evacComplete&&!u.boarded&&!['evac-home','retreated','evacuated'].includes(u.status));
+  if(j.emergencyRescue&&j.emergencyRescue.stage!=='complete'){
+   if(!stranded.length||stranded.some(u=>!casualty(u))){
+    for(const id of j.emergencyRescue.personnelIds||[]){const p=(state?.team||[]).find(x=>String(x.id)===String(id));if(p)p.onMission=false;}
+    j.emergencyRescue.stage='cancelled';
+    say(s,'본부 작전상황실','긴급구조 출동 취소. 현장 인원 정상 이동 또는 복귀 확인.','command');
+    return false;
+   }
+  }else if(!stranded.length||stranded.some(u=>!casualty(u))||s.done||['complete','lost','homebound','boarding','extraction'].includes(j.stage))return false;
   if(!j.emergencyRescue){
    const survivors=original.filter(u=>u.status!=='dead'&&!u.evacComplete);
    if(!survivors.length)return false;
