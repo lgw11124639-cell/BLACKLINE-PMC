@@ -169,17 +169,28 @@
    }
   }
   const r=j.emergencyRescue,elapsed=s.time-r.started;
+  // Hostiles can seize isolated casualties before the HQ rescue party reaches them.
+  if(elapsed>=12&&!r.captureChecked){
+   r.captureChecked=true;
+   const enemies=s.units.filter(u=>u.faction!=='blackline'&&active(u));
+   const captured=original.filter(u=>u.status!=='dead'&&!u.evacComplete&&enemies.some(e=>dist(e,u)<18));
+   if(captured.length){
+    r.captured=captured.map(u=>u.id);
+    for(const u of captured){u.status='captured';u.captured=true;u.capturedAt=s.time;u.capturedBy='hostile';}
+    say(s,'본부 작전상황실','적이 전투불능 대원 '+captured.length+'명을 확보해 이송 중인 것으로 판단. 포로 구출작전 준비를 지시한다.','command');
+   }
+  }
   if(elapsed>=20&&r.stage==='dispatch'){r.stage='arrival';say(s,'긴급구조대','현장 접근 완료. 경계조가 주변 위협을 견제하고 의무조가 생존자 회수를 시작한다.','support');}
   if(elapsed>=45&&r.stage==='arrival'){
    r.stage='evacuation';
-   for(const u of original){if(u.status==='dead'||u.evacComplete)continue;u.evacComplete=true;u.status='medical-evacuation';u.evacuationHold=false;u.carriedBy=null;}
+   for(const u of original){if(u.status==='dead'||u.captured||u.evacComplete)continue;u.evacComplete=true;u.status='medical-evacuation';u.evacuationHold=false;u.carriedBy=null;}
    say(s,'긴급구조대','생존자 수습 완료. 응급 처치 후 후송 차량으로 이송한다.','support');
   }
   if(elapsed>=65&&r.stage==='evacuation'){
    r.stage='complete';s.retreat=true;
    for(const u of s.units.filter(u=>u.rescueReinforcement))u.status='rescue-returning';
    stage(s,'complete','긴급 구조·후송 완료');s.done=true;s.duration=s.time;
-   say(s,'본부 작전상황실','긴급 구조대 복귀. 생존자 후송 완료, 원작전 실패 처리. 사상자 및 부상 상태를 보고한다.','result');
+   say(s,'본부 작전상황실',r.captured?.length?'긴급 구조대 복귀. 적에게 붙잡힌 '+r.captured.length+'명은 미회수 상태. 포로 구출작전 요청.':'긴급 구조대 복귀. 생존자 후송 완료, 원작전 실패 처리. 사상자 및 부상 상태를 보고한다.','result');
   }
   return true;
  }
