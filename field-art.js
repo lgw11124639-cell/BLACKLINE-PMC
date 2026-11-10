@@ -10,7 +10,13 @@
   if(progress!=null&&progress<100){c.save();c.strokeStyle='#ffffffb8';c.lineWidth=2;c.beginPath();c.arc(x,y,13,-Math.PI/2,Math.PI*1.5);c.stroke();c.strokeStyle=color;c.beginPath();c.arc(x,y,13,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.max(0,progress)/100);c.stroke();c.restore()}
   if(progress==null||progress<100)smartLabel(c,title+(progress!=null?' · '+Math.round(progress)+'%':''),x+19,y,color,1);
  }
- function vehicle(c,x,y,heading,size=62,jet=false){c.save();c.translate(x,y);c.rotate(heading);const ok=sprite(c,'images/operators/vehicles.webp',jet?2:0,2,2,0,size*.12,size,size*2/3);if(!ok){c.fillStyle=jet?'#4d6477':'#4e7093';c.beginPath();c.moveTo(size*.4,0);c.lineTo(-size*.3,-size*.16);c.lineTo(-size*.3,size*.16);c.closePath();c.fill()}c.restore()}
+ function vehicle(c,x,y,heading,size=62,jet=false){
+  c.save();c.translate(x,y);c.rotate(Number.isFinite(heading)?heading:0);
+  const l=size*.72,b=size*.29;c.fillStyle='#142c3290';c.beginPath();c.ellipse(2,3,l*.56,b*.72,0,0,Math.PI*2);c.fill();
+  if(jet){c.fillStyle='#6c858c';c.beginPath();c.moveTo(l*.55,0);c.lineTo(-l*.42,-b*.18);c.lineTo(-l*.52,-b*.75);c.lineTo(-l*.63,-b*.75);c.lineTo(-l*.35,0);c.lineTo(-l*.63,b*.75);c.lineTo(-l*.52,b*.75);c.lineTo(-l*.42,b*.18);c.closePath();c.fill();}
+  else{c.fillStyle='#344b42';c.strokeStyle='#a1b1a5';c.lineWidth=1;c.beginPath();c.roundRect(-l/2,-b/2,l,b,Math.max(2,b*.18));c.fill();c.stroke();c.fillStyle='#1c302d';c.fillRect(l*.06,-b*.38,l*.22,b*.76);c.fillStyle='#8c9b8d';c.fillRect(-l*.37,-b*.32,l*.24,b*.64);c.fillStyle='#151f1d';for(const xx of [-l*.34,l*.32])for(const yy of [-b*.57,b*.57]){c.beginPath();c.ellipse(xx,yy,l*.12,b*.18,0,0,Math.PI*2);c.fill()}}
+  c.restore();
+ }
  function unit(c,u,v,x,y,size,t,selected=false,labels=true){const color=palette[u.faction]||palette.blackline,heading=v[5]||0,down=v[7]?v[7].d||v[7].f===false:v[2]<=0||['dead','wounded','evacuated'].includes(v[4]),wounded=v[7]?v[7].w.length>0||down:v[2]<=55||down,treated=!!(v[7]?.w.length&&v[7].w.every(w=>w[2])&&!v[7].d),care=v[4]==='treating',carry=v[4]==='carrying';
   if(v[4]==='boarded'||v[7]?.by||v[7]?.aboard)return;
   c.save();c.translate(x,y);c.fillStyle='#24394a20';c.beginPath();c.ellipse(0,4,size*.28,size*.09,0,0,Math.PI*2);c.fill();
@@ -55,13 +61,15 @@
  function smartLabel(c,text,x,y,color='#4f6486',priority=0){if(!annotations){c.save();pill(c,text,x,y,color);c.restore();return}const m=c.getTransform(),d=c.canvas.width/c.canvas.clientWidth||1;annotations.push({text:String(text),x:(m.a*x+m.c*y+m.e)/d,y:(m.b*x+m.d*y+m.f)/d,color,priority})}
  function endFrame(c){if(!annotations)return;const labels=annotations;annotations=null;const used=frameObstacles.slice(),d=c.canvas.width/c.canvas.clientWidth||1;c.save();c.setTransform(d,0,0,d,0,0);c.textAlign='left';c.textBaseline='alphabetic';c.font='500 10px -apple-system,sans-serif';for(const a of labels.sort((a,b)=>b.priority-a.priority)){let text=a.text;while(c.measureText(text).width>135&&text.length>5)text=text.slice(0,-2)+'…';const w=c.measureText(text).width+16;for(const [dx,dy]of [[0,0],[0,-24],[0,24],[-w-28,0],[-w-28,-24]]){const x=a.x+dx-7,y=a.y+dy-12,box={x,y,w,h:20};if(x<5||y<5||x+w>frameWidth-5||y+20>frameHeight-5||used.some(b=>x<b.x+b.w+4&&x+w+4>b.x&&y<b.y+b.h+3&&y+23>b.y))continue;used.push(box);if(dx||dy){c.strokeStyle='#ffffffa0';c.lineWidth=.8;c.beginPath();c.moveTo(a.x-4,a.y+4);c.lineTo(x+(dx<0?w:0),y+10);c.stroke()}pill(c,text,x+7,y+12,a.color);break}}c.restore()}
  function helicopter(c,x,y,heading,size,t,altitude=30){
-  c.save();c.translate(x,y);c.fillStyle='#253c4a28';c.beginPath();c.ellipse(altitude*.15,altitude*.2,size*.4,size*.18,heading,0,Math.PI*2);c.fill();
-  if(altitude<10){c.strokeStyle='#baa98a44';c.lineWidth=2;c.beginPath();c.ellipse(0,5,size*(.5+(t%1)*.15),size*.27,0,0,Math.PI*2);c.stroke();}
-  c.translate(0,-altitude*.12);c.rotate(heading);
-  if(!sprite(c,'images/operators/helicopters.webp',0,2,2,0,0,size,size*2/3)){c.fillStyle='#647986';c.beginPath();c.ellipse(0,-size*.18,size*.25,size*.1,0,0,Math.PI*2);c.fill();}
-  // Rotor hub in atlas cell 0 is (472,211) in a 768x512 cell. Both share the aircraft transform.
-  c.translate(size*(472/768-.5),size*(2/3)*(211/512-.77));c.fillStyle='#dce7ed18';c.beginPath();c.ellipse(0,0,size*.34,size*.23,0,0,Math.PI*2);c.fill();c.strokeStyle='#ebf2f6a0';c.lineWidth=1.5;c.beginPath();
-  for(let i=0;i<4;i++){const a=t*28+i*Math.PI/2;c.moveTo(0,0);c.lineTo(Math.cos(a)*size*.34,Math.sin(a)*size*.23);}c.stroke();c.restore();
+  c.save();c.translate(x,y);c.fillStyle='#1d33344d';c.beginPath();c.ellipse(altitude*.13,altitude*.18,size*.42,size*.19,0,0,Math.PI*2);c.fill();
+  c.translate(0,-Math.max(0,altitude)*.12);c.rotate(Number.isFinite(heading)?heading:0);
+  c.fillStyle='#5b7067';c.strokeStyle='#b5c3b9';c.lineWidth=1.1;
+  c.beginPath();c.ellipse(size*.05,0,size*.31,size*.15,0,0,Math.PI*2);c.fill();c.stroke();
+  c.fillStyle='#344a46';c.beginPath();c.ellipse(size*.17,0,size*.13,size*.105,0,0,Math.PI*2);c.fill();
+  c.fillStyle='#687e70';c.fillRect(-size*.48,-size*.025,size*.29,size*.05);
+  c.fillRect(-size*.52,-size*.12,size*.045,size*.24);
+  c.strokeStyle='#c8d8d4a8';c.lineWidth=1.6;c.beginPath();for(let i=0;i<4;i++){const a=t*15+i*Math.PI/2;c.moveTo(0,0);c.lineTo(Math.cos(a)*size*.39,Math.sin(a)*size*.39)}c.stroke();
+  c.fillStyle='#c3d2c9';c.beginPath();c.arc(0,0,2.4,0,Math.PI*2);c.fill();c.restore();
  }
  window.FieldArt={image,label,marker,vehicle,helicopter,unit,aim,effects,palette,beginFrame,endFrame,smartLabel};
 })();
