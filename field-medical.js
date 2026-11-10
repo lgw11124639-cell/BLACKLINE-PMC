@@ -49,7 +49,28 @@
   if(!patients.length&&f.stage!=='returning'){f.stage='returning';say(s,'이송 가능한 생존 환자가 없어 의료 기지로 복귀한다.')}
   const unsafe=Object.entries(scene==='regional'?j.roadContacts||{}:s.contacts||{}).some(([id,c])=>c.visible&&c.identified!==false&&dist(c,pt(f.lz))<12&&s.units.some(u=>u.id===id&&active(u)&&(u.faction==='insurgent'||u.faction==='pmc'&&s.rival.hostile)));
   if(f.version>=2&&['awaiting-lz','preparing'].includes(f.stage)&&!units.some(active)&&api.reserveSupport&&!f.rescueOrder){const order=api.reserveSupport(op,{name:'추가 인력 지원',kind:'reinforcement',rescue:true,requestedAt:s.time});if(order&&state.cash>=order.cost&&(fpBudget(op)>=order.cost)){const start=s.terrain.base,path=api.journeyTools.route(s.terrain,start,f.lz);order.delivery={path,distance:0,position:api.journeyTools.along(path,0),arrived:false};order.id=order.id||op.id+'-LZ-RESCUE';order.charged=true;state.cash-=order.cost;op.fieldProgress.reservedSupportCost=(op.fieldProgress.reservedSupportCost||0)+order.cost;(op.fieldProgress.supportOrders=op.fieldProgress.supportOrders||[]).push(order);f.rescueOrder=order.id;say(s,'지상 경계 전력 상실. 회사 가용 구조 인원 '+order.personnelIds.length+'명 출동, 착륙 지점 확보 후 의료 헬기를 유도한다.');}}
-  if(f.version>=2&&['awaiting-lz','preparing','transit','inbound'].includes(f.stage)){const safety=api.medicalLzSafety(s,f);if(['awaiting-lz','preparing'].includes(f.stage)){if(!safety.verified){f.stage='awaiting-lz';wait(s,f,safety.reason);return}if(s.time<f.readyAt){f.stage='preparing';f.waitReason='안전 확보 확인 · 헬기 출동 준비 '+Math.ceil(f.readyAt-s.time)+'초';return}f.launchedAt=s.time;f.strategicPath=j.transport.path;f.strategicLength=api.journeyTools.measure(f.strategicPath);f.strategicTravelled=0;f.stage='transit';f.strategicPosition=api.journeyTools.along(f.strategicPath,0);say(s,'착륙 지점 안전 확보·출동 준비 확인. 의료 헬기 이륙, 광역 항로로 이동한다.');}if(f.stage==='transit'){f.strategicTravelled=Math.min(f.strategicLength,f.strategicTravelled+1.2);f.strategicPosition=api.journeyTools.along(f.strategicPath,f.strategicTravelled/Math.max(1,f.strategicLength));f.waitReason='의료 헬기 항로 이동 · 현장까지 약 '+Math.ceil((f.strategicLength-f.strategicTravelled)/1.2+length/1.2)+'초';if(f.strategicTravelled<f.strategicLength)return;f.stage='inbound';}if(f.stage==='inbound'&&!safety.verified){wait(s,f,safety.reason+' · 현장 외곽 대기');return}}
+  if(f.version>=2&&['awaiting-lz','preparing','transit','inbound'].includes(f.stage)){const safety=api.medicalLzSafety(s,f);if(['awaiting-lz','preparing'].includes(f.stage)){if(!safety.verified){
+    f.stage='awaiting-lz';f.lzBlockedSince=f.lzBlockedSince??s.time;
+    if(s.time-f.lzBlockedSince>=90){
+     const base=s.terrain.base,patient=patients[0],pos=patient?location(patient,scene):pt(f.lz);
+     const map=scene==='regional'?j.transport.map:s.terrain;
+     const offsets=[[14,0],[-14,0],[0,14],[0,-14],[22,18],[-22,-18]];
+     for(const offset of offsets){
+      const q=api.projectToGround(map,[pos.x+offset[0],pos.y+offset[1]]);
+      const candidate={x:q[0],y:q[1]};
+      if(!s.units.some(u=>u.faction!=='blackline'&&active(u)&&dist(u,candidate)<18)){
+       f.lz=q;f.path=[map.base.slice(),q.slice()];f.distance=0;f.staged=[];f.carriers={};f.lzBlockedSince=s.time;
+       say(s,'착륙 지점 접근 불가. 위협 지역을 벗어난 대체 후송 지점으로 전환한다.');break;
+      }
+     }
+    }
+    if(s.time-f.requestedAt>=240&&!units.some(active)){
+     f.stage='complete';f.waitReason='긴급 구조대 후송으로 전환';
+     for(const p of patients){p.requiresEvac=false;p.evacuationHold=false;}
+     say(s,'후송 지점 장시간 확보 실패. 본부 긴급 구조대로 환자 회수를 인계한다.');
+    }else wait(s,f,safety.reason);
+    return;
+   }f.lzBlockedSince=null;if(s.time<f.readyAt){f.stage='preparing';f.waitReason='안전 확보 확인 · 헬기 출동 준비 '+Math.ceil(f.readyAt-s.time)+'초';return}f.launchedAt=s.time;f.strategicPath=j.transport.path;f.strategicLength=api.journeyTools.measure(f.strategicPath);f.strategicTravelled=0;f.stage='transit';f.strategicPosition=api.journeyTools.along(f.strategicPath,0);say(s,'착륙 지점 안전 확보·출동 준비 확인. 의료 헬기 이륙, 광역 항로로 이동한다.');}if(f.stage==='transit'){f.strategicTravelled=Math.min(f.strategicLength,f.strategicTravelled+1.2);f.strategicPosition=api.journeyTools.along(f.strategicPath,f.strategicTravelled/Math.max(1,f.strategicLength));f.waitReason='의료 헬기 항로 이동 · 현장까지 약 '+Math.ceil((f.strategicLength-f.strategicTravelled)/1.2+length/1.2)+'초';if(f.strategicTravelled<f.strategicLength)return;f.stage='inbound';}if(f.stage==='inbound'&&!safety.verified){wait(s,f,safety.reason+' · 현장 외곽 대기');return}}
   if(f.stage==='inbound'){
    f.distance=Math.min(length,f.distance+1.2);f.position=api.journeyTools.along(f.path,f.distance/Math.max(1,length));f.waitReason='환자 위치로 비행 중';
    if(f.distance>=length){if(unsafe)wait(s,f,'착륙 지점 위협 관측. 상공 대기 중.');else{f.altitude=Math.max(0,f.altitude-3);f.waitReason='착륙 중';if(!f.altitude){f.stage='landed';say(s,'의료 헬기 착륙. 환자별 탑승 확인을 시작한다.')}}}
