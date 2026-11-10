@@ -30,7 +30,7 @@
   const live=state.operations.some(o=>o.status==='현장 진행 중'&&o.fieldProgress?.tactical?.version>=2);clock.minutes+=delta*2*clock.speed;
   if(clock.minutes>=1440){clock.minutes-=1440;nextDay()}
   if(now-lastReview>1000){lastReview=now;const bucket=Math.floor((state.day*1440+clock.minutes)/30);if(bucket!==lastMarket){lastMarket=bucket;const before=JSON.stringify([state.missions,state.reports.length,state.cash,state.reputation]);window.contractWorld.refresh();save();if(JSON.stringify([state.missions,state.reports.length,state.cash,state.reputation])!==before)render()}if(window.blacklineReviewHR)window.blacklineReviewHR();if(window.blacklineReviewCompany)window.blacklineReviewCompany();if(window.blacklineRunScheduled)window.blacklineRunScheduled()}
-  paint();if(now-lastSave>5000){lastSave=now;save()}
+  paint();if(now-lastSave>2000){lastSave=now;if(live)window.blacklineSaveNow?.();else save()}
  },250);
  document.addEventListener('visibilitychange',()=>{last=performance.now();if(document.hidden&&!window.blacklineImportingSave)save()});
  render();
