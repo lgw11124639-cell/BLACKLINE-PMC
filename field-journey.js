@@ -315,7 +315,15 @@
     j.transport.returnDistance=(j.transport.returnDistance||0)+(stalled?0:Math.max(.35,Number(j.transport.speed)||.65));
     if(clearance===false&&!stalled&&!j.transport.returnRerouted){j.transport.returnRerouted=true;say(s,'수송 담당','복귀 경로 정체 확인. 대체 경로로 본부 복귀를 재개한다.','support');}
     // Older saves can contain an invalid path or zero returnFrom.
-    if(!Array.isArray(j.transport.path)||j.transport.path.length<2||!Number.isFinite(measure(j.transport.path))||measure(j.transport.path)<.01)j.transport.path=[s.terrain?.base||[8,8],s.goal||[55,35]];j.transport.progress=Math.min(1,j.transport.returnDistance/Math.max(.001,measure(j.transport.path)*(j.transport.returnFrom??1)));j.transport.vehicle=along(j.transport.path,(j.transport.returnFrom??1)*(1-j.transport.progress));j.transport.vehicle.heading+=Math.PI;j.transport.returnHeadingCorrected=true;if(j.transport.progress>=1&&(j.transport.kind!=='helicopter'||api.airArrival?.(s)!==false)&&(!j.medevac||j.medevac.stage==='complete'||j.medevac.stage==='cancelled')){stage(s,'complete','복귀 완료');s.done=true;s.duration=s.time;say(s,'현장지휘관',(j.transport.kind==='helicopter'?'헬기 본부 착륙. ':'차량 본부 도착. ')+'하차·인원 확인 및 작전 종료를 보고한다.','result')}}
+    if(!Array.isArray(j.transport.path)||j.transport.path.length<2||!Number.isFinite(measure(j.transport.path))||measure(j.transport.path)<.01)j.transport.path=[s.terrain?.base||[8,8],s.goal||[55,35]];j.transport.progress=Math.min(1,j.transport.returnDistance/Math.max(.001,measure(j.transport.path)*(j.transport.returnFrom??1)));j.transport.vehicle=along(j.transport.path,(j.transport.returnFrom??1)*(1-j.transport.progress));j.transport.vehicle.heading+=Math.PI;j.transport.returnHeadingCorrected=true;
+    // A stale medevac request must not hold a fully returned team forever.
+    if(j.medevac&&!['complete','cancelled'].includes(j.medevac.stage)){
+      const patients=(j.medevac.patients||[]).map(id=>s.units.find(u=>u.id===id)).filter(Boolean);
+      const outstanding=patients.filter(u=>!u.evacComplete&&!u.boarded&&!u.captured&&u.status!=='dead'&&(u.hp<=55||u.requiresEvac||u.mobility==='immobile'));
+      if(!outstanding.length){j.medevac.stage='cancelled';j.medevac.waitReason='';say(s,'의무대','후송 대상 재확인 완료. 별도 의료후송 요청을 종료한다.','support');}
+      else if(j.transport.progress>=1&&j.medevac.stage==='awaiting-lz'&&s.time-(j.medevac.requestedAt||s.time)>180){j.medevac.stage='preparing';j.medevac.readyAt=s.time;say(s,'의무대','의료후송 대기 지연. 출동 준비를 재개한다.','support');}
+    }
+    if(j.transport.progress>=1&&(j.transport.kind!=='helicopter'||api.airArrival?.(s)!==false)&&(!j.medevac||j.medevac.stage==='complete'||j.medevac.stage==='cancelled')){stage(s,'complete','복귀 완료');s.done=true;s.duration=s.time;say(s,'현장지휘관',(j.transport.kind==='helicopter'?'헬기 본부 착륙. ':'차량 본부 도착. ')+'하차·인원 확인 및 작전 종료를 보고한다.','result')}}
    else {api.defendExtraction(s,op);extractTick(s,op);}
   }else{
    step(s,op);searchTick(s);api.outdoorTick?.(s,op);recoverStalledSite(s);
