@@ -8,10 +8,20 @@
  function clearError(){lastError='';document.getElementById('blackline-save-error')?.remove()}
  function commit(value,seq){if(seq<committed)return false;try{
   const prior=rawGet(key);
-  rawSet(key,value);
+  try{rawSet(key,value)}catch(error){
+   if(error?.name!=='QuotaExceededError')throw error;
+   // Backup is a recoverable copy. Free its space only after preserving it in memory.
+   const oldBackup=rawGet(backup);
+   if(oldBackup)localStorage.removeItem(backup);
+   try{rawSet(key,value)}catch(retryError){
+    // Restore backup if possible, without overwriting the primary.
+    if(oldBackup)try{rawSet(backup,oldBackup)}catch(e){}
+    throw retryError;
+   }
+  }
   if(rawGet(key)!==value)throw Error('저장 데이터 검증 실패');
   committed=seq;flushedAt=performance.now();
-  try{if(prior&&prior!==value)rawSet(backup,prior);else if(!rawGet(backup))rawSet(backup,value)}catch(e){console.warn('백업 저장 실패',e)}
+  try{if(prior&&prior!==value)rawSet(backup,prior);else if(!rawGet(backup))rawSet(backup,value)}catch(e){console.warn('백업 저장 생략: 저장 공간 부족',e)}
   try{const decoded=window.blacklineSaveCodec?.unpack(value)||value;lastSavedDate=JSON.parse(decoded).date||''}catch(e){}
   clearError();return true;
  }catch(e){notify(e.message||e);return false}}
