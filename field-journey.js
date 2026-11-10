@@ -90,6 +90,20 @@
  function roadTick(s){const j=s.journey,tr=j.transport,map=tr.map,vehicle=tr.vehicle,guards=s.units.filter(u=>u.roadOnly&&active(u));j.roadAims=[];j.roadContacts=j.roadContacts||{};for(const c of Object.values(j.roadContacts))c.visible=false;
   const threat=guards.some(u=>dist(u.road,vehicle)<25&&api.clearLine(u.road,vehicle,map));
   if(threat&&!j.roadStopped){j.roadStopped=true;j.roadRegroup=null;s.contact=true;say(s,'현장지휘관','이동 중 접촉! 차량 정차, 하차 후 엄폐. 정찰은 사격 방향 확인, 부상자와 차량을 우선 보호한다.','contact');blue(s).forEach((u,i)=>{u.road={...point(api.projectToGround(map,[vehicle.x+(i%3-1)*2,vehicle.y+Math.floor(i/3)*2])),heading:vehicle.heading};u.status=active(u)?'road-cover':u.status})}
+  // Never leave a convoy indefinitely parked on a contact or inaccessible route.
+  if(j.roadStopped){
+   j.roadStoppedAt=j.roadStoppedAt??s.time;
+   if(s.time-j.roadStoppedAt>=75){
+    const capable=blue(s).filter(active);
+    if(capable.length){
+     j.roadReturning=true;s.retreat=true;
+     say(s,'현장지휘관','도로 접촉 대응 제한시간 초과. 대원 회수 후 우회가 불가능하면 안전한 경로로 철수한다.','command');
+     for(const u of capable){u.road=null;u.status='transporting'}
+     j.roadStopped=false;stage(s,'homebound','접촉 지점 이탈·본부 복귀');
+     tr.returnFrom=Math.max(.02,tr.progress);tr.returnDistance=0;return false;
+    }
+   }
+  }else j.roadStoppedAt=null;
   if(!j.roadStopped)return true;
   const team=blue(s).filter(active);
   for(const u of [...team,...guards]){if(u.faction==='blackline'&&u.medicalOverride===s.time)continue;const enemies=(u.faction==='blackline'?guards:team).filter(v=>dist(u.road,v.road)<(api.roadEngagementRange?.(s,u)??(u.tacticalRole==='scout'?30:26))&&api.clearLine(u.road,v.road,map)).sort((a,b)=>dist(u.road,a.road)-dist(u.road,b.road)),target=enemies[0];
@@ -116,7 +130,19 @@
  api.step=function(s,op){if(!s.journey||s.version<3)return step(s,op);if(s.done)return;const j=s.journey;
   if(['outbound','extraction','boarding','homebound'].includes(j.stage)){
    s.time++;api.sceneTick?.(s,op);
-   if(j.stage==='outbound'){const moving=j.transport.kind==='helicopter'?true:roadTick(s);if(moving&&api.vehicleTravel?.(s,op)!==false&&api.airTravel?.(s,'outbound')!==false)j.transport.distance+=j.transport.speed;j.transport.progress=Math.min(1,j.transport.distance/measure(j.transport.path));j.transport.vehicle=along(j.transport.path,j.transport.progress);if(j.stage==='outbound'&&j.transport.kind!=='helicopter')s.phase=s.transportWaitReason|| (j.roadStopped?'이동 중 교전':j.vehicle?.health<=35?'차량 정비·회수':'작전지 이동');if(j.stage==='outbound'&&j.transport.progress>=1&&api.airArrival?.(s)!==false){stage(s,'site','접근');s.dismounted=true;for(const u of blue(s).filter(active)){u.status='moving';u.road=null;}say(s,j.transport.kind==='helicopter'?'항공 수송':'수송 담당','작전지역 도착. 하차 완료, 현장 지휘관에게 통제권을 인계한다.','support')}}
+   if(j.stage==='outbound'){const moving=j.transport.kind==='helicopter'?true:roadTick(s);if(moving&&api.vehicleTravel?.(s,op)!==false&&api.airTravel?.(s,'outbound')!==false){j.transport.distance+=j.transport.speed;j.transport.lastMovedAt=s.time;}else if(!j.roadStopped){
+      j.transport.lastMovedAt=j.transport.lastMovedAt??s.time;
+      if(s.time-j.transport.lastMovedAt>=45){
+       const ready=blue(s).filter(active);
+       if(ready.length&&j.transport.kind!=='helicopter'){
+        // Dispatcher's automatic route recovery after a prolonged non-combat obstruction.
+        j.transport.distance+=Math.max(j.transport.speed,measure(j.transport.path)/90);
+        j.transport.lastMovedAt=s.time;
+        s.transportWaitReason='';
+        say(s,'수송 담당','이동 장애 장기화. 차량 상태 및 접근로 재확인 후 대체 경로로 이동을 재개한다.','support');
+       }else if(!ready.length){s.retreat=true;}
+      }
+     }j.transport.progress=Math.min(1,j.transport.distance/measure(j.transport.path));j.transport.vehicle=along(j.transport.path,j.transport.progress);if(j.stage==='outbound'&&j.transport.kind!=='helicopter')s.phase=s.transportWaitReason|| (j.roadStopped?'이동 중 교전':j.vehicle?.health<=35?'차량 정비·회수':'작전지 이동');if(j.stage==='outbound'&&j.transport.progress>=1&&api.airArrival?.(s)!==false){stage(s,'site','접근');s.dismounted=true;for(const u of blue(s).filter(active)){u.status='moving';u.road=null;}say(s,j.transport.kind==='helicopter'?'항공 수송':'수송 담당','작전지역 도착. 하차 완료, 현장 지휘관에게 통제권을 인계한다.','support')}}
    else if(j.stage==='homebound'){j.transport.returnDistance=(j.transport.returnDistance||0)+(api.vehicleTravel?.(s,op)===false||api.airTravel?.(s,'homebound')===false?0:j.transport.speed);j.transport.progress=Math.min(1,j.transport.returnDistance/Math.max(.001,measure(j.transport.path)*(j.transport.returnFrom??1)));j.transport.vehicle=along(j.transport.path,(j.transport.returnFrom??1)*(1-j.transport.progress));j.transport.vehicle.heading+=Math.PI;j.transport.returnHeadingCorrected=true;if(j.transport.progress>=1&&api.airArrival?.(s)!==false&&(!j.medevac||j.medevac.stage==='complete')){stage(s,'complete','복귀 완료');s.done=true;s.duration=s.time;say(s,'현장지휘관',(j.transport.kind==='helicopter'?'헬기 본부 착륙. ':'차량 본부 도착. ')+'하차·인원 확인 및 작전 종료를 보고한다.','result')}}
    else {api.defendExtraction(s,op);extractTick(s,op);}
   }else{
