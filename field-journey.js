@@ -195,7 +195,26 @@
     say(s,'본부 작전상황실','적이 전투불능 대원 '+captured.length+'명을 확보해 이송 중인 것으로 판단. 포로 구출작전 준비를 지시한다.','command');
    }
   }
-  if(r.stage==='no-team'){if(s.time-r.started>=30){r.started=s.time;r.stage='dispatch';r.captureChecked=false;delete j.emergencyRescue;return emergencyRescue(s);}return true;}
+  if(r.stage==='no-team'){
+   if(s.time-r.started>=30){
+    const assigned=new Set(s.units.map(u=>String(u.personnelId??u.id)));
+    const roster=(state?.team||[]).filter(p=>!p.dead&&!p.retired&&!p.injured&&!p.onMission&&!assigned.has(String(p.id)));
+    if(roster.length){delete j.emergencyRescue;return emergencyRescue(s);}
+   }
+   if(s.time-r.started>=180){
+    r.stage='external-evacuation';r.externalStarted=s.time;
+    say(s,'본부 작전상황실','예비 구조 인원 부족. 외부 연합 의무후송 수단으로 전환, 생존자 회수 중.','command');
+   }
+   return true;
+  }
+  if(r.stage==='external-evacuation'){
+   if(s.time-r.externalStarted>=60){
+    for(const u of original.filter(u=>u.status!=='dead'&&!u.captured)){u.evacComplete=true;u.status='evac-home';u.evacuationHold=false;}
+    r.stage='complete';stage(s,'complete','외부 의무후송 완료');s.done=true;s.duration=s.time;
+    say(s,'본부 작전상황실','외부 의무후송 종료. 미회수 포로는 별도 구출작전으로 이관한다.','result');
+   }
+   return true;
+  }
   if(r.stage==='dispatch'){
    const origin=r.origin||[8,8],progress=Math.min(1,elapsed/(r.transport==='helicopter'?22:38));
    for(let i=0;i<r.reinforcements.length;i++){const u=s.units.find(x=>x.id===r.reinforcements[i]);if(u){u.x=origin[0]+(s.goal[0]-origin[0])*progress+i*.6;u.y=origin[1]+(s.goal[1]-origin[1])*progress+i*.6;}}
