@@ -18,6 +18,25 @@
    if(['moving','returning'].includes(job.state)){const moved=Math.min(a.speed,Math.max(0,job.length-job.distance),a.fuel/(a.kind==='airstrike'?.6:.18));job.distance+=moved;const used=moved*(a.kind==='airstrike'?.6:.18);a.fuel-=used;job.usedFuel+=used;job.position=api.journeyTools.along(job.path,job.distance/Math.max(1,job.length));if(order&&job.state==='moving')order.eta=Math.max(order.eta,s.time-order.requestedAt+2);if(a.fuel<=0){job.waitReason='지원전력 연료 고갈·구조 필요';job.state='recovery';}else if(job.distance>=job.length){if(job.state==='returning'){finish(s,op,job,a);continue;}job.state='on-station';job.onStationAt=s.time;}}
    for(const u of job.actors){u.x=job.position.x;u.y=job.position.y;}if(a.kind!=='artillery'&&job.state!=='preparing')for(const enemy of s.units.filter(u=>u.faction==='insurgent'||u.faction==='pmc'&&s.rival.hostile))api.transportFire?.(s,enemy,job,{...job.position,altitude:a.kind==='airstrike'?18:0,scene:'site'});
    if(job.state==='recovery'){const cost=1500000;if(!job.recovery){const crew=state.transportCrew.filter(p=>p.transportJob==='driver'&&!p.dead&&!p.injured&&!p.retired&&!p.transportReservation).slice(0,2),vehicle=state.transportFleet.find(v=>v.kind==='ground'&&!v.reservation);if(crew.length===2&&vehicle&&state.cash-cost>=20000000){state.cash-=cost;crew.forEach(p=>p.transportReservation=op.id);vehicle.reservation=op.id;const path=api.journeyTools.route(s.terrain,s.terrain.base,[job.position.x,job.position.y]);job.recovery={crewIds:crew.map(p=>p.id),assetId:vehicle.id,path,length:api.journeyTools.measure(path),distance:0,state:'outbound',position:{x:s.terrain.base[0],y:s.terrain.base[1]}};log('지원전력 긴급 회수 출동',a.model+' 회수 차량·승무원 2명 실제 파견. 비용 '+money(cost)+'.');}}const r=job.recovery;if(r){r.distance=Math.min(r.length,r.distance+.6);r.position=api.journeyTools.along(r.path,r.distance/Math.max(1,r.length));if(r.state==='returning')job.position={...r.position};if(r.distance>=r.length){if(r.state==='outbound'){r.state='returning';r.path=r.path.slice().reverse();r.distance=0;}else{for(const id of r.crewIds){const p=state.transportCrew.find(p=>p.id===id);if(p)p.transportReservation=null;}const vehicle=state.transportFleet.find(v=>v.id===r.assetId);if(vehicle)vehicle.reservation=null;finish(s,op,job,a);}}}continue;}
+   if(job.state==='on-station'&&a.kind==='airstrike'){
+    // Persistent, moving airborne cover rather than a stationary one-shot asset.
+    const elapsed=s.time-job.onStationAt;
+    const center=job.coverCenter||(job.coverCenter={x:job.position.x,y:job.position.y});
+    const angle=elapsed*.055,rx=12,ry=8;
+    const previous={...job.position};
+    const next=api.projectToGround(s.terrain,[center.x+Math.cos(angle)*rx,center.y+Math.sin(angle)*ry]);
+    const movement=Math.hypot(next[0]-previous.x,next[1]-previous.y);
+    if(movement>.01){const fuel=Math.min(a.fuel,movement*.6);a.fuel-=fuel;job.usedFuel+=fuel;job.position={x:next[0],y:next[1],heading:Math.atan2(next[1]-previous.y,next[0]-previous.x)};}
+    for(const pilot of job.actors){pilot.x=job.position.x;pilot.y=job.position.y;}
+    const target=known(s).filter(t=>safe(s,t,5)&&dist(job.position,t)<=a.range).sort((x,y)=>dist(job.position,x)-dist(job.position,y))[0];
+    if(target&&a.ammo>0&&s.time>=(job.nextShot||0)){
+     a.ammo--;job.shots++;job.nextShot=s.time+22;
+     s.events.push({id:job.id+'-cover-'+job.shots,kind:'artillery',supportAssetId:a.id,supportOrderId:job.id,from:[job.position.x,job.position.y],t:s.time,impactAt:s.time+2,scene:'site',target:target.id,x:target.x,y:target.y,radius:5,visible:true});
+     api.transmit(s,a.model,'공중 엄호 중 식별된 위협에 지원 사격. 아군 안전거리 확인. 잔탄 '+a.ammo+'발.','combat');
+    }
+    if(a.ammo<=0||a.fuel<25||elapsed>=210||s.retreat||!job.actors.some(u=>active(u)))returning(s,job);
+    continue;
+   }
    if(job.state==='on-station'){if(a.kind==='tank'){const t=job.actors.some(u=>active(u)&&/포수|전차장/.test(u.role))&&known(s).find(t=>safe(s,t,3)&&dist(job.position,t)<=a.range&&api.clearLine(job.position,t,s.terrain));if(t&&a.ammo>0&&s.time>=(job.nextShot||0)){a.ammo--;job.shots++;job.nextShot=s.time+18;s.events.push({id:job.id+'-'+job.shots,kind:'artillery',supportAssetId:a.id,supportOrderId:job.id,from:[job.position.x,job.position.y],t:s.time,impactAt:s.time+2,scene:'site',target:t.id,x:t.x,y:t.y,radius:3,visible:true});api.transmit(s,a.model,'식별 표적 직접 사격. 아군 안전거리 확인.','combat');}if(job.shots>=4||s.time-job.onStationAt>150||!target||!active(target))returning(s,job);}
     else {if(order)order.eta=Math.min(order.eta,s.time-order.requestedAt);const impact=s.events.find(e=>e.supportOrderId===job.id);if(impact&&!job.shots){impact.from=[job.position.x,job.position.y];job.shots=a.kind==='artillery'?3:1;a.ammo=Math.max(0,a.ammo-job.shots);}if(impact||s.time-job.onStationAt>120){if(order&&!s.supportArrived.includes(order.id))s.supportArrived.push(order.id);returning(s,job);}}}
   }}
