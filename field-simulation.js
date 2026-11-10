@@ -46,7 +46,7 @@
   const deployed=members.slice(0,m.jointOperation&&!m.preRecon?24:12),allocation=Math.floor(ammoBudget/Math.max(1,deployed.length));
   deployed.forEach((p,i)=>{const ev=typeof personnelEvaluation==='function'?personnelEvaluation(p):{};s.units.push({id:'bl-'+p.id,personId:p.id,name:p.name,role:p.role||'대원',faction:'blackline',x:26+(i%4)*1.1,y:61+Math.floor(i/4),hp:100,ammo:allocation+(i===0?ammoBudget-allocation*deployed.length:0),skill:ev.marksmanship||p.skill||65,medical:ev.medical||40,vision:/정찰|저격/.test(p.role)?30:24,range:/저격|정밀/.test(p.role)?35:23,status:'moving',kills:0,detained:0,actions:[],path:[],destination:''})});
   const riskLevel=Math.max(1,Math.min(5,Math.round(Number(m.risk)||1)));
-  const encounterChance=Math.min(0.82,0.10+riskLevel*.115+(m.type==='무장세력 대응'?.13:0));
+  const encounterChance=Math.min(0.97,0.38+riskLevel*.115+(/무장|소탕|거점|교전/.test((m.type||'')+' '+(m.title||''))?.18:0));
   const contact=options.forceContact??(rand(s)<encounterChance);
   // Every operation receives a distinct hostile staging area; do not repeatedly spawn at fixed coordinates.
   const mapW=Number(MAP.width)||110,mapH=Number(MAP.height)||85;
