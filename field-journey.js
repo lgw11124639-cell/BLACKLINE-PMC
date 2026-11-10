@@ -150,7 +150,40 @@
   for(const u of s.units){if(u.faction==='blackline'||u.inside||u.roadOnly||!active(u)||dist(u,drone)>drone.radius||!api.clearLine({...drone,elevation:35},u,s.terrain))continue;drone.recognition=drone.recognition||{};drone.recognition[u.id]=(drone.recognition[u.id]||0)+1;if(drone.recognition[u.id]<3)continue;const first=!s.contacts[u.id];s.contacts[u.id]={x:u.x,y:u.y,lastSeen:s.time,firstSeen:s.contacts[u.id]?.firstSeen??s.time,visible:true,faction:u.faction,source:'drone',identified:s.version<4||drone.recognition[u.id]>=5,confidence:s.version<4?100:Math.min(100,drone.recognition[u.id]*20)};if(first){u.seenAt=s.time;say(s,'정찰 담당','드론 영상, '+(u.faction==='pmc'?'타 PMC 식별 대기 인원':'무장 인원')+' 관측. 좌표 전송, 현장조 시각 재확인 바란다.','contact')}for(const b of blue(s).filter(b=>active(b)&&(s.version<4||s.contacts[u.id].identified&&api.radioLinked(s,b))))b.knowledge[u.id]={x:u.x,y:u.y,lastSeen:s.time};}
  };
  api.journeyFrame=function(s){const j=s.journey;if(!j)return undefined;return {scenario:s.scenario?{mode:s.scenario.mode,name:s.scenario.name}:null,ambient:api.ambientFrame?.(s),outdoor:j.outdoor?{kind:j.outdoor.kind,name:j.outdoor.name,progress:j.outdoor.progress,index:j.outdoor.index,discovered:j.outdoor.discovered,current:j.outdoor.current,handoff:j.outdoor.handoff,origin:j.outdoor.origin,blocked:!!j.outdoor.blocked,tasks:j.outdoor.tasks.map(t=>({...t}))}:null,vehicle:j.vehicle?{health:j.vehicle.health,repairKit:j.vehicle.repairKit,repairProgress:j.vehicle.repairProgress,recovery:j.vehicle.recovery?{arrived:j.vehicle.recovery.arrived,position:j.vehicle.recovery.position}:null}:null,civilians:(s.civilians||[]).filter(c=>c.found).map(c=>({id:c.id,name:c.name,role:c.role||'protected',x:c.x,y:c.y,hp:c.hp,status:c.status,rescued:!!c.rescued})),drone:j.drone?.launched?{x:j.drone.x,y:j.drone.y,remaining:j.drone.remaining||0,radius:j.drone.radius,finished:!!j.drone.finished}:null,stage:j.stage,since:j.since,phase:s.phase,transport:{...j.transport.vehicle,progress:j.transport.progress,kind:j.transport.kind||'ground',altitude:j.transport.altitude||0,headingFixed:!!j.transport.returnHeadingCorrected,stopped:!!j.roadStopped||!!j.vehicle&&j.vehicle.health<=35},road:blue(s).filter(u=>u.road&&!u.evacComplete).concat(s.units.filter(u=>u.roadOnly&&u.roadSeenAt===s.time)).map(u=>({id:u.id,x:u.road.x,y:u.road.y,heading:u.road.heading,hp:u.hp,ammo:u.ammo,status:u.status,faction:u.faction})),roadAims:j.roadAims||[],medevac:j.medevac?{...api.medicalFlightStatus?.(s),stage:j.medevac.stage,scene:j.medevac.scene,patients:j.medevac.patients,loadedIds:j.medevac.loadedIds||[],waitReason:j.medevac.waitReason||'',lz:j.medevac.lz,altitude:j.medevac.altitude,boarding:j.medevac.boarding,position:{...j.medevac.position}}:null,pickup:j.pickup?{...j.pickup.vehicle,kind:j.transport.kind||'ground',altitude:j.pickup.altitude||0,landingBlocked:!!j.pickup.landingBlocked,requestedAt:j.pickup.requestedAt,arrived:j.pickup.arrived,boarding:Math.round(j.pickup.boarding)}:null,task:j.interior.task,search:{index:j.siteSearch.index,discovered:j.siteSearch.discovered,points:j.siteSearch.points.map(p=>({position:p.position,cleared:p.cleared,progress:Math.min(100,Math.round(p.worked/18*100))}))},rooms:j.interior.clearedRooms.slice(),discovered:j.interior.discovered,tasks:j.interior.tasks.map(t=>({name:t.name,position:t.revealed?t.position:null,progress:t.progress,working:!!t.working,blocked:!!t.blocked,revealed:!!t.revealed})),inside:s.units.filter(u=>u.inside&&(u.faction==='blackline'||u.interiorLastSeen===s.time)).map(u=>({id:u.id,x:u.interior.x,y:u.interior.y,hp:u.hp,status:u.status,ammo:u.ammo,heading:u.interior.heading,faction:u.faction,visible:u.faction==='blackline'||u.interiorLastSeen===s.time})),aims:j.interior.aims.filter(a=>a.friendly||s.units.some(u=>u.id===a.actor&&u.interiorLastSeen===s.time)).map(a=>({...a})),manifest:j.manifest.slice()};};
- api.step=function(s,op){if(!s.journey||s.version<3)return step(s,op);if(s.done)return;const j=s.journey;
+ // HQ automatically launches a separate emergency recovery when every deployed operator is down.
+ function emergencyRescue(s){
+  const j=s.journey,original=blue(s).filter(u=>!u.rescueReinforcement);
+  if(!original.length||original.some(active)||s.done||j.stage==='complete'||j.stage==='lost')return false;
+  if(!j.emergencyRescue){
+   const survivors=original.filter(u=>u.status!=='dead'&&!u.evacComplete);
+   if(!survivors.length)return false;
+   j.emergencyRescue={started:s.time,stage:'dispatch',survivors:survivors.map(u=>u.id),reinforcements:[]};
+   s.retreat=true;
+   stage(s,'emergency-rescue','본부 긴급 구조대 출동');
+   say(s,'본부 작전상황실','파병 인원 전원 전투불능. 긴급 구조작전 발령. 예비 전투조 및 의무후송팀을 즉시 파견한다.','command');
+   const template=original[0];
+   for(let i=0;i<4;i++){
+    const id='hq-rescue-'+s.time+'-'+i;
+    const u={...template,id,name:'긴급구조대 '+(i+1),hp:100,ammo:Math.max(90,template.ammo||0),status:'rescue-deploying',faction:'blackline',rescueReinforcement:true,inside:false,road:null,roadOnly:false,evacComplete:false,evacuationHold:false,carriedBy:null,knowledge:{},tacticalRole:i===0?'medic':'support',x:(template.x||s.goal[0])+i*1.5,y:(template.y||s.goal[1])+2};
+    s.units.push(u);j.emergencyRescue.reinforcements.push(id);
+   }
+  }
+  const r=j.emergencyRescue,elapsed=s.time-r.started;
+  if(elapsed>=20&&r.stage==='dispatch'){r.stage='arrival';say(s,'긴급구조대','현장 접근 완료. 경계조가 주변 위협을 견제하고 의무조가 생존자 회수를 시작한다.','support');}
+  if(elapsed>=45&&r.stage==='arrival'){
+   r.stage='evacuation';
+   for(const u of original){if(u.status==='dead'||u.evacComplete)continue;u.evacComplete=true;u.status='medical-evacuation';u.evacuationHold=false;u.carriedBy=null;}
+   say(s,'긴급구조대','생존자 수습 완료. 응급 처치 후 후송 차량으로 이송한다.','support');
+  }
+  if(elapsed>=65&&r.stage==='evacuation'){
+   r.stage='complete';s.retreat=true;
+   for(const u of s.units.filter(u=>u.rescueReinforcement))u.status='rescue-returning';
+   stage(s,'complete','긴급 구조·후송 완료');s.done=true;s.duration=s.time;
+   say(s,'본부 작전상황실','긴급 구조대 복귀. 생존자 후송 완료, 원작전 실패 처리. 사상자 및 부상 상태를 보고한다.','result');
+  }
+  return true;
+ }
+ api.step=function(s,op){if(!s.journey||s.version<3)return step(s,op);if(s.done)return;const j=s.journey;if(emergencyRescue(s)){s.time++;emergencyRescue(s);api.deliverRadio?.(s);api.captureFrame(s);return;}
   if(['outbound','extraction','boarding','homebound'].includes(j.stage)){
    s.time++;api.sceneTick?.(s,op);
    if(j.stage==='outbound'){
