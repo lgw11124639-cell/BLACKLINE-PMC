@@ -55,5 +55,24 @@
  const hr=window.blacklineReviewHR;window.blacklineReviewHR=function(...args){funding();reinforce();return hr?.(...args);};
  // Existing military career and identities remain archived, while current posting is explicit.
  for(const p of [...state.team,...(state.transportCrew||[])]){if(p.dead||p.retired||p.assignment)continue;if(p.rank==='전문 계약직'){p.legacyRank=p.rank;p.rank=/pilot/.test(p.transportJob||'')?'준위':'중사';}p.assignment={command:command.name,unit:p.transportJob?'수송항공지원반':'특수임무단',position:p.transportJob?p.role:position(p),assignedDate:state.date,service:p.country==='대한민국'?'현역 파견':'연합 연락·교관',rankDate:state.date};}
+ // A brand-new campaign starts at full authorized strength: 3 x 8 operators + 12 support/reserve.
+ // Never backfill an existing campaign here: casualties, transfers and saved rosters must survive.
+ if(Number(state.day||1)===1&&state.date==='2030-01-01'&&!(state.operations||[]).length&&!(state.history||[]).length&&!(state.team||[]).length&&!command.initialRosterCreated){
+  const surnames=['김','이','박','최','정','강','조','윤','장','임','한','오'];
+  const given=['민준','도현','지훈','현우','준서','태성','성민','재윤','동혁','승호','우진','준혁','서준','정훈','지호','재민','영준','기현','민석','건우','시우','성훈','정민','태훈','성현','승민','준영','민재','진우','재현','현준','동현','기석','종현','진호','승현'];
+  const jobs=['팀장','부팀장','의무','통신','정찰','저격수','화력지원','특전대원'];
+  const extra=['의무','의무','의무','통신','통신','정찰','정찰','저격수','화력지원','화력지원','특전대원','특전대원'];
+  const existing=new Set([...(state.candidates||[]),...(state.transportCrew||[]),...(state.commandHQ||[])].map(p=>Number(p.id)));
+  for(let i=0;i<36;i++){
+   const teamNo=i<24?Math.floor(i/8)+1:0,role=i<24?jobs[i%8]:extra[i-24];
+   const rank=role==='팀장'?'대위':role==='부팀장'?'상사':role==='의무'?'중사':i%5===0?'중사':'하사';
+   const age=rank==='대위'?33+i%3:rank==='상사'?35+i%4:rank==='중사'?28+i%6:24+i%5;
+   let id=10001+i;while(existing.has(id))id++;existing.add(id);
+   const birthYear=2030-age;
+   state.team.push({id,name:surnames[i%12]+given[i],country:'대한민국',unit:'육군 특수전사령부',rank,role,skill:72+(i*7)%20,salary:48000000+(i%8)*4200000,birthDate:birthYear+'-04-15',military:{start:(2030-Math.max(age-19,4))+'-03-01',discharge:null,reason:'현역 복무'},assignment:{command:command.name,unit:teamNo?'제'+teamNo+'특임팀':'작전지원·예비대',position:position({role}),service:'현역',assignedDate:state.date,rankDate:(2030-(rank==='대위'?3:rank==='상사'?5:rank==='중사'?3:1))+'-03-01'},contractStart:state.date,contractEnd:null,injured:false,retired:false,dead:false,fatigue:0,onMission:false,loadout:{primary:window.blacklineMilitaryPrimary({role})}});
+  }
+  command.initialRosterCreated=true;
+  report('초기 부대 편제 완료','제1·2·3특임팀 각 8명, 작전지원·예비대 12명 등 총 36명 전입 완료. 의무·정찰·통신·화력·저격 담당 편제.');
+ }
  funding();window.blacklineReviewArmory?.();window.blacklineReviewCommand();
 })();
