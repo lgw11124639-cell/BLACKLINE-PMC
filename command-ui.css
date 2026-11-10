@@ -11,3 +11,10 @@
 .rank-officer .rank-symbols i{width:8px;height:8px;transform:rotate(45deg);border-radius:1px}
 .rank-field .rank-symbols i,.rank-general .rank-symbols i{width:9px;height:9px;background:#d4bb63;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 93%,50% 71%,21% 93%,32% 57%,2% 35%,39% 35%);border:0}
 .rank-general{background:#e9e7dd;border-color:#c9bf9b}
+
+/* Keep atlas weapon cell at a fixed, natural-looking aspect ratio instead of stretching to full dossier width. */
+.issued-weapon .military-equipment-image{width:min(100%,340px);height:110px;margin:0 auto 12px;background-size:400% 200%;background-repeat:no-repeat}
+.issued-weapon{display:flex;flex-direction:column;justify-content:center;min-height:210px}
+.issued-weapon strong{align-self:flex-start}
+.rank-badge.rank-svg{background:none;background-image:none;border:0;overflow:visible}
+.rank-badge.rank-svg svg{display:block;max-width:100%;max-height:100%}
