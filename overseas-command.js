@@ -6,6 +6,22 @@
  const soldierRanks=new Set(['이병','일병','상병','병장','훈련병','이등병','일등병','병','Private','PFC','Corporal']);
  for(const p of [...(state.team||[]),...(state.transportCrew||[]),...(state.candidates||[])]){const current=String(p.rank||'').trim();if(!soldierRanks.has(current))continue;if(!p.legacyRank)p.legacyRank=current;p.rank=/팀장|지휘|작전장교/.test(p.role||'')?'대위':/조종|항공/.test(p.role||'')?'준위':'하사';}
 
+ // Normalize generated ages against rank and recorded service time; retain original dates for audit.
+ const minimumAge={하사:21,중사:25,상사:30,원사:39,준위:34,소위:23,중위:25,대위:29,소령:35,중령:41,대령:46,준장:50};
+ const todayYear=Number(state.date.slice(0,4))||2030;
+ for(const p of [...(state.team||[]),...(state.transportCrew||[]),...(state.candidates||[]),...(state.commandHQ||[])]){
+  const rank=String(p.rank||'').replace('(환산)',''),floor=minimumAge[rank];
+  if(!floor)continue;
+  const recorded=String(p.birthDate||''),year=Number(recorded.slice(0,4));
+  const serviceYear=Number(String(p.military?.start||'').slice(0,4));
+  const serviceFloor=serviceYear>=1950&&serviceYear<=todayYear?18+todayYear-serviceYear:0;
+  const needed=Math.max(floor,serviceFloor);
+  const actual=year>=1950&&year<=todayYear?todayYear-year:0;
+  if(actual>=needed)continue;
+  if(p.birthDate&&!p.originalBirthDate)p.originalBirthDate=p.birthDate;
+  p.birthDate=String(todayYear-needed)+'-'+(/^\\d{4}-\\d{2}-\\d{2}$/.test(recorded)?recorded.slice(5):'03-15');
+  if(typeof p.age==='number')p.age=needed;
+ }
  const report=(title,body)=>{state.reports.unshift({date:state.date,category:'작전',title,body});state.reports=state.reports.slice(0,160);};
  state.commandHQ=state.commandHQ||[['김정훈','준장','사령관'],['이현우','대령','참모장'],['박지환','소령','작전참모'],['최서진','소령','인사참모'],['정도윤','소령','군수참모']].map(([name,rank,role],i)=>({id:970000+i,name,rank,role,country:'대한민국',unit:'대한민국 해외특수전사령부 · 사령부',salary:90000000,skill:90,birthDate:(Number(state.date.slice(0,4))-(i===0?50:i===1?46:37))+'-03-15',military:{start:(Number(state.date.slice(0,4))-(i===0?27:i===1?23:14))+'-03-01',discharge:null,reason:'현역 복무'},assignment:{command:command.name,unit:'사령부',position:role,service:'현역',assignedDate:state.date},loadout:{primary:'K5'}}));
  const findPersonnel=window.blacklineFindPersonnel;window.blacklineFindPersonnel=(id,hired)=>hired?state.commandHQ.find(p=>p.id===id)||findPersonnel?.(id,hired):findPersonnel?.(id,hired);
