@@ -19,7 +19,7 @@
   const selfAid=care&&v[7]?.care==='self';if(u.faction==='blackline'&&(down||wounded&&!treated||selfAid)){const vertical=Math.abs(Math.sin(heading))>.7,cell=down?(vertical?3:2):(vertical?1:0);rendered=(window.blacklineROKArt?sprite(c,'images/operators/rok-special-operations.png',24+cell,4,8,0,0,size*1.35,size*1.05):sprite(c,'images/operators/pmc-casualties.webp',cell,4,2,0,0,size*1.35,size*1.05))}
   if(!rendered&&['civilian','unknown'].includes(u.faction)){const direction=(Math.round(heading/(Math.PI/2))+4)%4;rendered=sprite(c,'images/operators/civilians.webp',direction,4,2,0,0,size,size*4/3)}
   if(!rendered){c.save();if(down&&!treated&&u.faction!=='blackline'){c.rotate(Math.PI*.45);c.globalAlpha=.6}const direction=(Math.round(heading/(Math.PI/4))+8)%8;const specialist=u.faction==='blackline'?(/저격|정밀사수|지정사수/.test(u.role)||u.tacticalRole==='sniper'?'sniper':/메딕|의무|의료|구급/.test(u.role)||u.tacticalRole==='medic'?'medic':null):null;
-   if(u.faction==='blackline'&&window.blacklineROKArt)rendered=sprite(c,'images/operators/rok-special-operations.png',direction+(specialist==='sniper'?8:specialist==='medic'?16:0),4,8,0,0,size,size*4/3);
+   if(u.faction==='blackline'&&window.blacklineROKArt)rendered=sprite(c,'images/operators/rok-special-operations.png',direction+(specialist==='sniper'?8:specialist==='medic'?16:0),4,8,0,0,size*.82,size*1.12);
    if(!rendered&&specialist)rendered=sprite(c,'images/operators/role-directions.webp',direction+(specialist==='medic'?8:0),4,4,0,0,size,size*4/3);
    if(!rendered)rendered=sprite(c,u.faction==='insurgent'?'images/operators/hostile-directions.webp':'images/operators/pmc-directions.webp',direction,4,2,0,0,size,size*4/3);c.restore()}
   if(!rendered){c.fillStyle=color;c.fillRect(-3,-9,6,12)}
