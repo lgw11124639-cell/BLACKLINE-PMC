@@ -59,6 +59,8 @@
     "squad-cleared",
     "market-refreshed",
     "migration",
+    "command-exercise-started",
+    "command-exercise-ended",
   ];
   const ok = (v, m) => {
       if (!v) throw Error(m);
@@ -75,9 +77,13 @@
       ok(m, "현직 명부에 없는 대원입니다.");
       return m;
     },
-    current = (s) => {
-      ok(s.schemaVersion === 2, "2단계 저장으로 변환해야 합니다.");
+    current = (s, allowExercise = false) => {
+      ok([2, 3].includes(s.schemaVersion), "본부 저장을 변환해야 합니다.");
       ok(!s.activeMission, "현장 작전 중에는 본부 활동을 시작할 수 없습니다.");
+      ok(
+        allowExercise || s.commandExercise?.status !== "running",
+        "지휘 훈련을 종료한 뒤 본부 활동을 변경하세요.",
+      );
     };
   const next = (s, prefix) => {
     let id;
@@ -833,6 +839,15 @@
     ok(active.length, "진행 중인 본부 활동이 없습니다.");
     const target = Math.min(...active.map((a) => a.dueAt));
     ok(target > time(s), "활동 기한 상태를 확인하세요.");
+    return elapse(s, target - time(s));
+  }
+  function elapse(s, seconds) {
+    current(s, true);
+    ok(
+      Number.isInteger(seconds) && seconds > 0 && seconds <= 365 * DAY,
+      "시간 진행 범위가 잘못되었습니다.",
+    );
+    const target = time(s) + seconds;
     let cursor = time(s);
     while (cursor < target) {
       const expiry = Math.min(
@@ -841,7 +856,13 @@
             .filter((m) => m.contract.endsAt > cursor)
             .map((m) => m.contract.endsAt),
         ),
-        point = Math.min(target, expiry),
+        point = Math.min(
+          target,
+          expiry,
+          ...s.activities
+            .filter((a) => a.status === "running" && a.dueAt > cursor)
+            .map((a) => a.dueAt),
+        ),
         delta = point - cursor;
       ok(delta > 0, "시간 진행 상태가 잘못되었습니다.");
       for (const a of s.activities.filter((a) => a.status === "running")) {
@@ -964,7 +985,7 @@
   }
   function validateState(s) {
     ok(
-      s && s.game === "BLACKLINE_OVERWATCH" && s.schemaVersion === 2,
+      s && s.game === "BLACKLINE_OVERWATCH" && [2, 3].includes(s.schemaVersion),
       "2단계 저장 형식이 아닙니다.",
     );
     ok(
@@ -1279,6 +1300,7 @@
         [
           "headquarters",
           "personnel",
+          "command",
           "contracts",
           "equipment",
           "records",
@@ -1287,6 +1309,25 @@
         ["roster", "market", "squads", "archive"].includes(s.ui.personnelTab),
       "본부 설정이 잘못되었습니다.",
     );
+    ok(
+      s.ui.tab !== "command" || s.schemaVersion === 3,
+      "지휘 화면에는 저장 전환이 필요합니다.",
+    );
+    if (s.commandExercise !== undefined && s.commandExercise !== null) {
+      const Command =
+        root.OverwatchCommand ||
+        (typeof require === "function" ? require("./command.js") : null);
+      ok(Command, "지휘 저장 검증기를 불러오지 못했습니다.");
+      ok(s.schemaVersion === 3, "지휘 훈련에는 3단계 저장이 필요합니다.");
+      Command.validate(s.commandExercise, s);
+    }
+    if (s.schemaVersion === 3) {
+      const Command =
+        root.OverwatchCommand ||
+        (typeof require === "function" ? require("./command.js") : null);
+      ok(Command, "지휘 보관함 검증기를 불러오지 못했습니다.");
+      Command.validateCampaign(s);
+    }
     return s;
   }
   const api = {
@@ -1307,6 +1348,7 @@
     start,
     cancel,
     advance,
+    elapse,
     refreshMarket,
     release,
     casualty,

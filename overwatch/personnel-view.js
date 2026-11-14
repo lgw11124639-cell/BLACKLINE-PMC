@@ -387,7 +387,7 @@
     );
   }
   function render(s, { editable = true } = {}) {
-    if (s?.schemaVersion !== 2)
+    if (![2, 3].includes(s?.schemaVersion))
       return '<section class="panel"><h2>2단계 저장 전환이 필요합니다.</h2><p>저장 관리에서 원본을 보존한 뒤 주 저장을 복구하세요.</p></section>';
     const view = s.ui.personnelTab || "roster";
     return (
@@ -433,7 +433,7 @@
     );
   }
   function dossier(s, id, { editable = true } = {}) {
-    if (s?.schemaVersion !== 2) return "";
+    if (![2, 3].includes(s?.schemaVersion)) return "";
     const m = find(s, id);
     if (!m) return "";
     const hired = s.members.some((x) => x.id === id),
@@ -642,7 +642,7 @@
     root,
     { state: s, commit, openProfile, closeProfile, editable },
   ) {
-    if (s?.schemaVersion !== 2) return;
+    if (![2, 3].includes(s?.schemaVersion)) return;
     const each = (selector, fn) =>
       root.querySelectorAll(selector).forEach((el) =>
         el.addEventListener("click", (e) => {

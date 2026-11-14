@@ -9,6 +9,7 @@
     backup: "blackline_overwatch_v1_backup",
     beforeImport: "blackline_overwatch_v1_before_import",
     beforeReset: "blackline_overwatch_v1_before_reset",
+    beforeCommandMigration: "blackline_overwatch_v1_before_migration_v3",
     beforeMigration: "blackline_overwatch_v1_before_migration_v2",
     legacy: "blackline_pmc_v1",
     legacyBackup: "blackline_pmc_v1_backup",
@@ -184,7 +185,7 @@
       if (loaded.state.schemaVersion === Core.SCHEMA) return loaded.state;
       return persist(Core.upgrade(loaded.state), {
         expectedRevision: loaded.state.revision,
-        archiveKey: KEYS.beforeMigration,
+        archiveKey: KEYS.beforeCommandMigration,
       });
     }
     function reset(state) {

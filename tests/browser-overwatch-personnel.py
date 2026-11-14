@@ -14,7 +14,7 @@ with sync_playwright() as p:
   page.once('dialog',lambda d:d.accept());page.locator(selector).click()
  def close():page.locator('[data-close-profile]').click()
  def profile(ident):page.locator('[data-profile="'+ident+'"]').click()
- nav('personnel');sub('market');initial=saved();assert initial['schemaVersion']==2
+ nav('personnel');sub('market');initial=saved();assert initial['schemaVersion']==3
  candidates=initial['market']['candidates'][:2];cash=initial['headquarters']['funds']
  for c in candidates:confirm_click('[data-hire="'+c['id']+'"]')
  s=saved();assert len(s['members'])==2 and s['headquarters']['funds']==cash-sum(c['dailySalary']*30 for c in candidates)
@@ -68,8 +68,8 @@ with sync_playwright() as p:
  # V1 auto migration keeps original raw saves and grants capital just once.
  migration=browser.new_context();q=migration.new_page();q.goto(BASE)
  original=q.evaluate("""()=>{const s=OverwatchCore.createCampaign({id:'BROWSER-V1',schemaVersion:1});localStorage.setItem('blackline_overwatch_v1',JSON.stringify(s));localStorage.setItem('blackline_overwatch_v1_backup',JSON.stringify(s));localStorage.setItem('blackline_pmc_v1','legacy-untouched');return JSON.stringify(s);}""")
- q.reload(wait_until='networkidle');assert q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state.schemaVersion')==2
- archive=json.loads(q.evaluate("localStorage.getItem('blackline_overwatch_v1_before_migration_v2')"));assert archive['primary']==original and archive['backup']==original
+ q.reload(wait_until='networkidle');assert q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state.schemaVersion')==3
+ archive=json.loads(q.evaluate("localStorage.getItem('blackline_overwatch_v1_before_migration_v3')"));assert archive['primary']==original and archive['backup']==original
  q.reload(wait_until='networkidle');assert q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state.headquarters.funds')==100000000
  assert q.evaluate("blacklineSaveCodec.rawGet('blackline_pmc_v1')")=='legacy-untouched'
  migration.close();ctx.close();browser.close()

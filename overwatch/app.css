@@ -1114,3 +1114,212 @@ select:disabled {
     font-size: 11px;
   }
 }
+/* Event-driven command range; no animation loop or hidden-world renderer. */
+.command-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.command-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #d5dfce;
+  border-radius: 12px;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+.range-map-panel {
+  padding: 18px;
+}
+.range-terrain-label {
+  font-size: 21px;
+  fill: #63735a;
+}
+.range-unit-label {
+  font-size: 18px;
+  fill: #294c36;
+  paint-order: stroke;
+  stroke: #f8fff3;
+  stroke-width: 5px;
+  font-weight: 600;
+}
+.range-friend.stale {
+  opacity: 0.45;
+}
+.range-contact.expired {
+  opacity: 0.25;
+}
+.range-time-controls {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.range-time-controls button {
+  flex: 1;
+  font-size: 12px;
+}
+.range-time-controls p {
+  width: 100%;
+}
+.command-layout form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.command-layout form > button {
+  grid-column: 1/-1;
+}
+.command-layout label:not(.setting) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+  color: #71836b;
+}
+.coordinate-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.coordinate-inputs input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  background: white;
+  border: 1px solid #d4dfcb;
+  border-radius: 7px;
+  color: #47623c;
+}
+.command-comms {
+  position: sticky;
+  top: 16px;
+  padding: 20px;
+}
+.command-radio-list {
+  max-height: 70dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.command-radio-list li {
+  border-left: 2px solid #c5d2bb;
+  border-bottom: 1px solid #e4eadf;
+  padding: 14px 10px;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+.radio-route {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.radio-route strong {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+.radio-route small {
+  display: block;
+  color: #93a18a;
+  font-size: 9px;
+  margin-top: 5px;
+}
+.radio-meta {
+  font-size: 9px;
+  color: #89977e;
+  margin-top: 12px;
+  line-height: 1.8;
+}
+.command-radio-list p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.command-radio-list details {
+  font-size: 10px;
+  color: #91a284;
+}
+.range-known-roster {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.range-known-roster article {
+  padding: 13px;
+  border: 1px solid #dfe6d7;
+  border-radius: 8px;
+  min-width: 0;
+}
+.range-known-roster b,
+.range-known-roster span,
+.range-known-roster small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.range-known-roster b {
+  font-size: 12px;
+}
+.range-known-roster span {
+  font-size: 11px;
+  color: #7b8e71;
+  margin: 9px 0;
+}
+.range-known-roster small {
+  font-size: 10px;
+  color: #95a28b;
+}
+.range-order-list {
+  padding: 0;
+  list-style: none;
+}
+.range-order-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e2e8dc;
+  font-size: 12px;
+}
+.range-order-list span {
+  font-size: 11px;
+  color: #90a082;
+}
+@media (max-width: 1100px) {
+  .command-layout {
+    grid-template-columns: 1fr;
+  }
+  .command-comms {
+    position: static;
+  }
+  .command-radio-list {
+    max-height: 450px;
+  }
+}
+@media (max-width: 650px) {
+  .command-layout form {
+    grid-template-columns: 1fr;
+  }
+  .range-known-roster {
+    grid-template-columns: 1fr;
+  }
+  .command-comms {
+    padding: 18px;
+  }
+  .range-map-panel {
+    padding: 12px;
+  }
+  .range-time-controls button {
+    padding: 10px 7px;
+    font-size: 11px;
+  }
+  .range-unit-label {
+    font-size: 24px;
+  }
+}
+/* Keep the accessibility shortcut out of captures and scroll areas until focused. */
+.skip-link:not(:focus){clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
+.range-archived-report{padding:14px 0;border-bottom:1px solid var(--line);font-size:12px}.range-archived-report summary{cursor:pointer;line-height:1.8}.range-archived-report .plain-list{max-height:360px;overflow:auto}

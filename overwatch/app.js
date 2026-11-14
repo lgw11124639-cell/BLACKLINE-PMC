@@ -1,9 +1,10 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.14.02",
+  const VERSION = "2026.11.14.03",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
+    CommandUI = OverwatchCommandUI,
     root = document.getElementById("overwatch-root");
   const esc = (x) =>
     String(x ?? "").replace(
@@ -20,10 +21,11 @@
   const tabs = [
     ["headquarters", "본부", "01"],
     ["personnel", "대원·저격조", "02"],
-    ["contracts", "작전 의뢰", "03"],
-    ["equipment", "장비고", "04"],
-    ["records", "기록 보관함", "05"],
-    ["storage", "저장 관리", "06"],
+    ["command", "지휘 훈련", "03"],
+    ["contracts", "작전 의뢰", "04"],
+    ["equipment", "장비고", "05"],
+    ["records", "기록 보관함", "06"],
+    ["storage", "저장 관리", "07"],
   ];
   const roles = { observer: "관측수", sniper: "저격수" },
     statuses = {
@@ -56,11 +58,11 @@
       error = "";
       stale = false;
       selectedPerson = null;
-      if (source === "primary" && state.schemaVersion === 1) {
+      if (source === "primary" && state.schemaVersion < Core.SCHEMA) {
         try {
           state = store.migrate();
           notice =
-            "본부를 2단계 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
+            "본부를 3단계 지휘 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
         } catch (e) {
           source = "migration";
           error = e.message;
@@ -123,14 +125,14 @@
       title +
       "</h2><p>" +
       body +
-      '</p><span class="phase-note">현재 릴리스는 2단계 인원·편제·본부 활동까지 연결되어 있습니다.</span></section>'
+      '</p><span class="phase-note">현재 릴리스는 인원·편제·본부 활동과 관측수 지휘 훈련까지 연결되어 있습니다.</span></section>'
     );
   }
   function headquarters() {
     const members = state?.members || [],
       ready = members.filter((m) => m.status === "standby").length;
     return (
-      '<section class="hq-hero"><div><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>관측하고, 판단하고,<br>명령한다.</h1><p>본부의 명령은 관측수를 통해 저격수에게 전달됩니다.<br>현장에서 확인된 정보가 판단의 기준입니다.</p><span class="build-tag">2단계 · 저격조 편성·육성</span></div><div class="terrain-preview" role="img" aria-label="기존 프로젝트에서 보존한 산악 전장 이미지"><span>보존된 전장 자산 / 실시간 전장 연결 전</span></div></section><section class="metrics" aria-label="본부 현황">' +
+      '<section class="hq-hero"><div><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>관측하고, 판단하고,<br>명령한다.</h1><p>본부의 명령은 관측수를 통해 저격수에게 전달됩니다.<br>현장에서 확인된 정보가 판단의 기준입니다.</p><span class="build-tag">3단계 · 관측수 지휘 훈련</span></div><div class="terrain-preview" role="img" aria-label="기존 프로젝트에서 보존한 산악 전장 이미지"><span>보존된 전장 자산 / 실시간 전장 연결 전</span></div></section><section class="metrics" aria-label="본부 현황">' +
       [
         [
           "본부 대원",
@@ -162,13 +164,21 @@
             "</span></article>",
         )
         .join("") +
-      '</section><div class="two-column"><section class="panel"><div class="section-heading"><span class="eyebrow">CHAIN OF COMMAND</span><h2>저격조 지휘 구조</h2></div><ol class="command-chain"><li><b>본부 · 플레이어</b><span>임무·지역·관측·교전·철수 명령</span></li><li><b>관측수 · 현장 지휘관</b><span>명령 수신·판단·저격수 지휘·상황 보고</span></li><li><b>저격수</b><span>세부 지시 수행·사격 준비·생존 행동</span></li></ol><p class="muted">지휘 AI·무전 전달은 3단계에서 연결합니다.</p></section><section class="panel"><span class="eyebrow">DEVELOPMENT STATUS</span><h2>현재 가능한 작업</h2><ul class="plain-list"><li>대원 모집·기간 계약·2인조 편성</li><li>훈련·휴식·진료·재활·공동 훈련</li><li>자금·활동·경력 저장과 이전 기록 보존</li></ul><button data-tab="storage">저장 관리 열기 <span aria-hidden="true">↗</span></button><p class="muted">출격·현장 지휘 AI·3D 전장은 후속 단계에서 연결합니다.</p></section></div>'
+      '</section><div class="two-column"><section class="panel"><div class="section-heading"><span class="eyebrow">CHAIN OF COMMAND</span><h2>저격조 지휘 구조</h2></div><ol class="command-chain"><li><b>본부 · 플레이어</b><span>임무·지역·관측·교전·철수 명령</span></li><li><b>관측수 · 현장 지휘관</b><span>명령 수신·판단·저격수 지휘·상황 보고</span></li><li><b>저격수</b><span>세부 지시 수행·사격 준비·생존 행동</span></li></ol><p class="muted">지휘 훈련에서 관측수의 명령 수신·판단·보고를 확인할 수 있습니다.</p></section><section class="panel"><span class="eyebrow">DEVELOPMENT STATUS</span><h2>현재 가능한 작업</h2><ul class="plain-list"><li>대원 모집·기간 계약·2인조 편성</li><li>훈련·휴식·진료·재활·공동 훈련</li><li>자금·활동·경력 저장과 이전 기록 보존</li><li>조 단위 명령·무전·제한 정보 지휘 훈련</li></ul><button data-tab="storage">저장 관리 열기 <span aria-hidden="true">↗</span></button><p class="muted">실제 계약 출격·실탄 교전·3D 전장은 후속 단계에서 연결합니다.</p></section></div>'
     );
   }
   function personnel() {
-    return PersonnelUI.render(state, {
-      editable: source === "primary" && !stale,
-    });
+    return (
+      (state?.commandExercise?.status === "running"
+        ? '<div class="notice">지휘 훈련 중에는 본부 활동을 변경할 수 없습니다. 지휘 훈련에서 종료할 수 있습니다.</div>'
+        : "") +
+      PersonnelUI.render(state, {
+        editable:
+          source === "primary" &&
+          !stale &&
+          state?.commandExercise?.status !== "running",
+      })
+    );
   }
   function records() {
     let legacy = [];
@@ -194,7 +204,8 @@
         )
         .join("") +
       "</ol></section>" +
-      (state?.schemaVersion === 2
+      CommandUI.archive(state) +
+      (state?.schemaVersion >= 2
         ? '<section class="panel"><h2>운영자금 장부</h2><p>잔액 ' +
           PersonnelUI.money(state.headquarters.funds) +
           " · 시작 이월 " +
@@ -284,6 +295,7 @@
         store?.keys.beforeImport,
         store?.keys.beforeReset,
         store?.keys.beforeMigration,
+        store?.keys.beforeCommandMigration,
       ]
         .filter(Boolean)
         .map((k) => {
@@ -301,6 +313,7 @@
                   [store.keys.beforeImport]: "가져오기 전 보관본",
                   [store.keys.beforeReset]: "새 본부 개설 전 보관본",
                   [store.keys.beforeMigration]: "2단계 전환 전 원본",
+                  [store.keys.beforeCommandMigration]: "3단계 전환 전 원본",
                 }[k] +
                 " 내려받기</button>"
             : "";
@@ -316,12 +329,15 @@
     );
   }
   function render() {
+    const radioScroll =
+        root.querySelector(".command-radio-list")?.scrollTop || 0,
+      showInternal = !!root.querySelector("[data-range-internal]")?.checked;
     const dossierScroll =
         root.querySelector(".dossier-content")?.scrollTop || 0,
       hadDossier = !!root.querySelector(".personnel-dossier");
     document.body.classList.toggle(
       "personnel-dossier-open",
-      !!selectedPerson && state?.schemaVersion === 2,
+      !!selectedPerson && state?.schemaVersion >= 2,
     );
     document.documentElement.dataset.reducedMotion = String(
       state?.settings.reducedMotion || false,
@@ -346,7 +362,7 @@
             "</button>",
         )
         .join("") +
-      '</nav><div class="sidebar-foot">HQ → OBSERVER → SNIPER<br>PHASE 02 / PERSONNEL</div></aside><main id="main" tabindex="-1"><div class="breadcrumb">BLACKLINE / ' +
+      '</nav><div class="sidebar-foot">HQ → OBSERVER → SNIPER<br>PHASE 03 / COMMAND</div></aside><main id="main" tabindex="-1"><div class="breadcrumb">BLACKLINE / ' +
       tabs.find((t) => t[0] === tab)?.[1] +
       "</div>" +
       (error
@@ -362,6 +378,10 @@
         {
           headquarters,
           personnel,
+          command: () =>
+            CommandUI.render(state, {
+              editable: source === "primary" && !stale,
+            }),
           records,
           storage: storagePage,
           contracts: () =>
@@ -378,9 +398,12 @@
             ),
         }[tab] || storagePage
       )() +
-      "<footer>BLACKLINE: OVERWATCH · 2단계 인원·편제·본부 활동 · 실시간 작전은 후속 단계에서 연결됩니다.</footer></main></div>" +
+      "<footer>BLACKLINE: OVERWATCH · 3단계 관측수 지휘 훈련 · 실제 계약·전투·3D는 후속 단계입니다.</footer></main></div>" +
       PersonnelUI.dossier(state, selectedPerson, {
-        editable: source === "primary" && !stale,
+        editable:
+          source === "primary" &&
+          !stale &&
+          state?.commandExercise?.status !== "running",
       });
     if (selectedPerson) {
       root.querySelector(".topbar").inert = true;
@@ -388,9 +411,26 @@
       const content = root.querySelector(".dossier-content");
       if (content && hadDossier) content.scrollTop = dossierScroll;
     }
-    PersonnelUI.bind(root, {
+    const radioList = root.querySelector(".command-radio-list");
+    if (radioList) radioList.scrollTop = radioScroll;
+    const internal = root.querySelector("[data-range-internal]");
+    if (internal && showInternal) {
+      internal.checked = true;
+      root
+        .querySelectorAll('[data-channel="internal"]')
+        .forEach((row) => (row.hidden = false));
+    }
+    CommandUI.bind(root, {
       state,
       editable: source === "primary" && !stale,
+      commit,
+    });
+    PersonnelUI.bind(root, {
+      state,
+      editable:
+        source === "primary" &&
+        !stale &&
+        state?.commandExercise?.status !== "running",
       commit,
       openProfile(id) {
         selectedPerson = id;

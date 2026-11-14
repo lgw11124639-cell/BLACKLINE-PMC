@@ -39,7 +39,7 @@ class Memory {
 test("new phase-two HQ has balanced one-time capital and twelve uncontracted qualified candidates", () => {
   const s = make();
   check(s);
-  assert.equal(s.schemaVersion, 2);
+  assert.equal(s.schemaVersion, C.SCHEMA);
   assert.equal(s.headquarters.funds, 100000000);
   assert.equal(s.members.length, 0);
   assert.equal(s.market.candidates.length, 12);
@@ -408,8 +408,8 @@ test("storage migrates once with byte-exact phase-one originals and persists new
   store.save(s, null);
   const before = store.raw(S.KEYS.primary),
     next = store.migrate();
-  assert.equal(next.schemaVersion, 2);
-  assert.equal(JSON.parse(store.raw(S.KEYS.beforeMigration)).primary, before);
+  assert.equal(next.schemaVersion, C.SCHEMA);
+  assert.equal(JSON.parse(store.raw(S.KEYS.beforeCommandMigration)).primary, before);
   const money = next.headquarters.funds;
   assert.equal(store.migrate().headquarters.funds, money);
   const m = recruit(next, "observer");
