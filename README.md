@@ -1,3 +1,25 @@
+# BLACKLINE: OVERWATCH
+
+현재는 **1단계 본부·저장 기반**입니다. 모집·저격조 지휘 AI·실시간 작전·3D 전장은 아직 연결하지 않았습니다.
+
+- [전환 분석과 단계별 개발 계획](docs/OVERWATCH-DEVELOPMENT.md)
+- 새 진입점: `index.html` / `overwatch/` — 기존 자동 운영 스크립트를 실행하지 않습니다.
+- 이전 진입점: `legacy-pmc.html` — 기존 코드 회귀 검사와 명시적인 이전 버전 접근용입니다. 새 앱에서는 실행하지 않습니다.
+- 새 저장: `blackline_overwatch_v1`, `blackline_overwatch_v1_backup`. 기존 PMC 두 키는 읽기 전용 보관·다운로드만 제공합니다.
+- 실행: `python3 -m http.server 8050 --bind 127.0.0.1`
+- 새 본부 검사: `node --test tests/overwatch-foundation.test.cjs` 및 `BLACKLINE_TEST_URL=http://127.0.0.1:8050 python tests/browser-overwatch-foundation.py`
+- 기존 브라우저 회귀: `BLACKLINE_TEST_URL=http://127.0.0.1:8050/legacy-pmc.html python tests/browser-integrated-audit.py`
+
+전체 회귀 `node --test tests/*.test.cjs`는 최신 원격 main에 이미 존재하는 실패 18개를 포함합니다. 기존 검사 243개는 225개 통과/18개 실패, 새 본부 13개는 모두 통과했습니다. 변경 전 최신 커밋과 실패 항목이 일치하며 구형 엔진은 새 앱에서 실행하지 않습니다.
+
+1단계에서 본부 화면, 기록 보관함, 독립 저장/백업, 내보내기/가져오기, 새 본부 개설 전 보관, 손상 복구, 저장 실패 복원과 다중 탭 충돌 방지를 제공합니다. 기존 인원·진행 작전을 새 한도에 맞춰 자르거나 자동 재생성하지 않습니다. 2단계는 최대 10명 모집·계약·훈련·치료 및 관측수+저격수 최대 3개 조 편성입니다.
+
+---
+
+## 이전 BLACKLINE PMC 개발 기록
+
+아래는 이전 버전의 구현 이력이며 OVERWATCH에서 현재 작동하는 기능 목록이 아닙니다.
+
 # BLACKLINE PMC
 
 자율 경영·작전 관찰 시뮬레이션. GitHub Pages에 `main` 루트가 배포됩니다.
