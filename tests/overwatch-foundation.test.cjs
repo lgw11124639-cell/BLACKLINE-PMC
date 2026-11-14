@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),Core=require('../overwatch/core.js'),Store=require('../overwatch/storage.js'),codec=require('../save-codec.js');
 class Memory{constructor(){this.values=new Map();this.fail=null;this.writes=[];}getItem(k){return this.values.get(k)??null;}setItem(k,v){if(this.fail===k){this.fail=null;throw Error('quota');}this.values.set(k,String(v));this.writes.push(k);}removeItem(k){this.values.delete(k);}}
-const at='2026-11-14T10:00:00.000Z',fresh=(id='HQ-ONE')=>Core.createCampaign({id,at});
+const at='2026-11-14T10:00:00.000Z',fresh=(id='HQ-ONE')=>Core.createCampaign({id,at,schemaVersion:1});
 function fixture(){const memory=new Memory(),store=Store.create({storage:memory,codec,clock:()=>at});return {memory,store};}
 function member(id,specialty){return {id,name:id,age:28,specialty,secondarySpecialties:['firstAid','communications'],status:'standby',skills:{shooting:80,observation:85,composure:80,fitness:80,judgment:85,teamwork:85},experience:0,fatigue:0,stress:0,injuries:[],history:[]};}
 test('foundation opens an empty paused HQ without fabricated missions, personnel or radio',()=>{const s=fresh();assert.equal(s.members.length,0);assert.equal(s.activeMission,null);assert.equal(s.contracts.length,0);assert.equal(s.clock.elapsedSeconds,0);assert.equal(s.records[0].type,'hq-established');assert.equal(s.clock.paused,true);});

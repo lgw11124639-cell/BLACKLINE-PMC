@@ -1,18 +1,19 @@
 # BLACKLINE: OVERWATCH
 
-현재는 **1단계 본부·저장 기반**입니다. 모집·저격조 지휘 AI·실시간 작전·3D 전장은 아직 연결하지 않았습니다.
+현재는 **2단계 대원·저격조·본부 활동**까지 구현한 검토 브랜치입니다. 대원 모집·기간 계약·최대 3개 조 편성·훈련·휴식·진료·재활을 사용할 수 있습니다. 저격조 지휘 AI·실시간 작전·3D 전장·출격은 아직 연결하지 않았습니다.
 
 - [전환 분석과 단계별 개발 계획](docs/OVERWATCH-DEVELOPMENT.md)
 - 새 진입점: `index.html` / `overwatch/` — 기존 자동 운영 스크립트를 실행하지 않습니다.
 - 이전 진입점: `legacy-pmc.html` — 기존 코드 회귀 검사와 명시적인 이전 버전 접근용입니다. 새 앱에서는 실행하지 않습니다.
 - 새 저장: `blackline_overwatch_v1`, `blackline_overwatch_v1_backup`. 기존 PMC 두 키는 읽기 전용 보관·다운로드만 제공합니다.
 - 실행: `python3 -m http.server 8050 --bind 127.0.0.1`
-- 새 본부 검사: `node --test tests/overwatch-foundation.test.cjs` 및 `BLACKLINE_TEST_URL=http://127.0.0.1:8050 python tests/browser-overwatch-foundation.py`
+- 새 본부 검사: `node --test tests/overwatch-*.test.cjs` 및 `BLACKLINE_TEST_URL=http://127.0.0.1:8050 python tests/browser-overwatch-foundation.py`
+- 인원 브라우저 검사: `BLACKLINE_TEST_URL=http://127.0.0.1:8050 python tests/browser-overwatch-personnel.py`
 - 기존 브라우저 회귀: `BLACKLINE_TEST_URL=http://127.0.0.1:8050/legacy-pmc.html python tests/browser-integrated-audit.py`
 
-전체 회귀 `node --test tests/*.test.cjs`는 최신 원격 main에 이미 존재하는 실패 18개를 포함합니다. 기존 검사 243개는 225개 통과/18개 실패, 새 본부 13개는 모두 통과했습니다. 변경 전 최신 커밋과 실패 항목이 일치하며 구형 엔진은 새 앱에서 실행하지 않습니다.
+전체 회귀 `node --test tests/*.test.cjs`는 최신 원격 main에 이미 존재하는 실패 18개를 포함합니다. 기존 검사 243개는 225개 통과/18개 실패, 새 본부·인원 검사 34개는 모두 통과했습니다. 변경 전 최신 커밋과 실패 항목이 일치하며 구형 엔진은 새 앱에서 실행하지 않습니다.
 
-1단계에서 본부 화면, 기록 보관함, 독립 저장/백업, 내보내기/가져오기, 새 본부 개설 전 보관, 손상 복구, 저장 실패 복원과 다중 탭 충돌 방지를 제공합니다. 기존 인원·진행 작전을 새 한도에 맞춰 자르거나 자동 재생성하지 않습니다. 2단계는 최대 10명 모집·계약·훈련·치료 및 관측수+저격수 최대 3개 조 편성입니다.
+1단계에서 본부 화면, 기록 보관함, 독립 저장/백업, 내보내기/가져오기, 새 본부 개설 전 보관, 손상 복구, 저장 실패 복원과 다중 탭 충돌 방지를 제공합니다. 기존 인원·진행 작전을 새 한도에 맞춰 자르거나 자동 재생성하지 않습니다. 2단계는 현직 최대 10명, 관측수+저격수 최대 3개 조(6명), 부특기 최대 2개, 기간 급여 선지급과 계약 연장·만료·보관 명부를 제공합니다. 활동 배정 후 다음 완료 시각으로 진행하면 모든 활동과 계약 시간이 함께 흐릅니다. 오프라인 시간으로 임의 진행하지 않으며, 실제 부상 기록이 있을 때만 치료합니다. 초기 운영자금 1억원은 캠페인당 한 번만 배정하고 장부에 기록합니다. 1단계 저장 전환 전 원본은 `blackline_overwatch_v1_before_migration_v2`에 보관합니다.
 
 ---
 
