@@ -1524,6 +1524,7 @@
       D().end(s, "returned");
     }
     if (
+      !e.battle.continuous &&
       e.status === "running" &&
       e.time > 60 &&
       Object.values(e.knowledge.friends).length &&

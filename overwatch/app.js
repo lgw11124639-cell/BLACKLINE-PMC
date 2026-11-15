@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.15.03",
+  const VERSION = "2026.11.15.04",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -77,7 +77,6 @@
   const runtime = OverwatchRealtime.create({
     tick() {
       if (
-        !["field", "command"].includes(tab) ||
         source !== "primary" ||
         stale ||
         !state?.commandExercise?.battle ||
@@ -121,15 +120,20 @@
     }
   }
   function toggleField() {
-    if (!state?.commandExercise?.battle) return;
-    if (runtime.isRunning()) {
-      pauseField();
+    if (
+      !state?.commandExercise?.battle ||
+      state.commandExercise.status !== "running" ||
+      source !== "primary" ||
+      stale ||
+      document.hidden
+    )
       return;
-    }
-    if (commit((next) => Battle.setPaused(next, false))) {
-      runtime.start(state.commandExercise.battle.speed);
-      FieldUI.refresh(root, state, { playing: true });
-    }
+    if (
+      state.commandExercise.paused &&
+      !commit((next) => Battle.setPaused(next, false))
+    )
+      return;
+    if (!runtime.isRunning()) runtime.start(state.commandExercise.battle.speed);
   }
   // Orders are transactional saves; only successful commands may start the live loop.
   function executeField(change) {
@@ -146,7 +150,7 @@
       state?.commandExercise?.battle &&
       state.commandExercise.status === "running" &&
       !state.commandExercise.paused &&
-      ["field", "command"].includes(tab)
+      !document.hidden
     ) {
       if (!runtime.isRunning())
         runtime.start(state.commandExercise.battle.speed);
@@ -168,7 +172,7 @@
             next.commandExercise?.battle &&
             next.commandExercise.status === "running"
           )
-            Battle.setPaused(next, true);
+            Battle.setPaused(next, false);
         });
       else {
         const host = root.querySelector(".field-viewport");
@@ -215,17 +219,17 @@
       if (
         state?.commandExercise?.battle &&
         state.commandExercise.status === "running" &&
-        !state.commandExercise.paused &&
         source === "primary"
       ) {
-        const paused = Core.clone(state);
-        Battle.setPaused(paused, true);
-        paused.commandExercise.pauseReason =
-          "재접속 일시정지 · 오프라인 시간은 진행하지 않았습니다.";
+        const live = Core.clone(state);
+        live.commandExercise.battle.continuous = true;
+        live.clock.emergencyPause = false;
+        Battle.setPaused(live, false);
         try {
-          state = store.save(paused, state.revision);
+          state = store.save(live, state.revision);
         } catch (e) {
-          state = paused;
+          state = live;
+          Battle.setPaused(state, true);
           error = e.message;
         }
       }
@@ -252,6 +256,7 @@
       tab = "storage";
     }
     render();
+    toggleField();
   }
   function commit(change) {
     if (!state || source !== "primary" || stale) {
@@ -264,10 +269,12 @@
       change(next);
       if (
         next.commandExercise?.battle &&
-        next.commandExercise.status === "running" &&
-        !["field", "command"].includes(next.ui.tab)
-      )
-        Battle.setPaused(next, true);
+        next.commandExercise.status === "running"
+      ) {
+        next.commandExercise.battle.continuous = true;
+        next.clock.emergencyPause = false;
+        Battle.setPaused(next, false);
+      }
       state = store.save(next, state.revision);
       error = "";
       dirty = false;
@@ -281,6 +288,7 @@
           runtime.stop();
       }
       render();
+      toggleField();
       return true;
     } catch (e) {
       if (dirty) {
@@ -892,17 +900,15 @@
       render();
     }
   });
-  setInterval(
-    () =>
-      runtime.pump(
-        !document.hidden && ["field", "command"].includes(tab) && !stale,
-      ),
-    100,
-  );
+  setInterval(() => runtime.pump(!document.hidden && !stale), 100);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) pauseField();
+    else toggleField();
   });
   window.addEventListener("pagehide", pauseField);
+  window.addEventListener("pageshow", () => {
+    if (!document.hidden) toggleField();
+  });
   window.addEventListener("beforeunload", () => {
     if (dirty)
       try {

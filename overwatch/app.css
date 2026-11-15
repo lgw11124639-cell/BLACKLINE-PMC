@@ -1721,3 +1721,68 @@ select:disabled {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+@media (max-width: 900px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+.field-quick-orders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.field-quick-orders select {
+  max-width: 110px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.field-quick-orders button {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.field-stale {
+  display: block;
+  color: #a86532;
+  font-size: 12px;
+  margin: 5px 0;
+}
+.field-person details {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 8px 0;
+}
+.field-person summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+@media (max-width: 600px) {
+  .field-stage {
+    padding: 12px;
+  }
+  .field-person {
+    padding: 12px 0;
+    gap: 10px;
+  }
+  .field-person > svg {
+    width: 30px;
+    flex-basis: 30px;
+    height: 74px;
+  }
+  .field-radio p {
+    font-size: 13px;
+  }
+  .field-person p {
+    font-size: 12px;
+  }
+}

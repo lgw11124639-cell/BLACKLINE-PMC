@@ -318,7 +318,9 @@
         }
         ctx.restore();
         ctx.font = "10px sans-serif";
-        ctx.fillStyle = "#edf6e7";
+        ctx.fillStyle = "#f6fff3";
+        ctx.strokeStyle = "#203e31";
+        ctx.lineWidth = 3;
         ctx.fillText(
           (t.type === "helicopter"
             ? "헬기"
@@ -326,8 +328,15 @@
               ? "드론"
               : "차량") +
             " · " +
-            t.manifest.length +
-            "명",
+            (t.type === "drone"
+              ? {
+                  dispatch: "출발 준비",
+                  takeoff: "이륙",
+                  flying: "이동",
+                  "on-station": "관측 중",
+                  home: "복귀",
+                }[t.state] || "이동"
+              : t.manifest.length + "명"),
           q.x + 5,
           q.y - 12,
         );
@@ -531,13 +540,7 @@
         ctx.strokeStyle = "#fff3c5";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 11, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(p.x - 17, p.y);
-        ctx.lineTo(p.x + 17, p.y);
-        ctx.moveTo(p.x, p.y - 17);
-        ctx.lineTo(p.x, p.y + 17);
+        ctx.roundRect(p.x - 5, p.y - 5, 10, 10, 2);
         ctx.stroke();
       }
       if (now < until && !paused) raf = requestAnimationFrame(draw);
@@ -729,6 +732,7 @@
       resize: size,
       stats() {
         return {
+          viewSpan: span,
           knownIds: [...positions.keys()],
           framesPending: raf === null ? 0 : 1,
           motions: [...positions].map(([id, m]) => ({
