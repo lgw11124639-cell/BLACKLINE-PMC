@@ -571,6 +571,8 @@
       t.type === "helicopter" || t.type === "drone"
         ? [copy(target)]
         : G.path(t, target);
+    if (!t.path.length && G.distance(t, target) > 2 && t.type === "vehicle")
+      t.path = G.path(t, target, 5);
     t.state =
       t.type === "helicopter" || t.type === "drone" ? "takeoff" : "driving";
     log(e, "transport-departed", {
@@ -605,6 +607,15 @@
         t.state = "ground-hold";
         return;
       }
+      if (!t.path.length && G.distance(t, t.target) > 2) {
+        t.state = "route-blocked";
+        log(e, "transport-route-blocked", {
+          transportId: t.id,
+          position: { x: t.x, y: t.y },
+          target: t.target,
+        });
+        return;
+      }
       if (!t.path.length) {
         t.state = t.altitude > 0 ? "landing" : t.arrival;
         return;
@@ -618,7 +629,13 @@
         )
       )
         t.path.shift();
-      if (!t.path.length) t.state = t.altitude > 0 ? "landing" : t.arrival;
+      if (!t.path.length)
+        t.state =
+          G.distance(t, t.target) > 2
+            ? "route-blocked"
+            : t.altitude > 0
+              ? "landing"
+              : t.arrival;
       return;
     }
     if (t.state === "landing") {
@@ -644,7 +661,13 @@
         a.health.conscious &&
         a.health.alive &&
         G.distance(t, a) < (G.MAP.width < 500 ? 35 : 180) &&
-        G.clear({ ...t, altitude: Math.max(40, t.altitude) }, a),
+        G.clear(
+          {
+            ...t,
+            altitude: t.type === "vehicle" ? 0 : Math.max(40, t.altitude),
+          },
+          a,
+        ),
     );
   }
   function board(s, e, t, ids) {
@@ -713,6 +736,24 @@
   }
   function homeUnload(s, e, t) {
     const m = e.mission;
+    if (t.id === "primary" && t.trip === "extraction") {
+      m.lastRecoveryCompletedAt = e.time;
+      t.dispatchAt = Math.max(t.dispatchAt, e.time + 30);
+    }
+    if (
+      t.id === "primary" &&
+      t.trip === "extraction" &&
+      !t.manifest.length &&
+      m.returnRequested
+    ) {
+      m.failedRecoveries = (m.failedRecoveries || 0) + 1;
+      log(e, "empty-recovery-returned", {
+        transportId: t.id,
+        attempt: m.failedRecoveries,
+      });
+      if (m.abortRequested && m.failedRecoveries >= 2)
+        m.recoveryExhausted = true;
+    }
     for (const [i, id] of t.manifest.entries()) {
       const u = blue(e, id);
       Object.assign(
@@ -735,8 +776,9 @@
       const ev = log(e, "transport-home", {
         transportId: t.id,
         memberIds: t.manifest.slice(),
+        friends:e.squads.flatMap(q=>I().friendSnapshots(e,q)).filter(f=>t.manifest.includes(f.id)),
       });
-      say(
+      const homeReport=say(
         s,
         e,
         "transport",
@@ -748,6 +790,8 @@
             .filter((f) => t.manifest.includes(f.id)),
         },
       );
+      I().applyKnowledge(e,homeReport);
+
     }
     t.manifest = [];
     t.crew = null;
@@ -759,8 +803,78 @@
   function beforeTick(s, e) {
     const m = e.mission;
     if (!m || m.settled) return;
+    if (m.returnRequested && m.recoveryVersion !== 2) {
+      const primary = m.transports[0];
+      m.recoveryVersion = 2;
+      if (
+        m.contract.transport !== "foot" &&
+        !primary.manifest.length &&
+        !primary.crew?.patientId
+      ) {
+        const point = pickupPoint(s);
+        m.extractionPoint = copy(point);
+        primary.crew = null;
+        primary.loadingSince = null;
+        if (primary.state !== "home") {
+          primary.trip = "extraction";
+          beginTravel(e, primary, point, "pickup-landed");
+        }
+        const ev = log(e, "recovery-replanned", { pickup: point });
+        say(
+          s,
+          e,
+          "transport",
+          "기존 대기 회수를 재검토했다. 마지막 수신 위치에서 생존자·부상자·미확인 인원을 직접 확인한다.",
+          ev,
+        );
+      }
+    }
     for (const t of m.transports) {
       travel(e, t);
+      if (
+        t.id === "primary" &&
+        m.returnRequested &&
+        m.abortRequested &&
+        ["ground-hold", "air-hold", "pickup-hold", "route-blocked"].includes(
+          t.state,
+        )
+      ) {
+        t.holdSince ??= e.time;
+        if (e.time - t.holdSince >= 90) {
+          const route =
+            t.type === "vehicle"
+              ? G.path(t, G.MAP.base).length
+                ? G.path(t, G.MAP.base)
+                : G.path(t, G.MAP.base, 5)
+              : [G.MAP.base];
+          const ev = log(e, "unsafe-recovery-aborted", {
+            transportId: t.id,
+            state: t.state,
+          });
+          say(
+            s,
+            e,
+            "transport",
+            "접근 위험·경로를 재확인했으나 현재 제공 전력으로 회수가 불가능하다. 승무원 복귀 후 미회수 상태를 보고한다.",
+            ev,
+          );
+          if (route.length) beginTravel(e, t, G.MAP.base, "home-unload");
+          else m.recoveryExhausted = true;
+          t.holdSince = null;
+        }
+      } else t.holdSince = null;
+      if (t.state === "route-blocked" && t.lastReportState !== t.state) {
+        t.lastReportState = t.state;
+        const ev = log(e, "transport-route-blocked", { transportId: t.id });
+        say(
+          s,
+          e,
+          "transport",
+          "현재 위치에서 회수 지점까지 이동 경로를 확보하지 못했다. 회수 위치를 재평가해야 하며 도착으로 처리하지 않는다.",
+          ev,
+        );
+      }
+
       if (
         ["air-hold", "ground-hold"].includes(t.state) &&
         t.lastReportState !== t.state
@@ -838,9 +952,8 @@
         if (
           t.state === "home" &&
           m.returnRequested &&
-          m.memberIds.some(
-            (id) => !m.home.includes(id) && blue(e, id).health.alive,
-          ) &&
+          !m.recoveryExhausted &&
+          m.memberIds.some((id) => !m.home.includes(id)) &&
           e.time >= t.dispatchAt
         ) {
           t.trip = "extraction";
@@ -963,11 +1076,27 @@
       );
       m.extractionPoint = copy(pickup);
     }
+    m.recoveryVersion = 2;
     m.returnRequested = true;
-    m.abortRequested = abort;
+    m.abortRequested = !!m.abortRequested || abort;
     m.phase = m.contract.transport === "foot" ? "withdrawing" : "extracting";
     const t = m.transports[0];
     t.dispatchAt = Math.max(t.dispatchAt, e.time + 30);
+    if (
+      pickup &&
+      !t.manifest.length &&
+      !t.crew?.patientId &&
+      !t.crew?.targetId &&
+      t.state !== "home" &&
+      t.state !== "boarding" &&
+      G.distance(t.target || t, pickup) > 1
+    ) {
+      t.crew = null;
+      t.loadingSince = null;
+      t.trip = "extraction";
+      beginTravel(e, t, pickup, "pickup-landed");
+    }
+
     if (
       ["takeoff", "flying", "air-hold", "landing", "driving"].includes(
         t.state,
@@ -1323,6 +1452,43 @@
     }
     if (t.manifest.length) beginTravel(e, t, G.MAP.base, "home-unload");
     else {
+      if (t.id === "primary") {
+        c.searchPoints ??= [
+          [35, 0],
+          [0, 35],
+          [-35, 0],
+          [0, -35],
+        ].map(([dx, dy]) => G.project({ x: t.x + dx, y: t.y + dy }));
+        c.searchIndex ??= 0;
+        if (c.searchIndex < c.searchPoints.length) {
+          const target = c.searchPoints[c.searchIndex];
+          c.state = "searching";
+          if (!c.path.length) {
+            c.path = G.path(c, target);
+            if (!c.path.length) c.path = G.path(c, target, 5);
+          }
+          if (G.distance(c, target) < 2 || !c.path.length) {
+            c.searchIndex++;
+            c.path = [];
+          } else {
+            if (stepToward(c, c.path[0], 1)) c.path.shift();
+          }
+          return;
+        }
+        const ev = log(e, "recovery-search-completed", {
+          transportId: t.id,
+          checked: c.searchIndex,
+        });
+        say(
+          s,
+          e,
+          "transport",
+          "마지막 보고 위치 주변 구역을 실제 수색했으나 미회수 대원을 찾지 못했다. 사망으로 단정하지 않고 확인한 탑승자와 함께 복귀한다.",
+          ev,
+        );
+        beginTravel(e, t, G.MAP.base, "home-unload");
+        return;
+      }
       c.waitSince ??= e.time;
       if (e.time - c.waitSince > 30) {
         const ev = log(e, "medical-no-contact", { transportId: t.id });
@@ -1447,6 +1613,14 @@
     const m = e.mission;
     harvest(e);
     e.battle.noises = e.battle.noises.filter((n) => e.time - n.time < 20);
+    if (
+      m.recoveryExhausted &&
+      m.abortRequested &&
+      m.memberIds.some((id) => !m.home.includes(id))
+    ) {
+      declareMissing(s);
+      return;
+    }
     const protectedUnit = e.world.actors.find(
       (a) => a.id === "agency-protected",
     );
@@ -1488,18 +1662,18 @@
       m.lastTrack = e.time;
       m.knowledge.phase = m.phase;
       const primary = m.transports[0];
-      m.knowledge.waitReason = [
-        "air-hold",
-        "ground-hold",
-        "pickup-hold",
-        "insert-hold",
-      ].includes(primary.state)
-        ? "수송 승무원이 접근 구역 위협을 확인해 안전 확보를 기다립니다."
-        : primary.crew?.targetId
-          ? "수송 회수요원이 실제 부상자에게 접근·회수 중입니다."
-          : primary.state === "loading"
-            ? "차량 도착 · 실제 인원 확인과 탑승을 기다립니다."
-            : null;
+      m.knowledge.waitReason =
+        primary.state === "route-blocked"
+          ? "수송 이동 경로를 확보하지 못했습니다. 회수 지점을 다시 지정하세요."
+          : ["air-hold", "ground-hold", "pickup-hold", "insert-hold"].includes(
+                primary.state,
+              )
+            ? "수송 승무원이 접근 구역 위협을 확인해 안전 확보를 기다립니다."
+            : primary.crew?.targetId
+              ? "수송 회수요원이 실제 부상자에게 접근·회수 중입니다."
+              : primary.state === "loading"
+                ? "차량 도착 · 실제 인원 확인과 탑승을 기다립니다."
+                : null;
       m.knowledge.transports = m.transports
         .filter((t) => t.type !== "foot")
         .map((t) => ({
@@ -1515,6 +1689,10 @@
           rotorActive:
             t.type === "helicopter" && !["home", "dispatch"].includes(t.state),
           reportedAt: e.time,
+          remainingDistance: t.path.reduce(
+            (v, p, i) => v + G.distance(i ? t.path[i - 1] : t, p),
+            0,
+          ),
           observedAt: e.time,
         }));
       m.knowledge.crew = m.transports
@@ -1553,6 +1731,10 @@
     }
     if (
       m.returnRequested &&
+      (m.contract.transport === "foot" ||
+        m.memberIds.every((id) => m.home.includes(id)) ||
+        (m.lastRecoveryCompletedAt != null &&
+          m.transports[0].state === "home")) &&
       m.memberIds.every(
         (id) =>
           m.home.includes(id) ||
@@ -1872,7 +2054,7 @@
         title: m.contract.title,
         issuer: m.contract.issuer,
         task: m.contract.task,
-        phase: m.knowledge.phase,
+        phase: e.status==='ended'?'settled':m.knowledge.phase,
         objective: m.knowledge.objective,
         transport: m.contract.transport,
         support: copy(m.contract.support),
@@ -1881,6 +2063,13 @@
         escrow: m.escrow,
         returnRequested: m.returnRequested,
         waitReason: m.knowledge.waitReason || null,
+        diagnosis: (m.knowledge.transports || []).map((t) => ({
+          id: t.id,
+          state: t.state,
+          passengers: t.manifest.length,
+          remainingDistance: t.remainingDistance || 0,
+          reportedAt: t.reportedAt,
+        })),
         report: r ? { ...copy(r), radio: undefined, events: undefined } : null,
       },
       transports: copy(m.knowledge.transports),
@@ -2056,6 +2245,7 @@
             "support-hold",
             "medical-work",
             "unused",
+            "route-blocked",
           ].includes(t.state) &&
           Number.isInteger(t.capacity) &&
           n(t.capacity, 0, 6) &&

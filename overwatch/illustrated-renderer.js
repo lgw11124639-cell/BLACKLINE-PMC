@@ -212,9 +212,13 @@
         ctx.shadowColor = "#273626";
         ctx.shadowBlur = 4;
         ctx.fillText(
-          "최대 사거리 " +
+          "사거리 " +
             rangeUnit.weapon.range +
-            "m · 관측 방향 표시 · 차폐 별도 판정",
+            "m · 탐지 " +
+            Math.round(rangeUnit.visionRange || 0) +
+            "m · 식별 " +
+            Math.round(rangeUnit.identificationRange || 0) +
+            "m",
           12,
           v.h - 14,
         );
