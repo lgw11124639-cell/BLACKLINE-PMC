@@ -6,6 +6,7 @@
     PersonnelUI = OverwatchPersonnelUI,
     CommandUI = OverwatchCommandUI,
     FieldUI = OverwatchFieldUI,
+    MissionUI=OverwatchMissionUI,
     Battle = OverwatchBattle,
     root = document.getElementById("overwatch-root");
   const esc = (x) =>
@@ -169,7 +170,7 @@
         try {
           state = store.migrate();
           notice =
-            "본부를 4단계 전장 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
+            "본부를 5단계 실전 계약 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
         } catch (e) {
           source = "migration";
           error = e.message;
@@ -442,6 +443,7 @@
         store?.keys.beforeMigration,
         store?.keys.beforeCommandMigration,
         store?.keys.beforeFieldMigration,
+        store?.keys.beforeMissionMigration,
       ]
         .filter(Boolean)
         .map((k) => {
@@ -461,6 +463,7 @@
                   [store.keys.beforeMigration]: "2단계 전환 전 원본",
                   [store.keys.beforeCommandMigration]: "3단계 전환 전 원본",
                   [store.keys.beforeFieldMigration]: "4단계 전환 전 원본",
+                    [store.keys.beforeMissionMigration]: "5단계 전환 전 원본",
                 }[k] +
                 " 내려받기</button>"
             : "";
@@ -543,12 +546,7 @@
               playing: runtime.isRunning(),
             }),
           storage: storagePage,
-          contracts: () =>
-            phase(
-              "PHASE 05",
-              "작전 의뢰 연결 대기",
-              "실제 목표·기관·제약·제공 수송 및 지원을 확인하고 계약하는 단계입니다. 현재 생성된 의뢰나 출격 기능은 없습니다.",
-            ),
+          contracts:()=>MissionUI.render(state,{editable:source==='primary'&&!stale}),
           equipment: () =>
             phase(
               "PHASE 02 / 06",
@@ -611,6 +609,7 @@
       playing: runtime.isRunning(),
       onFallback: fallbackField,
     });
+    MissionUI.bind(root,{state,editable:source==='primary'&&!stale,commit,navigate(next){if(state&&source==='primary'&&!stale)commit(s=>s.ui.tab=next);tab=next;render();}});
     FieldUI.bind(root, {
       state,
       editable: source === "primary" && !stale,

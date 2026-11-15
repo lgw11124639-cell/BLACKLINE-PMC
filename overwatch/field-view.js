@@ -252,6 +252,7 @@
       .join("");
   }
   function result(f) {
+    if(f.mission)return root.OverwatchMissionUI.result(f.mission.report);
     const r = f.battle?.result;
     if (!r) return "";
     return (
@@ -283,8 +284,8 @@
       "</section>"
     );
   }
-  function render(s, { editable = true, playing = false } = {}) {
-    if (s?.schemaVersion !== 4)
+  function renderBase(s, { editable = true, playing = false } = {}) {
+    if (![4,5].includes(s?.schemaVersion))
       return '<section class="panel">본부 저장을 복구한 뒤 전장을 열 수 있습니다.</section>';
     const f = D.frame(s),
       battle = f?.battle,
@@ -365,9 +366,11 @@
         : "")
     );
   }
+  function render(s,opts){let html=renderBase(s,opts);if(!s?.commandExercise?.mission)return html;const f=D.frame(s);html=html.replace(/<section class="page-title">[\s\S]*?<\/section>/,'<section class="page-title"><span class="eyebrow">LIVE OPERATION / AGENCY CONTRACT</span><h1>실전 작전 지휘</h1><p>실제 부상·전사·미회수·소모품·보수가 본부 기록에 반영됩니다. 기관이 계약에서 제공한 수송·지원만 사용할 수 있습니다.</p></section>'+root.OverwatchMissionUI.livePanel(s));html=html.replace(/<section class="panel"><h2>전장 연습 편성[\s\S]*?<\/section>/,'');return html.replace('연습 통제 종료','작전 중단·철수').replace('조 전체 복귀 명령','철수·제공 수송 요청');}
   function refresh(rootNode, s, { playing = false } = {}) {
     const f = D.frame(s);
     if (!f?.battle) return;
+    if(f.mission)root.OverwatchMissionUI.refresh(rootNode,s);
     lastFrame = f;
     const set = (selector, text) => {
       const el = rootNode.querySelector(selector);
@@ -395,6 +398,7 @@
     );
     set("[data-field-play]", !f.paused && playing ? "일시정지" : "재생");
     const people = rootNode.querySelector("[data-field-roster]");
+    if(f.mission)root.OverwatchMissionUI.refresh(rootNode,s);
     if (people) {
       const text = roster(f);
       if (people.innerHTML !== text) people.innerHTML = text;
@@ -466,7 +470,7 @@
           "모의 전장을 통제 종료할까요? 집결지에 도착하지 않은 인원은 복귀 완료로 처리하지 않습니다.",
         )
       )
-        commit((next) => D.end(next, "control"));
+        commit((next) => next.commandExercise.mission?root.OverwatchMissions.requestReturn(next,{abort:true}):D.end(next, "control"));
     });
     rootNode.querySelectorAll("[data-field-speed]").forEach((b) =>
       b.addEventListener("click", () => {

@@ -48,7 +48,7 @@
       if (ground) {
         if (blocked(p)) return false;
       } else {
-        const eye = elevation(a) + 1.7 + (elevation(b) - elevation(a)) * t;
+        const eye = elevation(a)+(a.altitude||0)+1.7+(elevation(b)+(b.altitude||0)-elevation(a)-(a.altitude||0))*t;
         if (MAP.buildings.some((r) => inside(p, r) && eye < r[4])) return false;
         if (elevation(p) > eye + 1) return false;
       }

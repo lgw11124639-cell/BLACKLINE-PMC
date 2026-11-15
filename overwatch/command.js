@@ -15,6 +15,7 @@
   const Battle = () =>
     root.OverwatchBattle ||
     (typeof require === "function" ? require("./battle.js") : null);
+  const Mission=()=>root.OverwatchMissions||(typeof require==='function'?require('./missions.js'):null);
   const ORDERS = {
     move: "지역 이동",
     observe: "구역 관측",
@@ -58,7 +59,8 @@
         callsign: "HQ",
         role: "본부 지휘관",
       };
-    const u = unit(e, id);
+    if(id==='AGENCY'&&e.mission)return {id,name:e.mission.contract.issuer+' 지원통제',callsign:'지원망',role:'의뢰기관 지원통제'};
+    const u = unit(e, id)||e.world.actors.find(a=>a.id===id);
     return {
       id: u.id,
       name: u.name,
@@ -68,7 +70,7 @@
   }
   function linked(e, q) {
     const u = leader(e, q);
-    return !!u?.capable && !G.MAP.shadows.some((b) => G.inside(u, b));
+    return !!u?.capable && (u.altitude>40||!G.MAP.shadows.some((b) => G.inside(u, b)));
   }
   function latency(s, e, q) {
     const m = member(s, q.leaderId),
@@ -133,7 +135,7 @@
   }
   function begin(s) {
     ok(
-      [3, 4].includes(s.schemaVersion) &&
+      [3, 4, 5].includes(s.schemaVersion) &&
         !s.activeMission &&
         s.commandExercise?.status !== "running",
       "현재 상태에서는 지휘 훈련을 시작할 수 없습니다.",
@@ -507,7 +509,7 @@
       );
       return;
     }
-    const target = c.kind === "withdraw" ? G.MAP.base : c.target;
+    const target = c.kind === "withdraw" ? (e.mission?.extractionPoint||G.MAP.base) : c.target;
     const plans = [];
     for (const id of [q.observerId, q.sniperId]) {
       const u = unit(e, id);
@@ -607,6 +609,7 @@
   }
   function applyKnowledge(e, r) {
     if (e.battle) Battle().applyPayload(e, r);
+    if(e.mission)Mission().applyPayload(e,r);
     if (r.payload?.friends)
       for (const f of r.payload.friends) {
         const old = e.knowledge.friends[f.id];
@@ -636,7 +639,7 @@
           ? unit(e, r.from.id)?.capable &&
             unit(e, r.to.id)?.capable &&
             G.distance(unit(e, r.from.id), unit(e, r.to.id)) <= 100
-          : linked(e, q);
+          : e.mission&&Mission().agencyId(e,r.from.id)?true:linked(e, q);
       if (!link) {
         r.sentAt = null;
         continue;
@@ -753,7 +756,7 @@
         };
       if (
         e.world.units.some(
-          (v) => v.id !== u.id && v.capable && G.distance(v, p) < 8,
+          (v) => v.id !== u.id && v.capable && !v.boardedBy && !v.home && G.distance(v, p) < 8,
         )
       ) {
         const found = detour(e, u, next);
@@ -778,7 +781,7 @@
   }
   function observe(s, e, q) {
     const u = leader(e, q);
-    if (!u?.capable) return;
+    if (!u?.capable||u.boardedBy||u.home) return;
     const m = member(s, u.id),
       v = P.effectiveSkills(m),
       observerFactor = u.role === "observer" ? 1 : 0.65,
@@ -791,6 +794,7 @@
       heading = Math.atan2(q.sector.y - u.y, q.sector.x - u.x);
     u.heading = heading;
     for (const actor of e.world.actors) {
+      if(e.mission&&actor.side==='ally')continue;
       const d = G.distance(u, actor),
         angle = Math.atan2(actor.y - u.y, actor.x - u.x),
         delta = Math.abs(
@@ -857,6 +861,7 @@
   }
   function tick(s, e) {
     e.time++;
+    if(e.mission)Mission().beforeTick(s,e);
     if (e.battle) {
       Battle().beforeTick(s, e);
       Battle().actorTick(s, e);
@@ -873,6 +878,7 @@
         actor.y += ((p.y - actor.y) * step) / d;
       }
     for (const q of e.squads) {
+      if(e.mission&&!Mission().allowTeams(e))continue;
       if (!leader(e, q)?.capable) {
         const replacement = [q.observerId, q.sniperId]
           .map((id) => unit(e, id))
@@ -1003,7 +1009,7 @@
       if (e.radio.length >= 3000) break;
       const ids = e.world.units.map((u) => u.id);
       if (
-        ids.some(
+        !e.mission&&ids.some(
           (id) =>
             !s.members.some((m) => m.id === id) ||
             member(s, id).contract.endsAt <= s.clock.elapsedSeconds + 1,
@@ -1027,6 +1033,7 @@
   }
   function end(s, reason = "hq") {
     const e = running(s);
+    if(e.mission)ok(e.mission.finalizing,'실전 작전은 실제 복귀 또는 미회수 통제 절차를 마쳐야 합니다.');
     e.status = "ended";
     s.clock.paused = true;
     e.endedAt = s.clock.elapsedSeconds;
@@ -1035,7 +1042,8 @@
       if (["queued", "thinking", "executing", "received"].includes(c.status))
         c.status = "cancelled";
     for (const r of e.radio) if (r.status === "queued") r.status = "cancelled";
-    const battleSummary = e.battle ? Battle().summarize(e) : null;
+    let battleSummary = e.battle ? Battle().summarize(e) : null;
+    if(e.mission){const report=Mission().settle(s,e);battleSummary=report.title+' 실전 종료 · '+(report.success?'목표 달성·정산 완료':'목표 미달성/철수·정산 완료')+' · 실제 복귀 '+report.roster.filter(x=>x.disposition==='returned').length+'명 / 미회수 '+report.missing.length+'명.';}
     s.commandArchive = s.commandArchive || [];
     s.commandArchive.push({
       id: e.id,
@@ -1251,7 +1259,7 @@
           !ids.has(u.id) &&
           member(s, u.id) &&
           point(u) &&
-          !G.blocked(u) &&
+          (!G.blocked(u)||e.mission&&u.boardedBy&&u.altitude>40) &&
           ["observer", "sniper"].includes(u.role) &&
           typeof u.capable === "boolean" &&
           text(u.name) &&
@@ -1491,8 +1499,8 @@
     }
     for (const r of e.radio) {
       ok(
-        (r.from.id === "HQ" || ids.has(r.from.id)) &&
-          (r.to.id === "HQ" || ids.has(r.to.id)) &&
+        (r.from.id === "HQ" || ids.has(r.from.id)||e.mission&&Mission().agencyId(e,r.from.id)) &&
+          (r.to.id === "HQ" || ids.has(r.to.id)||e.mission&&Mission().agencyId(e,r.to.id)) &&
           text(r.kind) &&
           text(r.from.role) &&
           text(r.from.callsign) &&
@@ -1625,7 +1633,7 @@
       friendSnapshots,
       leader,
       linked,
-      applyKnowledge,
+      applyKnowledge,radio,moveUnit,
     },
     ORDERS,
     initialize,

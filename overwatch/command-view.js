@@ -255,7 +255,7 @@
     );
   }
   function render(s, { editable = true } = {}) {
-    if (![3, 4].includes(s?.schemaVersion))
+    if (![3, 4, 5].includes(s?.schemaVersion))
       return '<section class="panel">본부 저장 복구 후 지휘 훈련을 열 수 있습니다.</section>';
     if (s.commandExercise?.battle)
       return (

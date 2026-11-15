@@ -72,6 +72,8 @@
       suppressed: false,
     },
   };
+  const M=()=>root.OverwatchMissions||(typeof require==='function'?require('./missions.js'):null);
+  const rally=e=>e.mission?.extractionPoint||G.MAP.base;
   const parts = [
     "head",
     "chest",
@@ -136,6 +138,7 @@
     return u.health.wounds.some((w) => !w.treated);
   }
   function moveFactor(u) {
+    if(u.boardedBy||u.home)return 0;
     if (!u.health) return 1;
     if (!healthy(u) || untreated(u) || u.health.aid?.phase === "treating")
       return 0;
@@ -149,7 +152,7 @@
   function commandReady(u) {
     return (
       !u.health ||
-      (!u.health.aid && !u.carriedBy && !u.carrying && !untreated(u))
+      (!u.boardedBy&&!u.home&&!u.health.aid && !u.carriedBy && !u.carrying && !untreated(u))
     );
   }
   function snapshot(u) {
@@ -187,11 +190,11 @@
                 : u.prone
                   ? "prone"
                   : "standing",
-      carriedBy: u.carriedBy || null,
+      carriedBy: u.carriedBy || null,boardedBy:u.boardedBy||null,altitude:u.altitude||0,
     };
   }
   function begin(s, { scenario = "recon", seed } = {}) {
-    ok(s.schemaVersion === 4, "4단계 저장으로 전환해야 합니다.");
+    ok([4,5].includes(s.schemaVersion), "4단계 저장으로 전환해야 합니다.");
     ok(
       ["recon", "interdiction"].includes(scenario),
       "전장 연습 유형이 잘못되었습니다.",
@@ -359,6 +362,7 @@
     )
       return;
     u.health.kit--;
+    if(e.mission)u.medicalUses=(u.medicalUses||0)+1;
     const duration = u.medicalSkill ? 25 : 45;
     u.health.aid = {
       phase: "treating",
@@ -435,8 +439,8 @@
           if (u.id !== t.id && moveFactor(t) === 0) {
             u.carrying = t.id;
             t.carriedBy = u.id;
-            u.path = G.path(u, G.MAP.base);
-            u.goal = copy(G.MAP.base);
+            u.path = G.path(u, rally(e));
+            u.goal = copy(rally(e));
             u.state = "carrying";
           }
         }
@@ -449,7 +453,8 @@
           model: u.weapon.model,
         });
       }
-      if (u.side === "red" || u.side === "civilian") continue;
+      if(!u.side)u.capable=healthy(u);
+      if (u.side||u.boardedBy||u.home) continue;
       if (
         healthy(u) &&
         !untreated(u) &&
@@ -466,9 +471,8 @@
           t.x = u.x;
           t.y = u.y + 0.5;
           t.state = "carried";
-          if (G.distance(u, G.MAP.base) < 35) {
-            t.extracted = true;
-            u.extracted = true;
+          if (G.distance(u, rally(e)) < 35) {
+            if(!e.mission){t.extracted = true;u.extracted = true;}
             u.carrying = null;
             t.carriedBy = null;
             u.path = [];
@@ -482,7 +486,7 @@
         const q = qOf(e, u.id),
           buddy = e.world.units.find(
             (v) =>
-              v.id !== u.id &&
+              v.id !== u.id && !v.boardedBy&&!v.home &&
               qOf(e, v.id)?.callsign === q.callsign &&
               v.health.alive &&
               !v.carriedBy &&
@@ -497,8 +501,8 @@
             else {
               u.carrying = buddy.id;
               buddy.carriedBy = u.id;
-              u.path = G.path(u, G.MAP.base);
-              u.goal = copy(G.MAP.base);
+              u.path = G.path(u, rally(e));
+              u.goal = copy(rally(e));
               u.state = "carrying";
               const ev = I().event(e, "casualty-carried", {
                 actorId: u.id,
@@ -522,9 +526,9 @@
     }
   }
   function scanEnemy(e, u) {
-    const visible = e.world.units.filter(
+    const visible = [...e.world.units,...(e.mission?e.world.actors.filter(a=>a.side==='ally'):[])].filter(
       (v) =>
-        v.health.alive &&
+        v.health.alive && !v.boardedBy &&
         !v.extracted &&
         G.distance(u, v) <
           ((u.weapon.model === "SVD" ? 330 : 180) + G.elevation(u) * 3) *
@@ -560,6 +564,7 @@
   }
   function actorTick(s, e) {
     for (const u of e.world.actors) {
+      if(e.mission&&u.side==='ally'){M().actorTaskTick(s,e,u);continue;}
       if (!activeActor(u)) continue;
       if (u.health.aid) continue;
       if (untreated(u)) {
@@ -642,7 +647,7 @@
       !u.weapon.magazines.length &&
       u.weapon.reloadUntil === null &&
       G.distance(u, known) < 65 &&
-      u.sidearm.loaded > 0
+      (u.sidearm.loaded > 0||u.sidearm.magazines.length>0)
     ) {
       const old = u.weapon;
       u.weapon = u.sidearm;
@@ -880,7 +885,7 @@
       }
       for (const id of [q.observerId, q.sniperId]) {
         const u = unit(e, id);
-        if (!healthy(u) || untreated(u) || u.health.aid || u.carrying) continue;
+        if (!healthy(u) ||u.boardedBy||u.home|| untreated(u) || u.health.aid || u.carrying) continue;
         const target = q.contacts
           .filter(
             (c) =>
@@ -959,6 +964,7 @@
     friendlyTick(s, e);
     telemetry(s, e);
     const b = e.battle;
+    if(e.mission){M().tick(s,e);return;}
     b.noises = b.noises.filter((n) => e.time - n.time < 20);
     const confirmed = e.squads
       .flatMap((q) => q.contacts)
@@ -1037,6 +1043,7 @@
   function withdraw(s) {
     const e = s.commandExercise;
     ok(e?.battle && e.status === "running", "모의 전장이 진행 중이 아닙니다.");
+    if(e.mission)return M().requestReturn(s);
     e.battle.objective.returnRequested = true;
     for (const q of e.squads)
       if (I().leader(e, q)?.capable) D().issue(s, q.callsign, "withdraw");
@@ -1044,7 +1051,7 @@
   function project(s, f) {
     const e = s.commandExercise,
       b = e.battle;
-    return {
+    const projected={
       ...f,
       battle: {
         scenario: b.scenario,
@@ -1058,6 +1065,7 @@
         result: b.result ? copy(b.result) : null,
       },
     };
+    return e.mission?M().project(s,e,projected):projected;
   }
   function applyPayload(e, r) {
     if (r.payload?.objective === true) e.battle.knowledge.objective = true;
@@ -1196,7 +1204,7 @@
       if (u.side === "red")
         ok(
           Array.isArray(u.memory) &&
-            u.memory.length <= 6 &&
+            u.memory.length <= (e.mission?12:6) &&
             u.memory.every(
               (m) =>
                 typeof m.id === "string" &&
@@ -1307,6 +1315,7 @@
   const api = {
     WEAPONS,
     parts,
+    bandage,
     initialize,
     begin,
     setPaused,
