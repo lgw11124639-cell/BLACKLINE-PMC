@@ -469,7 +469,7 @@
                     "</button>",
                 )
                 .join("") +
-              "</div>"
+              '<p class="field-target-hint" data-field-target>관측수 자율 판단 · 지도 선택은 선택 사항</p><button type="button" data-field-clear-target>관심 구역 해제</button></div>'
             : "") +
           '</div><section class="panel field-comms"><div class="personnel-section-title"><h2>현장 무전</h2><span class="status-pill">LIVE COMMS</span><label class="field-audio-volume">음량<input data-overwatch-volume type="range" min="0" max="100" value="35" aria-label="전장 효과음 음량"></label><a class="audio-credits" href="audio/credits.html" target="_blank" rel="noopener">음원</a></div><ol class="field-radio" data-field-radio></ol></section><section class="panel"><div class="field-controls">' +
           (active
@@ -485,9 +485,7 @@
                     "×</button>",
                 )
                 .join("") +
-              "<button data-field-withdraw" +
-              (!editable ? " disabled" : "") +
-              ">조 전체 복귀 명령</button><button data-field-end" +
+              "<button data-field-end" +
               (!editable ? " disabled" : "") +
               ">연습 통제 종료</button>"
             : "<span>연습 종료</span>") +
@@ -496,27 +494,7 @@
           "</p><p data-field-weather></p><p data-field-objective>본부 수신 목표: " +
           (battle.objective ? "확인 완료 · 복귀 필요" : "관측·교전 보고 대기") +
           '</p><p class="muted">명령을 보내면 관측수가 판단해 이동·관측·교전을 이어갑니다. 본부·장비 화면에서도 작전은 계속됩니다. 백그라운드에서 돌아오면 자동으로 이어집니다. 2D/3D 전환은 전장 상태를 다시 생성하지 않습니다.</p>' +
-          (active
-            ? '<form data-field-command><label>저격조<select name="callsign">' +
-              f.squads
-                .map(
-                  (q) =>
-                    "<option" +
-                    (s.ui.fieldCallsign === q.callsign ? " selected" : "") +
-                    ">" +
-                    q.callsign +
-                    "</option>",
-                )
-                .join("") +
-              '</select></label><label>명령<select name="kind">' +
-              Object.entries(D.ORDERS)
-                .filter(([k]) => !["move", "observe"].includes(k))
-                .map(([k, v]) => '<option value="' + k + '">' + v + "</option>")
-                .join("") +
-              '</select></label><p class="field-target-hint" data-field-target>관측수 자율 판단 · 지도 선택은 선택 사항</p><button type="button" data-field-clear-target>관심 구역 해제</button><label>교전 방침 · 함께 송신<select name="roe"><option value="authorized">식별된 위협 교전 승인</option><option value="selfDefense">자위 대응</option><option value="hold">사격 금지</option></select></label><button type="submit"' +
-              (!editable ? " disabled" : "") +
-              ">명령 송신·자동 수행</button></form>"
-            : "") +
+          '<p class="muted">교전·사격 보류·은밀 회피는 관측수가 현장 정보를 보고 판단합니다.</p>' +
           "</section><div data-field-result>" +
           result(f) +
           '</div></section><aside><section class="panel"><h2>조원 상태 · 수신 정보</h2><div data-field-roster>' +
@@ -541,7 +519,8 @@
       "",
     );
     return html
-      .replace("연습 통제 종료", "작전 중단·철수").replace("연습 종료","실전 작전 종료")
+      .replace("연습 통제 종료", "작전 중단·철수")
+      .replace("연습 종료", "실전 작전 종료")
       .replace("조 전체 복귀 명령", "철수·제공 수송 요청");
   }
   function refresh(rootNode, s, { playing = false } = {}) {
@@ -694,31 +673,25 @@
         });
     });
     const quickTeam = rootNode.querySelector("[data-field-quick-team]");
-    const quickForm = rootNode.querySelector("[data-field-command]");
-    if (quickTeam && quickForm) {
-      quickTeam.value = quickForm.elements.callsign.value;
-      quickTeam.addEventListener(
-        "change",
-        () => (quickForm.elements.callsign.value = quickTeam.value),
-      );
+    if (quickTeam) {
+      quickTeam.value =
+        s.ui.fieldCallsign || lastFrame?.squads[0]?.callsign || "ALPHA";
+      quickTeam.dataset.fieldEditable = String(editable);
+      quickTeam.addEventListener("change", () => {
+        commit((next) => {
+          next.ui.fieldCallsign = quickTeam.value;
+        });
+      });
     }
     for (const b of rootNode.querySelectorAll("[data-field-quick]"))
       b.addEventListener("click", () => {
         if (!editable) return;
         const kind = b.dataset.fieldQuick,
-          team =
-            quickForm?.elements.callsign.value ||
-            lastFrame?.squads[0]?.callsign;
+          team = quickTeam?.value || lastFrame?.squads[0]?.callsign;
         execute((next) => {
           if (kind === "withdraw") return B.withdraw(next);
-          if (["cover", "recon"].includes(kind))
-            D.issue(
-              next,
-              team,
-              "roe",
-              null,
-              quickForm?.elements.roe.value || "authorized",
-            );
+          next.commandExercise.battle.observerAutonomy = true;
+          next.ui.fieldCallsign = team;
           D.issue(
             next,
             team,
@@ -776,39 +749,8 @@
           commit((next) => (next.fieldPreferences.view = b.dataset.fieldView));
       }),
     );
-    const commandForm = rootNode.querySelector("[data-field-command]");
-    if (commandForm && !commandForm.dataset.fieldBound) {
-      commandForm.dataset.fieldBound = "1";
-      commandForm.dataset.fieldEditable = String(editable);
-      commandForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (!editable) return;
-        const f = event.currentTarget;
-        execute((next) => {
-          next.ui.fieldCallsign = f.elements.callsign.value;
-          if (["cover", "recon"].includes(f.elements.kind.value))
-            D.issue(
-              next,
-              f.elements.callsign.value,
-              "roe",
-              null,
-              f.elements.roe.value,
-            );
-          D.issue(
-            next,
-            f.elements.callsign.value,
-            f.elements.kind.value,
-            ["cover", "recon"].includes(f.elements.kind.value) && selection
-              ? { ...selection }
-              : null,
-            f.elements.roe.value,
-          );
-        });
-      });
-    }
     const pick = (p) => {
-      const form = rootNode.querySelector("[data-field-command]");
-      if (form?.dataset.fieldEditable !== "true" || !p) return;
+      if (quickTeam?.dataset.fieldEditable !== "true" || !p) return;
       if (root.OverwatchGeometry.blocked(p)) {
         const hint = rootNode.querySelector("[data-field-target]");
         if (hint)

@@ -173,3 +173,45 @@ test("routine status telemetry stays fresh while routine radio updates stay hidd
     assert.ok(f.radio.some((v) => v.id === r.id));
   C.validate(s);
 });
+
+test("observer autonomy quietly evades a fresh close threat during reconnaissance", () => {
+  const { s, e, u } = scenario(200);
+  const q = e.squads[0],
+    target = q.contacts[0];
+  e.commands.find((c) => c.id === q.commandId).kind = "recon";
+  e.battle.observerAutonomy = true;
+  const before = Math.hypot(u.x - target.x, u.y - target.y);
+  assert.equal(B.observerDecision(s, e, q, u, target), false);
+  assert.equal(q.fieldDecision.mode, "evade");
+  assert.ok(u.path.length > 0);
+  assert.ok(Math.hypot(u.goal.x - target.x, u.goal.y - target.y) > before);
+  assert.equal(u.weapon.spent, 0);
+  C.validate(s);
+  const copy = C.clone(s);
+  C.validate(copy);
+  assert.deepEqual(
+    copy.commandExercise.squads[0].fieldDecision,
+    q.fieldDecision,
+  );
+});
+
+test("observer approves cover fire independently of the old HQ hold setting but protects civilians", () => {
+  const { s, e } = scenario(500);
+  const q = e.squads[0],
+    u = e.world.units[1],
+    target = q.contacts[0];
+  e.commands.find((c) => c.id === q.commandId).kind = "cover";
+  q.roe = "hold";
+  e.battle.observerAutonomy = true;
+  u.path = [];
+  assert.equal(B.observerDecision(s, e, q, u, target), true);
+  q.contacts.push({
+    id: "observed-civilian",
+    x: target.x - 2,
+    y: target.y,
+    lastSeen: e.time,
+    confidence: 0.95,
+    classification: "unarmed-person",
+  });
+  assert.equal(B.observerDecision(s, e, q, u, target), false);
+});

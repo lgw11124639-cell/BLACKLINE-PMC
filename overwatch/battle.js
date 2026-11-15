@@ -1233,12 +1233,118 @@
     );
     return true;
   }
+  function observerDecision(s, e, q, u, target) {
+    const main = e.commands.find((c) => c.id === q.commandId),
+      danger = [q.observerId, q.sniperId].some((id) => {
+        const teammate = unit(e, id);
+        return (
+          teammate &&
+          G.distance(u, teammate) <= 600 &&
+          e.time - teammate.lastThreatAt < 25
+        );
+      }),
+      covert =
+        !main || ["recon", "observe", "hold", "withdraw"].includes(main.kind),
+      range = G.distance(u, target),
+      civilianRisk = q.contacts.some(
+        (c) =>
+          c.id !== target.id &&
+          e.time - c.lastSeen <= 8 &&
+          ["unarmed-person", "friendly-person", "unknown"].includes(
+            c.classification,
+          ) &&
+          (G.distance(c, target) < 12 ||
+            (pointSegment(c, u, target) < 3 && G.distance(u, c) < range)),
+      );
+    let mode = "hold",
+      reason = "식별·사격 조건 확보 전 사격 보류";
+    if (civilianRisk) reason = "민간인·미식별 인원 사격선 위험, 사격 보류";
+    else if (covert && !danger) {
+      mode = range < 300 && main?.kind !== "withdraw" ? "evade" : "conceal";
+      reason =
+        mode === "evade"
+          ? "근거리 위협 관측, 은밀 우회·거리 확보"
+          : "은밀 관측 유지, 선제 사격 보류";
+    } else if (
+      range <= WEAPONS[u.weapon.model].range &&
+      G.clear(u, target) &&
+      !u.path.length
+    ) {
+      mode = "engage";
+      reason = danger
+        ? "직접 위협 확인, 엄폐·자위 대응"
+        : "식별된 위협, 안전한 사격선 확보 후 엄호 사격";
+    }
+    if (mode === "evade" && e.time - (q.lastEvadeAt ?? -100) >= 30) {
+      q.lastEvadeAt = e.time;
+      for (const id of [q.observerId, q.sniperId]) {
+        const person = unit(e, id);
+        if (!healthy(person) || !commandReady(person)) continue;
+        const d = Math.max(1, G.distance(person, target)),
+          away = G.project({
+            x: Math.max(
+              20,
+              Math.min(
+                G.MAP.width - 20,
+                person.x + ((person.x - target.x) / d) * 100,
+              ),
+            ),
+            y: Math.max(
+              20,
+              Math.min(
+                G.MAP.height - 20,
+                person.y + ((person.y - target.y) / d) * 100,
+              ),
+            ),
+          }),
+          cover = coverPoint(e, person, target),
+          p =
+            cover &&
+            !G.clear({ ...cover, stance: "prone" }, target) &&
+            G.distance(cover, target) >= d
+              ? cover
+              : away,
+          path = G.path(person, p);
+        if (path.length && G.distance(p, target) > d) {
+          person.path = path;
+          person.goal = { x: p.x, y: p.y };
+          person.prone = false;
+          person.stance = "standing";
+          person.state = "moving";
+        }
+      }
+    }
+    if (
+      (u.role === "sniper" ||
+        mode === "evade" ||
+        !healthy(unit(e, q.sniperId))) &&
+      (!q.fieldDecision || q.fieldDecision.mode !== mode)
+    ) {
+      q.fieldDecision = {
+        mode,
+        reason,
+        at: e.time,
+        contactId: target.id,
+        observedAt: target.lastSeen,
+      };
+      const ev = I().event(e, "observer-field-decision", {
+        callsign: q.callsign,
+        contactId: target.id,
+        observedAt: target.lastSeen,
+        mode,
+        reason,
+      });
+      I().report(s, e, q, "decision", q.callsign + ". " + reason + ".", ev);
+    }
+    return mode === "engage";
+  }
   function friendlyTick(s, e) {
     for (const q of e.squads) {
       const main = e.commands.find((c) => c.id === q.commandId),
         threat = q.contacts.find(
           (c) =>
             c.classification === "armed-person" &&
+            !["dead", "down"].includes(c.condition) &&
             c.confidence >= 0.82 &&
             e.time - c.lastSeen <= 3 &&
             G.distance(I().leader(e, q), c) < 350,
@@ -1288,11 +1394,18 @@
           })
           .sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
         if (!target) continue;
-        u.combatActive = q.roe !== "hold";
+        const autonomous = !!e.battle.observerAutonomy;
+        const permitted = autonomous
+          ? observerDecision(s, e, q, u, target)
+          : q.roe !== "hold";
+        u.combatActive = permitted;
         if (seekCover(e, u, target)) continue;
         if (u.role === "sniper" && u.path.length) continue;
         const selfDefense = e.time - u.lastThreatAt < 25;
-        if (q.roe === "hold" || (q.roe === "selfDefense" && !selfDefense))
+        if (
+          !permitted ||
+          (!autonomous && q.roe === "selfDefense" && !selfDefense)
+        )
           continue;
         if (
           u.role === "observer" &&
@@ -1617,14 +1730,27 @@
     );
   }
   function knownFriendEvidence(e, f) {
-    return !!e.mission?.log.some(ev=>ev.type==='transport-home'&&ev.friends?.some(x=>x.id===f.id&&x.observedAt===f.observedAt&&x.x===f.x&&x.y===f.y)) || !!e.battle?.delivered.some((p) =>
-      p.friends.some(
-        (x) =>
-          x.id === f.id &&
-          x.observedAt === f.observedAt &&
-          x.x === f.x &&
-          x.y === f.y,
-      ),
+    return (
+      !!e.mission?.log.some(
+        (ev) =>
+          ev.type === "transport-home" &&
+          ev.friends?.some(
+            (x) =>
+              x.id === f.id &&
+              x.observedAt === f.observedAt &&
+              x.x === f.x &&
+              x.y === f.y,
+          ),
+      ) ||
+      !!e.battle?.delivered.some((p) =>
+        p.friends.some(
+          (x) =>
+            x.id === f.id &&
+            x.observedAt === f.observedAt &&
+            x.x === f.x &&
+            x.y === f.y,
+        ),
+      )
     );
   }
   function validate(e) {
@@ -1864,6 +1990,7 @@
     applyPayload,
     summarize,
     knownFriendEvidence,
+    observerDecision,
     validate,
     withdraw,
     injure,

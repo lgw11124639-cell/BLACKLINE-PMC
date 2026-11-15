@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.15.08",
+  const VERSION = "2026.11.15.09",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -223,6 +223,7 @@
       ) {
         const live = Core.clone(state);
         live.commandExercise.battle.continuous = true;
+        live.commandExercise.battle.observerAutonomy = true;
         live.clock.emergencyPause = false;
         Battle.setPaused(live, false);
         try {
@@ -272,6 +273,7 @@
         next.commandExercise.status === "running"
       ) {
         next.commandExercise.battle.continuous = true;
+        next.commandExercise.battle.observerAutonomy = true;
         next.clock.emergencyPause = false;
         Battle.setPaused(next, false);
       }
