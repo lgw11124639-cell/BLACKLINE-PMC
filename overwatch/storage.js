@@ -4,6 +4,22 @@
   const Core =
     root.OverwatchCore ||
     (typeof require === "function" ? require("./core.js") : null);
+  const gzip =
+    root.fflate ||
+    (typeof require === "function" ? require("./vendor/fflate.js") : null);
+  const gzipPrefix = "OWG1:";
+  function unpackGzip(value) {
+    const binary = atob(value.slice(gzipPrefix.length));
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    if (bytes.length < 18 || !gzip)
+      throw Error("압축 저장을 읽을 수 없습니다.");
+    const length = new DataView(bytes.buffer).getUint32(bytes.length - 4, true);
+    if (length > 32 * 1024 * 1024)
+      throw Error("저장 용량이 지원 범위를 초과했습니다.");
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      gzip.gunzipSync(bytes),
+    );
+  }
   const KEYS = Object.freeze({
     primary: "blackline_overwatch_v1",
     backup: "blackline_overwatch_v1_backup",
@@ -26,7 +42,12 @@
       storage === root.localStorage && codec?.rawGet
         ? codec.rawGet(key)
         : storage.getItem(key);
-    const decode = (value) => (codec?.unpack ? codec.unpack(value) : value);
+    const decode = (value) =>
+      value?.startsWith(gzipPrefix)
+        ? unpackGzip(value)
+        : codec?.unpack
+          ? codec.unpack(value)
+          : value;
     function parse(value) {
       if (value === null) return null;
       return Core.validate(JSON.parse(decode(value)));
@@ -96,8 +117,19 @@
     }
     function encode(s) {
       const json = JSON.stringify(s);
-      if (!codec?.pack || json.length < 4096) return json;
-      const packed = codec.pack(json);
+      if (json.length < 4096) return json;
+      if (gzip) {
+        const bytes = gzip.gzipSync(new TextEncoder().encode(json), {
+          level: 6,
+          mtime: 0,
+        });
+        let binary = "";
+        for (let i = 0; i < bytes.length; i += 16384)
+          binary += String.fromCharCode(...bytes.subarray(i, i + 16384));
+        const packed = gzipPrefix + btoa(binary);
+        if (packed.length < json.length) return packed;
+      }
+      const packed = codec?.pack ? codec.pack(json) : json;
       return packed.length < json.length ? packed : json;
     }
     function persist(
