@@ -101,7 +101,7 @@
   function initialize(s) {
     ok(s.schemaVersion === 3, "3단계 저장에서 전환해야 합니다.");
     s.schemaVersion = 4;
-    s.fieldPreferences = { view: "3d" };
+    s.fieldPreferences = { view: "illustrated", presentation: 2 };
     return s;
   }
   function health() {
@@ -152,7 +152,7 @@
       (!u.health.aid && !u.carriedBy && !u.carrying && !untreated(u))
     );
   }
-  function snapshot(u) {
+  function snapshot(u, now = null) {
     return {
       health: {
         alive: u.health.alive,
@@ -172,8 +172,37 @@
         ...copy(u.weapon),
         name: WEAPONS[u.weapon.model].name,
         capacity: WEAPONS[u.weapon.model].capacity,
+        range: WEAPONS[u.weapon.model].range,
       },
       heading: u.heading || 0,
+      mobility: moveFactor(u) > 0,
+      combatActive: !!u.combatActive,
+      visionRange: u.visionRange || null,
+      visionHalfAngle: u.visionHalfAngle || null,
+      activity: !u.health.alive
+        ? "dead"
+        : !u.health.conscious
+          ? "down"
+          : u.health.aid
+            ? "aid"
+            : u.path?.length && moveFactor(u) > 0
+              ? "moving"
+              : u.lastShotAt != null && now !== null && now - u.lastShotAt <= 1
+                ? "firing"
+                : u.role === "observer" && u.observationAt != null
+                  ? "observing"
+                  : u.weapon.targetId && u.weapon.aimSince != null
+                    ? "aiming"
+                    : "guarding",
+      faction:
+        u.faction ||
+        (u.side === "civilian"
+          ? "civilian"
+          : u.side === "ally"
+            ? "allied"
+            : u.side === "red"
+              ? "regular"
+              : "blackline"),
       pose: !u.health.alive
         ? "dead"
         : u.carriedBy
@@ -184,19 +213,20 @@
               ? "aid"
               : u.carrying
                 ? "carrying"
-                : u.prone
-                  ? "prone"
-                  : "standing",
+                : u.stance || (u.prone ? "prone" : "standing"),
       carriedBy: u.carriedBy || null,
     };
   }
-  function begin(s, { scenario = "recon", seed } = {}) {
+  function begin(
+    s,
+    { scenario = "recon", seed, mapId = "command-range" } = {},
+  ) {
     ok(s.schemaVersion === 4, "4단계 저장으로 전환해야 합니다.");
     ok(
-      ["recon", "interdiction"].includes(scenario),
+      ["recon", "interdiction", "support"].includes(scenario),
       "전장 연습 유형이 잘못되었습니다.",
     );
-    const e = D().begin(s);
+    const e = D().begin(s, { mapId });
     const baseSeed =
       (seed ??
         (s.commandSequence * 2654435761) ^
@@ -214,7 +244,7 @@
       packets: [],
       delivered: [],
       lastPacket: -2,
-      knowledge: { effects: [], objective: false },
+      knowledge: { effects: [], objective: false, decals: [] },
       objective: { done: false, reported: false, returnRequested: false },
       weather: {
         visibility: scenario === "recon" ? 1 : 0.82,
@@ -250,8 +280,8 @@
       { x: 930, y: 570 },
     ];
     for (let i = 0; i < 4; i++) {
-      const p = anchors[i],
-        dx = (rand(e) - 0.5) * 24,
+      const p = G.MAP.spawnPoints?.[i] || anchors[i],
+        dx = G.MAP.spawnPoints ? 0 : (rand(e) - 0.5) * 24,
         model = i === 1 ? "SVD" : "AKM";
       e.world.actors.push({
         id: "opposition-" + i,
@@ -266,11 +296,13 @@
         kind: "training-target",
         armed: true,
         side: "red",
+        faction: i < 2 ? "regular" : "insurgent",
+        specialty: model === "SVD" ? "sniper" : "rifleman",
         health: health(),
         weapon: weapon(model, 2),
         sidearm: weapon("G19", 1),
         skill: 47 + i * 4,
-        heading: Math.PI,
+        heading: Math.atan2(40, 60 - dx),
         state: "patrol",
         memory: [],
         path: [],
@@ -297,6 +329,7 @@
       kind: "unarmed-target",
       armed: false,
       side: "civilian",
+      faction: "civilian",
       health: health(),
       weapon: weapon("G19", 0),
       sidearm: weapon("G19", 0),
@@ -313,6 +346,56 @@
       carrying: null,
       carriedBy: null,
     });
+    if (G.MAP.width < 500)
+      for (const a of e.world.actors) {
+        const p = G.project(a);
+        a.x = p.x;
+        a.y = p.y;
+        a.route = [{ ...p }, G.project({ x: p.x + 8, y: p.y + 6 })];
+      }
+    if (scenario === "support") {
+      const civilian = e.world.actors.find((a) => a.side === "civilian");
+      const place = G.project(
+        G.MAP.sector
+          ? { x: G.MAP.sector.x - 16, y: G.MAP.sector.y + 25 }
+          : { x: 370, y: 510 },
+      );
+      Object.assign(civilian, place, {
+        route: [place, { ...place }],
+        state: "waiting",
+        protected: true,
+        safe: false,
+      });
+      for (let i = 0; i < 2; i++) {
+        const p = G.project({
+          x: G.MAP.base.x + 24 + i * 12,
+          y: G.MAP.base.y - 12,
+        });
+        const ally = copy(civilian);
+        Object.assign(ally, {
+          id: "support-" + i,
+          name: "지원 분대 " + (i + 1),
+          x: p.x,
+          y: p.y,
+          side: "ally",
+          faction: "allied",
+          kind: "allied-support",
+          armed: true,
+          weapon: weapon("HK416", 4),
+          sidearm: weapon("G19", 2),
+          health: health(),
+          skill: 70,
+          protected: false,
+          state: "advancing",
+          memory: [],
+          route: [p, G.project(place)],
+          waypoint: 0,
+          path: [],
+          goal: null,
+        });
+        e.world.actors.push(ally);
+      }
+    }
     // Initial queued range-ready packet is stale: first actual field telemetry supplies loadout/health.
     const ev = I().event(e, "field-started", { scenario, seed: e.battle.rng });
     for (const q of e.squads)
@@ -388,6 +471,11 @@
     );
   }
   function beforeTick(s, e) {
+    for (const u of all(e))
+      u.combatActive =
+        e.time - u.lastThreatAt < 8 ||
+        (u.lastShotAt != null && e.time - u.lastShotAt < 12);
+
     for (const u of all(e)) {
       const h = u.health;
       if (!h?.alive) continue;
@@ -415,7 +503,13 @@
           for (const w of t.health.wounds) w.treated = true;
           h.aid = null;
           u.path = a.resumePath;
-          if (healthy(t) && moveFactor(t) > 0) t.prone = false;
+          if (healthy(t) && moveFactor(t) > 0) {
+            t.prone = false;
+            t.stance = "standing";
+            if (t.state === "wounded")
+              t.state = t.path?.length ? "moving" : "holding";
+          }
+          u.state = u.path?.length ? "moving" : "holding";
           u.goal = a.resumeGoal;
           if (!u.path.length && u.goal && moveFactor(u) > 0)
             u.path = G.path(u, u.goal);
@@ -432,7 +526,7 @@
             ev,
             { friends: friendsFor(e, u) },
           );
-          if (u.id !== t.id && moveFactor(t) === 0) {
+          if (u.id !== t.id && !t.health.aid && moveFactor(t) === 0) {
             u.carrying = t.id;
             t.carriedBy = u.id;
             u.path = G.path(u, G.MAP.base);
@@ -449,7 +543,7 @@
           model: u.weapon.model,
         });
       }
-      if (u.side === "red" || u.side === "civilian") continue;
+      if (u.side) continue;
       if (
         healthy(u) &&
         !untreated(u) &&
@@ -466,7 +560,7 @@
           t.x = u.x;
           t.y = u.y + 0.5;
           t.state = "carried";
-          if (G.distance(u, G.MAP.base) < 35) {
+          if (G.distance(u, G.MAP.base) < (G.MAP.width < 500 ? 8 : 35)) {
             t.extracted = true;
             u.extracted = true;
             u.carrying = null;
@@ -486,7 +580,14 @@
               qOf(e, v.id)?.callsign === q.callsign &&
               v.health.alive &&
               !v.carriedBy &&
-              ((untreated(v) && h.kit > 0) ||
+              !v.health.aid &&
+              ((untreated(v) &&
+                h.kit > 0 &&
+                (!u.combatActive ||
+                  v.health.bloodMl < 3300 ||
+                  v.health.wounds.some(
+                    (w) => !w.treated && w.severity === 3,
+                  ))) ||
                 (!untreated(v) && moveFactor(v) === 0)) &&
               G.distance(u, v) < 80 &&
               G.clear(u, v),
@@ -522,12 +623,20 @@
     }
   }
   function scanEnemy(e, u) {
-    const visible = e.world.units.filter(
+    const targets =
+      u.side === "ally"
+        ? e.world.actors.filter((v) => v.side === "red")
+        : [
+            ...e.world.units,
+            ...e.world.actors.filter((v) => v.side === "ally"),
+          ];
+    const visible = targets.filter(
       (v) =>
         v.health.alive &&
         !v.extracted &&
         G.distance(u, v) <
-          ((u.weapon.model === "SVD" ? 330 : 180) + G.elevation(u) * 3) *
+          ((u.weapon.model === "SVD" ? 750 : u.side === "ally" ? 350 : 240) +
+            G.elevation(u) * 3) *
             e.battle.weather.visibility &&
         G.clear(u, v) &&
         Math.abs(
@@ -536,7 +645,7 @@
             Math.cos(Math.atan2(v.y - u.y, v.x - u.x) - u.heading),
           ),
         ) <
-          Math.PI * 0.65,
+          Math.PI * 0.42,
     );
     for (const v of visible) {
       let m = u.memory.find((m) => m.id === v.id);
@@ -558,15 +667,135 @@
       )
       .sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
   }
+  function coverPoint(e, u, threat) {
+    const options = [];
+    for (const c of G.MAP.covers || [])
+      for (const dx of [-1, 1])
+        for (const dy of [-1, 1]) {
+          const p = {
+            x: c.x + dx * (c.w / 2 + 1),
+            y: c.y + dy * (c.h / 2 + 1),
+          };
+          if (
+            G.blocked(p) ||
+            G.distance(u, p) > 25 ||
+            e.world.units.some(
+              (v) =>
+                v.id !== u.id &&
+                healthy(v) &&
+                G.distance(v.goal || v, p) < (u.side ? 0.8 : 14),
+            )
+          )
+            continue;
+          const route = G.path(u, p);
+          if (!route.length && G.distance(u, p) > 1) continue;
+          const score =
+            (G.clear({ ...p, stance: "standing" }, threat) ? 15 : -20) +
+            (!G.clear({ ...p, stance: "prone" }, threat) ? 25 : 0) -
+            G.distance(u, p);
+          options.push({ ...p, coverId: c.id, score });
+        }
+    options.sort((a, b) => b.score - a.score);
+    return options[0] || null;
+  }
+  function seekCover(e, u, threat) {
+    if (e.time - u.lastThreatAt > 8) return false;
+    if (!u.coverGoal || G.distance(u, u.coverGoal) < 1) {
+      const p = coverPoint(e, u, threat);
+      if (!p || G.distance(u, p) < 1) return false;
+      u.coverGoal = { x: p.x, y: p.y };
+      u.path = G.path(u, p);
+      u.goal = copy(u.coverGoal);
+      u.state = "cover-move";
+      u.prone = false;
+      u.stance = "standing";
+      I().event(e, "cover-selected", {
+        actorId: u.id,
+        coverId: p.coverId,
+        position: u.coverGoal,
+      });
+    }
+    return G.distance(u, u.coverGoal) > 1;
+  }
   function actorTick(s, e) {
     for (const u of e.world.actors) {
       if (!activeActor(u)) continue;
       if (u.health.aid) continue;
-      if (untreated(u)) {
+      if (
+        untreated(u) &&
+        (!u.combatActive ||
+          u.health.bloodMl < 3300 ||
+          u.health.wounds.some((w) => !w.treated && w.severity === 3))
+      ) {
         bandage(s, e, u, u);
         continue;
       }
+      if (u.side === "ally") {
+        const threat = scanEnemy(e, u);
+        if (threat) {
+          u.combatActive = true;
+          if (seekCover(e, u, threat)) {
+            advanceActor(e, u, u.coverGoal, 0.9);
+            continue;
+          }
+          u.state = "covering";
+          if (e.time - threat.firstSeen >= 3) fire(s, e, u, threat);
+        } else {
+          const person = e.world.actors.find(
+            (v) =>
+              v.side === "civilian" && v.protected && v.health.alive && !v.safe,
+          );
+          const goal = person
+            ? G.distance(u, person) > 8
+              ? G.project({
+                  x: person.x + (u.id.endsWith("0") ? -4 : 4),
+                  y: person.y + 3,
+                })
+              : G.MAP.base
+            : G.MAP.base;
+          u.state = "advancing";
+          advanceActor(e, u, goal, 0.9);
+        }
+        continue;
+      }
       if (u.side === "civilian") {
+        const danger = e.battle.noises.find(
+          (n) =>
+            e.time - n.time < 8 && G.distance(u, n) < Math.min(n.range, 140),
+        );
+        if (danger) {
+          u.state = "fleeing";
+          u.stance = "standing";
+          const safe = G.project({
+            x: u.x + (u.x - danger.x) * 0.8,
+            y: u.y + (u.y - danger.y) * 0.8,
+          });
+          if (G.distance(u, safe) > 2) advanceActor(e, u, safe, 0.95);
+          else {
+            u.state = "sheltering";
+            u.stance = "kneeling";
+          }
+          continue;
+        }
+        if (u.protected) {
+          const guardian = e.world.actors.find(
+            (a) => a.side === "ally" && healthy(a) && G.distance(u, a) < 14,
+          );
+          if (G.distance(u, G.MAP.base) < 8) {
+            u.safe = true;
+            u.state = "safe";
+            continue;
+          }
+          if (guardian) {
+            u.state = "walking";
+            advanceActor(e, u, G.MAP.base, 0.6);
+          } else {
+            u.state = "sheltering";
+            u.stance = "kneeling";
+          }
+          continue;
+        }
+        u.state = "walking";
         const p = u.route[u.waypoint];
         if (G.distance(u, p) < 1)
           u.waypoint = (u.waypoint + 1) % u.route.length;
@@ -575,6 +804,12 @@
       }
       const seen = scanEnemy(e, u);
       if (seen) {
+        u.combatActive = true;
+        if (seekCover(e, u, seen)) {
+          advanceActor(e, u, u.coverGoal, 0.85);
+          continue;
+        }
+        u.path = [];
         u.heading = Math.atan2(seen.y - u.y, seen.x - u.x);
         u.prone = e.time - u.lastThreatAt < 30;
         u.state = u.prone ? "covering" : "aiming";
@@ -592,8 +827,22 @@
         if (noise && e.time - u.lastNoiseAt > 15) {
           u.lastNoiseAt = e.time;
           const p = {
-            x: Math.max(20, Math.min(1180, Math.round(noise.x / 80) * 80)),
-            y: Math.max(20, Math.min(780, Math.round(noise.y / 80) * 80)),
+            x: Math.max(
+              12,
+              Math.min(
+                G.MAP.width - 12,
+                Math.round(noise.x / Math.min(80, G.MAP.width / 12)) *
+                  Math.min(80, G.MAP.width / 12),
+              ),
+            ),
+            y: Math.max(
+              12,
+              Math.min(
+                G.MAP.height - 12,
+                Math.round(noise.y / Math.min(80, G.MAP.width / 12)) *
+                  Math.min(80, G.MAP.width / 12),
+              ),
+            ),
           };
           u.path = G.path(u, p);
           u.goal = p;
@@ -614,6 +863,13 @@
     }
   }
   function advanceActor(e, u, p, amount) {
+    if (!u.navGoal || G.distance(u.navGoal, p) > 2) {
+      u.navGoal = copy(p);
+      u.navPath = G.path(u, p);
+    }
+    while (u.navPath?.length && G.distance(u, u.navPath[0]) < 0.7)
+      u.navPath.shift();
+    if (u.navPath?.length) p = u.navPath[0];
     const d = G.distance(u, p);
     if (d < 0.01) return;
     const step = Math.min(d, amount * moveFactor(u)),
@@ -621,8 +877,34 @@
         x: u.x + ((p.x - u.x) * step) / d,
         y: u.y + ((p.y - u.y) * step) / d,
       };
+    if (
+      all(e).some(
+        (v) => v.id !== u.id && v.health?.alive && G.distance(next, v) < 0.8,
+      )
+    ) {
+      const angle = Math.atan2(p.y - u.y, p.x - u.x);
+      const side = [1, -1]
+        .map((n) => ({
+          x: u.x + Math.cos(angle + (n * Math.PI) / 2) * step,
+          y: u.y + Math.sin(angle + (n * Math.PI) / 2) * step,
+        }))
+        .find(
+          (q) =>
+            !G.blocked(q) &&
+            G.clear(u, q, true) &&
+            !all(e).some(
+              (v) => v.id !== u.id && v.health?.alive && G.distance(q, v) < 0.8,
+            ),
+        );
+      if (!side) return;
+      next.x = side.x;
+      next.y = side.y;
+    }
     if (G.clear(u, next, true)) {
-      if (step > 0) u.prone = false;
+      if (step > 0) {
+        u.prone = false;
+        u.stance = "standing";
+      }
       u.heading = Math.atan2(p.y - u.y, p.x - u.x);
       u.x = next.x;
       u.y = next.y;
@@ -636,7 +918,45 @@
       I().event(e, "reload-started", { actorId: u.id, until: w.reloadUntil });
     }
   }
+  function stanceOf(u) {
+    return u.stance || (u.prone ? "prone" : "standing");
+  }
+  function chooseStance(e, u, known) {
+    const distance = G.distance(u, known);
+    let desired =
+      u.path?.length || distance < 65
+        ? "standing"
+        : distance > 220
+          ? "prone"
+          : "kneeling";
+    // A low firing position is useful only if it preserves the actual observed firing lane.
+    const options =
+      desired === "prone"
+        ? ["prone", "kneeling", "standing"]
+        : desired === "kneeling"
+          ? ["kneeling", "standing"]
+          : ["standing"];
+    desired =
+      options.find((p) =>
+        G.clear({ ...u, stance: p, prone: p === "prone" }, known),
+      ) || "standing";
+    if (stanceOf(u) !== desired)
+      I().event(e, "stance-changed", {
+        actorId: u.id,
+        stance: desired,
+        reason:
+          distance < 65
+            ? "close-threat"
+            : desired === "prone"
+              ? "stable-long-range"
+              : "clear-firing-lane",
+      });
+    u.stance = desired;
+    u.prone = desired === "prone";
+    return desired;
+  }
   function fire(s, e, u, known) {
+    G.activate(e.mapId || "command-range");
     if (
       u.weapon.loaded === 0 &&
       !u.weapon.magazines.length &&
@@ -654,14 +974,15 @@
       target = unit(e, known.id);
     if (
       !target ||
+      target.side === "civilian" ||
       !healthy(u) ||
-      untreated(u) ||
       u.health.aid ||
       w.reloadUntil !== null ||
       e.time < w.nextFireAt
     )
       return;
     const d = G.distance(u, known);
+    chooseStance(e, u, known);
     if (d > stats.range || !G.clear(u, known)) return;
     if (!w.loaded) {
       reload(e, u);
@@ -672,6 +993,8 @@
       w.aimSince = e.time;
       return;
     }
+    // Aim at the observed position, never at the hidden truth position.
+    u.heading = Math.atan2(known.y - u.y, known.x - u.x);
     const aimSeconds = u.role === "sniper" || w.model === "SVD" ? 7 : 3;
     if (e.time - w.aimSince < aimSeconds) return;
     // Fire at observed coordinates, never teleport aim to an unseen target's new position.
@@ -680,7 +1003,16 @@
         1 + u.health.wounds.filter((x) => /Arm/.test(x.part)).length * 0.7,
       sigma = Math.max(
         0.035,
-        stats.dispersion * d * (1.55 - u.skill / 100) * movement * armPenalty,
+        stats.dispersion *
+          d *
+          (1.55 - u.skill / 100) *
+          movement *
+          armPenalty *
+          (stanceOf(u) === "prone"
+            ? 0.7
+            : stanceOf(u) === "kneeling"
+              ? 0.86
+              : 1),
       ),
       a = rand(e),
       b = rand(e),
@@ -707,6 +1039,7 @@
       )
     )
       return;
+    u.lastShotAt = e.time;
     w.loaded--;
     w.spent++;
     w.condition = Math.max(0, w.condition - 0.003);
@@ -714,13 +1047,35 @@
     w.aimSince = e.time;
     const impact = { x: known.x + dx, y: known.y },
       actualOffset = G.distance(target, known),
-      vertical = (known.condition === "prone" ? 0.3 : 1.15) + dz;
+      vertical =
+        (known.condition === "prone"
+          ? 0.3
+          : known.condition === "kneeling"
+            ? 0.8
+            : 1.15) + dz;
+    const targetHeight =
+      stanceOf(target) === "prone"
+        ? 0.6
+        : stanceOf(target) === "kneeling"
+          ? 1.25
+          : 1.85;
     const hit =
       actualOffset < 0.6 &&
-      Math.abs(dx) < (target.prone ? 0.25 : 0.45) &&
+      Math.abs(dx) < (stanceOf(target) === "prone" ? 0.25 : 0.45) &&
       vertical > 0 &&
-      vertical < (target.prone ? 0.6 : 1.85) &&
-      G.clear(u, target);
+      vertical < targetHeight &&
+      G.clear(
+        {
+          ...u,
+          eyeHeight:
+            stanceOf(u) === "prone"
+              ? 0.4
+              : stanceOf(u) === "kneeling"
+                ? 1.05
+                : 1.45,
+        },
+        { ...target, eyeHeight: vertical },
+      );
     const shot = {
       id: "shot-" + ++e.sequence,
       time: e.time,
@@ -733,8 +1088,14 @@
       hit,
       part: null,
     };
+    if (G.distance(target, impact) < 12) {
+      target.combatActive = true;
+      target.lastThreatAt = e.time;
+      target.prone = true;
+      target.stance = "prone";
+    }
     if (hit && target.health.alive) {
-      const bodyHeight = target.prone ? vertical * 3 : vertical;
+      const bodyHeight = vertical * (1.85 / targetHeight);
       const part =
         bodyHeight > 1.55
           ? "head"
@@ -769,8 +1130,7 @@
       from: shot.from,
       to: shot.to,
     });
-    target.lastThreatAt = e.time;
-    target.prone = true;
+    u.combatActive = true;
     if (u.side !== "red")
       causeReport(
         s,
@@ -880,7 +1240,7 @@
       }
       for (const id of [q.observerId, q.sniperId]) {
         const u = unit(e, id);
-        if (!healthy(u) || untreated(u) || u.health.aid || u.carrying) continue;
+        if (!healthy(u) || u.health.aid || u.carrying) continue;
         const target = q.contacts
           .filter(
             (c) =>
@@ -890,16 +1250,24 @@
           )
           .filter((c) => {
             const t = unit(e, c.id);
-            return t && !["down", "dead"].includes(c.condition);
+            return (
+              t && t.side === "red" && !["down", "dead"].includes(c.condition)
+            );
           })
           .sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
         if (!target) continue;
+        u.combatActive = q.roe !== "hold";
+        if (seekCover(e, u, target)) continue;
         if (u.role === "sniper" && u.path.length) continue;
         const selfDefense = e.time - u.lastThreatAt < 25;
         if (q.roe === "hold" || (q.roe === "selfDefense" && !selfDefense))
           continue;
-        if (u.role === "observer" && G.distance(u, target) > 220) continue;
-        u.prone = true;
+        if (
+          u.role === "observer" &&
+          ((!selfDefense && G.distance(u, target) > 65) ||
+            G.distance(u, target) > 220)
+        )
+          continue;
         fire(s, e, u, target);
       }
     }
@@ -927,6 +1295,31 @@
             eventId: shot.id,
             time: shot.time,
             kind: "shot",
+            impactVisible: G.clear(I().leader(e, q), shot.to),
+            actorId: shot.actorId,
+            targetId:
+              q.observerId === shot.targetId ||
+              q.sniperId === shot.targetId ||
+              q.contacts.some(
+                (c) =>
+                  c.id === shot.targetId &&
+                  e.time - c.lastSeen <= 2 &&
+                  c.confidence >= 0.8,
+              )
+                ? shot.targetId
+                : null,
+            model: shot.model,
+            hit:
+              shot.hit &&
+              (q.observerId === shot.targetId ||
+                q.sniperId === shot.targetId ||
+                q.contacts.some(
+                  (c) =>
+                    c.id === shot.targetId &&
+                    e.time - c.lastSeen <= 2 &&
+                    c.confidence >= 0.8 &&
+                    G.clear(I().leader(e, q), c),
+                )),
             side: shot.side,
             from: copy(shot.from),
             to: copy(shot.to),
@@ -948,10 +1341,36 @@
       I().applyKnowledge(e, { payload: { friends: p.friends } });
       b.delivered.push({ ...p, receivedAt: e.time });
       for (const f of p.effects)
-        if (!b.knowledge.effects.some((x) => x.eventId === f.eventId))
+        if (!b.knowledge.effects.some((x) => x.eventId === f.eventId)) {
           b.knowledge.effects.push({ ...f, receivedAt: e.time });
+          if (f.hit || f.impactVisible) {
+            b.knowledge.decals = b.knowledge.decals || [];
+            b.knowledge.decals.push({
+              id: f.eventId,
+              kind: f.hit ? "blood" : "impact",
+              x: f.to.x,
+              y: f.to.y,
+              time: f.time,
+            });
+            b.knowledge.decals = b.knowledge.decals.slice(-100);
+          }
+        }
     }
-    b.delivered = b.delivered.slice(-30);
+    // Keep the actual source packet for frozen HQ positions during long signal loss.
+    const evidence = Object.values(e.knowledge.friends)
+      .map((f) =>
+        b.delivered.findLast((p) =>
+          p.friends.some(
+            (x) =>
+              x.id === f.id &&
+              x.observedAt === f.observedAt &&
+              x.x === f.x &&
+              x.y === f.y,
+          ),
+        ),
+      )
+      .filter(Boolean);
+    b.delivered = [...new Set([...evidence, ...b.delivered.slice(-24)])];
     b.knowledge.effects = b.knowledge.effects.slice(-40);
     b.packets = b.packets.slice(-30);
   }
@@ -968,20 +1387,28 @@
     const done =
       b.scenario === "recon"
         ? new Set(confirmed.map((c) => c.id)).size >= 2
-        : e.world.actors
-            .filter((a) => a.side === "red")
-            .every(
+        : b.scenario === "support"
+          ? e.world.actors.some(
               (a) =>
-                (!a.health.conscious || !a.health.alive) &&
-                e.squads.some((q) =>
-                  q.contacts.some(
-                    (c) =>
-                      c.id === a.id &&
-                      ["down", "dead"].includes(c.condition) &&
-                      e.time - c.lastSeen < 20,
+                a.side === "civilian" &&
+                a.protected &&
+                a.safe &&
+                a.health.alive,
+            )
+          : e.world.actors
+              .filter((a) => a.side === "red")
+              .every(
+                (a) =>
+                  (!a.health.conscious || !a.health.alive) &&
+                  e.squads.some((q) =>
+                    q.contacts.some(
+                      (c) =>
+                        c.id === a.id &&
+                        ["down", "dead"].includes(c.condition) &&
+                        e.time - c.lastSeen < 20,
+                    ),
                   ),
-                ),
-            );
+              );
     if (done && !b.objective.done) {
       b.objective.done = true;
       const ev = I().event(e, "field-objective", { scenario: b.scenario });
@@ -996,7 +1423,9 @@
               ". " +
               (b.scenario === "recon"
                 ? "서로 다른 무장 인원 2개 접촉 관측·식별 완료."
-                : "관측된 위협 행동 중지 확인.") +
+                : b.scenario === "support"
+                  ? "지원 아군의 민간인 안전 지역 인계 확인."
+                  : "관측된 위협 행동 중지 확인.") +
               " 집결지 복귀 지시 바란다.",
             ev,
             { objective: true },
@@ -1004,12 +1433,57 @@
           break;
         }
     }
+    if (b.scenario === "support" && !b.objective.done && !b.objective.failed) {
+      const guards = e.world.actors.filter((a) => a.side === "ally");
+      const lost =
+        guards.length &&
+        guards.every(
+          (a) =>
+            !a.health.conscious &&
+            e.squads.some((q) =>
+              q.contacts.some(
+                (c) => c.id === a.id && ["down", "dead"].includes(c.condition),
+              ),
+            ),
+        );
+      const casualty = e.world.actors.find(
+        (a) =>
+          a.protected &&
+          !a.health.alive &&
+          e.squads.some((q) =>
+            q.contacts.some((c) => c.id === a.id && c.condition === "dead"),
+          ),
+      );
+      if (lost || casualty) {
+        b.objective.failed = true;
+        const ev = I().event(e, "support-objective-failed", {
+          reason: casualty
+            ? "protected-person-lost"
+            : "support-force-incapacitated",
+        });
+        for (const q of e.squads)
+          if (I().leader(e, q)?.capable)
+            I().report(
+              s,
+              e,
+              q,
+              "request",
+              "지원 과업 지속 불가를 현장 관측으로 확인했다. 저격조 철수·집결로 전환한다.",
+              ev,
+            );
+        withdraw(s);
+      }
+    }
     if (
       b.objective.returnRequested &&
       e.world.units.some((u) => u.health.alive) &&
       e.world.units
         .filter((u) => u.health.alive)
-        .every((u) => u.extracted || G.distance(u, G.MAP.base) < 40)
+        .every(
+          (u) =>
+            u.extracted ||
+            G.distance(u, G.MAP.base) < Math.min(40, G.MAP.width / 20),
+        )
     ) {
       b.phase = "returned";
       D().end(s, "returned");
@@ -1048,6 +1522,8 @@
       ...f,
       battle: {
         scenario: b.scenario,
+        reducedMotion: !!s.settings.reducedMotion,
+        decals: copy(b.knowledge.decals || []),
         speed: b.speed,
         weather: copy(b.weather),
         objective: b.knowledge.objective,
@@ -1079,7 +1555,9 @@
         weapon: copy(u.weapon),
         x: u.x,
         y: u.y,
-        extracted: u.extracted || G.distance(u, G.MAP.base) < 40,
+        extracted:
+          u.extracted ||
+          G.distance(u, G.MAP.base) < Math.min(40, G.MAP.width / 20),
       })),
       opposition: e.world.actors
         .filter((a) => a.side === "red")
@@ -1111,13 +1589,14 @@
     );
   }
   function validate(e) {
+    G.activate(e.mapId || "command-range");
     const b = e.battle;
     if (!b) return;
     const n = (v, a = 0, z = Number.MAX_SAFE_INTEGER) =>
       typeof v === "number" && Number.isFinite(v) && v >= a && v <= z;
     ok(
       b.version === 1 &&
-        ["recon", "interdiction"].includes(b.scenario) &&
+        ["recon", "interdiction", "support"].includes(b.scenario) &&
         Number.isInteger(b.rng) &&
         n(b.rng, 1, 4294967295) &&
         [1, 2, 4].includes(b.speed) &&
@@ -1184,6 +1663,15 @@
       );
     };
     for (const u of all(e)) {
+      ok(
+        u.stance === undefined ||
+          ["standing", "kneeling", "prone"].includes(u.stance),
+        "사격 자세가 잘못되었습니다.",
+      );
+      ok(
+        u.lastShotAt === undefined || n(u.lastShotAt, 0, e.time),
+        "사격 시각이 잘못되었습니다.",
+      );
       checkHealth(u.health);
       checkWeapon(u.weapon);
       checkWeapon(u.sidearm);
@@ -1193,10 +1681,10 @@
           typeof u.prone === "boolean",
         "전투 역량 정보가 잘못되었습니다.",
       );
-      if (u.side === "red")
+      if (["red", "ally"].includes(u.side))
         ok(
           Array.isArray(u.memory) &&
-            u.memory.length <= 6 &&
+            u.memory.length <= 12 &&
             u.memory.every(
               (m) =>
                 typeof m.id === "string" &&
@@ -1284,6 +1772,19 @@
           ),
         "수신 사격 정보가 잘못되었습니다.",
       );
+    ok(
+      Array.isArray(b.knowledge.decals || []) &&
+        (b.knowledge.decals || []).length <= 100 &&
+        (b.knowledge.decals || []).every(
+          (d) =>
+            typeof d.id === "string" &&
+            (d.kind == null || ["blood", "impact"].includes(d.kind)) &&
+            n(d.x, -50, G.MAP.width + 50) &&
+            n(d.y, -50, G.MAP.height + 50) &&
+            n(d.time, 0, e.time),
+        ),
+      "피격 흔적 저장이 잘못되었습니다.",
+    );
     if (b.result) {
       ok(
         b.result.id === e.id &&
@@ -1329,6 +1830,9 @@
     health,
     weapon,
     fire,
+    chooseStance,
+    stanceOf,
+    coverPoint,
   };
   root.OverwatchBattle = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

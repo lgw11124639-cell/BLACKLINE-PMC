@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.15.01",
+  const VERSION = "2026.11.15.02",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -52,6 +52,7 @@
     dirty = false;
   function rollbackRuntime(errorValue) {
     runtime.stop();
+    OverwatchAudio.stop();
     if (lastSaved) state = Core.clone(lastSaved);
     if (
       state?.commandExercise?.battle &&
@@ -75,7 +76,7 @@
   const runtime = OverwatchRealtime.create({
     tick() {
       if (
-        tab !== "field" ||
+        !["field", "command"].includes(tab) ||
         source !== "primary" ||
         stale ||
         !state?.commandExercise?.battle ||
@@ -100,6 +101,7 @@
   });
   function pauseField() {
     runtime.stop();
+    OverwatchAudio.stop();
     if (state?.commandExercise?.paused && !dirty) return;
     if (
       state?.commandExercise?.battle &&
@@ -127,6 +129,29 @@
       runtime.start(state.commandExercise.battle.speed);
       FieldUI.refresh(root, state, { playing: true });
     }
+  }
+  // Orders are transactional saves; only successful commands may start the live loop.
+  function executeField(change) {
+    const saved = commit((next) => {
+      change(next);
+      if (
+        next.commandExercise?.battle &&
+        next.commandExercise.status === "running"
+      )
+        Battle.setPaused(next, false);
+    });
+    if (
+      saved &&
+      state?.commandExercise?.battle &&
+      state.commandExercise.status === "running" &&
+      !state.commandExercise.paused &&
+      ["field", "command"].includes(tab)
+    ) {
+      if (!runtime.isRunning())
+        runtime.start(state.commandExercise.battle.speed);
+      FieldUI.refresh(root, state, { playing: true });
+    }
+    return saved;
   }
   function fallbackField(message) {
     setTimeout(() => {
@@ -203,6 +228,20 @@
           error = e.message;
         }
       }
+      if (
+        source === "primary" &&
+        state?.fieldPreferences &&
+        state.fieldPreferences.presentation !== 2
+      ) {
+        const updated = Core.clone(state);
+        updated.fieldPreferences.view = "illustrated";
+        updated.fieldPreferences.presentation = 2;
+        try {
+          state = store.save(updated, state.revision);
+        } catch (e) {
+          error = e.message;
+        }
+      }
       lastSaved = state ? Core.clone(state) : null;
       tab = state?.ui.tab || "storage";
     } catch (e) {
@@ -225,7 +264,7 @@
       if (
         next.commandExercise?.battle &&
         next.commandExercise.status === "running" &&
-        next.ui.tab !== "field"
+        !["field", "command"].includes(next.ui.tab)
       )
         Battle.setPaused(next, true);
       state = store.save(next, state.revision);
@@ -534,6 +573,7 @@
           personnel,
           command: () =>
             CommandUI.render(state, {
+              playing: runtime.isRunning(),
               editable: source === "primary" && !stale,
             }),
           records,
@@ -616,10 +656,12 @@
       editable: source === "primary" && !stale,
       commit,
       play: toggleField,
+      execute: executeField,
       onFallback: fallbackField,
     });
     CommandUI.bind(root, {
       state,
+      execute: executeField,
       editable: source === "primary" && !stale,
       commit,
     });
@@ -837,7 +879,10 @@
     }
   });
   setInterval(
-    () => runtime.pump(!document.hidden && tab === "field" && !stale),
+    () =>
+      runtime.pump(
+        !document.hidden && ["field", "command"].includes(tab) && !stale,
+      ),
     100,
   );
   document.addEventListener("visibilitychange", () => {

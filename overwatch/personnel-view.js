@@ -172,9 +172,11 @@
       esc(m.id) +
       '" data-search="' +
       esc(m.name + " " + roles[m.specialty]) +
-      '"><div class="member-card-header"><span class="member-avatar">' +
-      esc(m.name.slice(0, 1)) +
-      '</span><span class="member-status ' +
+      '"><div class="member-card-header"><span class="member-avatar member-role-art ' +
+      esc(m.specialty) +
+      '" role="img" aria-label="' +
+      roles[m.specialty] +
+      ' 병과 모델"></span><span class="member-status ' +
       (why ? "limited" : "ready") +
       '">' +
       esc(statuses[m.status]) +
@@ -443,7 +445,11 @@
       busy = !!m.activityId,
       q = s.squads.find((q) => q.observerId === id || q.sniperId === id);
     return (
-      '<div class="dossier-backdrop"><section class="personnel-dossier" role="dialog" aria-modal="true" aria-labelledby="dossier-name"><header><div><span class="eyebrow">PERSONNEL / ' +
+      '<div class="dossier-backdrop"><section class="personnel-dossier" role="dialog" aria-modal="true" aria-labelledby="dossier-name"><header><span class="member-role-art dossier-role-art ' +
+      esc(m.specialty) +
+      '" role="img" aria-label="' +
+      roles[m.specialty] +
+      ' 병과 모델"></span><div><span class="eyebrow">PERSONNEL / ' +
       esc(m.id) +
       '</span><h1 id="dossier-name">' +
       esc(m.name) +

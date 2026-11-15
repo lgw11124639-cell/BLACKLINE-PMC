@@ -1341,7 +1341,8 @@
     }
     if (s.schemaVersion === 4) {
       ok(
-        s.fieldPreferences && ["2d", "3d"].includes(s.fieldPreferences.view),
+        s.fieldPreferences &&
+          ["2d", "3d", "illustrated"].includes(s.fieldPreferences.view),
         "전장 표시 설정이 잘못되었습니다.",
       );
       if (s.commandExercise?.battle) {

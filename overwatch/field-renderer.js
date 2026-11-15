@@ -24,13 +24,21 @@
       pitch = 0.85,
       target = new T.Vector3(initial.map.base.x, 0, initial.map.base.y),
       drag = null,
-      resize;
+      resize,
+      groundMesh,
+      pickHandler = () => {},
+      targetMarker,
+      rangeRing,
+      rangeId = null,
+      focusId = null;
     const meshes = new Map(),
       materials = new Map(),
       geometries = [],
       effects = [];
     let dirty = true,
-      animUntil = 0;
+      animUntil = 0,
+      frameAt = 0,
+      initialized = false;
     const listeners = [];
     const listen = (el, n, fn, opts) => {
       el.addEventListener(n, fn, opts);
@@ -64,22 +72,37 @@
         box(0.19, 0.65, 0.2, 0x424f41, group, -0.16, 0.36, 0),
         box(0.19, 0.65, 0.2, 0x424f41, group, 0.16, 0.36, 0),
       ];
-      box(0.15, 0.57, 0.16, color, group, -0.4, 1.03, 0.02);
-      box(0.15, 0.5, 0.16, color, group, 0.4, 1.08, 0.04);
+      const leftArm = box(0.15, 0.57, 0.16, color, group, -0.4, 1.03, 0.02);
+      const rightArm = box(0.15, 0.5, 0.16, color, group, 0.4, 1.08, 0.04);
+      const weaponRig = new T.Group();
+      group.add(weaponRig);
       const gun = box(
         0.08,
         0.09,
         friend.role === "sniper" ? 1.15 : 0.65,
         0x303b35,
-        group,
+        weaponRig,
         0.32,
         1.15,
         0.43,
       );
+      const flash = box(
+        0.24,
+        0.22,
+        0.45,
+        0xffdf80,
+        gun,
+        0,
+        0,
+        friend.role === "sniper" ? 0.72 : 0.46,
+      );
+      flash.material = new T.MeshBasicMaterial({ color: 0xffdf80 });
+      flash.visible = false;
+      const bolt = box(0.07, 0.07, 0.15, 0xaab3a6, weaponRig, 0.39, 1.2, 0.26);
       if (friend.role === "observer") {
         box(0.2, 0.12, 0.12, 0x303b35, group, -0.33, 1.38, 0.16);
       } else {
-        box(0.1, 0.1, 0.22, 0x303b35, group, 0.32, 1.25, 0.4);
+        box(0.1, 0.1, 0.22, 0x303b35, weaponRig, 0.32, 1.25, 0.4);
       }
       box(0.48, 0.5, 0.2, 0x75826a, group, 0, 1.06, -0.25);
       const marker = box(
@@ -99,6 +122,15 @@
         legs,
         marker,
         gun,
+        weaponRig,
+        leftArm,
+        rightArm,
+        flash,
+        bolt,
+        shotAt: -Infinity,
+        motion: null,
+        unit: friend,
+        blendMs: 900,
         pose: null,
         previous: null,
         desired: null,
@@ -112,6 +144,12 @@
       if (p === "dead" || p === "down" || p === "carried")
         m.group.rotation.z = Math.PI / 2;
       else if (p === "prone") m.group.rotation.x = Math.PI / 2;
+      else if (p === "kneeling") {
+        m.group.scale.y = 0.7;
+        m.legs[0].rotation.x = -0.6;
+        m.legs[1].rotation.x = 0.8;
+      }
+      if (p !== "kneeling") m.group.scale.y = 1;
       else if (p === "aid") m.group.rotation.x = 0.45;
       m.pose = p;
     }
@@ -138,8 +176,15 @@
       lastDraw = time;
       if (!dirty && time > animUntil) return;
       dirty = false;
-      const visible = frame.friends.filter(
-        (u) => !u.stale && (!u.health || u.health.alive),
+      const visible = (
+        focusId
+          ? [...frame.friends, ...frame.contacts.filter((c) => !c.expired)]
+          : frame.friends
+      ).filter(
+        (u) =>
+          !u.stale &&
+          (!u.health || u.health.alive) &&
+          (!focusId || u.id === focusId),
       );
       if (follow && visible.length) {
         target.set(
@@ -156,14 +201,41 @@
       camera.lookAt(target);
       for (const m of meshes.values()) {
         if (!m.desired) continue;
-        const t = Math.max(0, Math.min(1, (time - m.updatedAt) / 250));
+        const stopped =
+          frame.paused ||
+          frame.status !== "running" ||
+          frame.battle?.reducedMotion;
+        const t = stopped
+          ? 1
+          : Math.max(0, Math.min(1, (time - m.updatedAt) / m.blendMs));
         m.group.position.lerpVectors(m.previous, m.desired, t);
-        if (t < 1 && m.pose === "standing") {
-          m.legs[0].rotation.x = Math.sin(time * 0.015) * 0.35;
-          m.legs[1].rotation.x = -m.legs[0].rotation.x;
-        } else for (const l of m.legs) l.rotation.x = 0;
+        const sample = root.OverwatchMotion.sample(m.unit, {
+          now: time,
+          elapsed: time,
+          shotAt: m.shotAt,
+          paused: stopped,
+          moving: t < 1 && m.previous.distanceToSquared(m.desired) > 0.01,
+          simulationTime:
+            frame.time +
+            (stopped
+              ? 0
+              : Math.min(1, (time - frameAt) / 1000) * frame.battle.speed),
+        });
+        m.motion = sample.mode;
+        m.legs[0].rotation.x = sample.leg;
+        m.legs[1].rotation.x = -sample.leg;
+        m.weaponRig.position.z = -sample.recoil;
+        m.weaponRig.rotation.x = sample.reload;
+        m.leftArm.rotation.x = sample.hand;
+        m.rightArm.rotation.x = sample.reload * 0.4;
+        m.bolt.position.z = 0.26 - sample.bolt;
+        m.flash.visible = sample.flash;
+        m.flash.scale.setScalar(0.85 + Math.sin(time) * 0.15);
       }
-      for (const v of effects) v.line.visible = time < v.until;
+      for (const v of effects)
+        if (v.line)
+          v.line.visible =
+            !frame.paused && frame.status === "running" && time < v.until;
       renderer.render(scene, camera);
       if (time < animUntil) raf = requestAnimationFrame(draw);
     }
@@ -174,11 +246,29 @@
     function update(next) {
       if (disposed) return;
       frame = next;
+      frameAt = performance.now();
       const cloudy = next.battle?.weather.timeOfDay === "overcast";
       scene.background.setHex(cloudy ? 0xdde4df : 0xeaf0e6);
       scene.fog.color.copy(scene.background);
+      const ranged = next.friends.find((u) => u.id === rangeId);
+      if (rangeRing) {
+        rangeRing.visible = !!ranged;
+        if (ranged) {
+          const distance =
+            ranged.weapon?.range ||
+            root.OverwatchBattle.WEAPONS[ranged.weapon?.model]?.range ||
+            0;
+          rangeRing.position.set(
+            ranged.x,
+            (ranged.elevation || 0) + 0.5,
+            ranged.y,
+          );
+          rangeRing.scale.set(distance, 1, distance);
+        }
+      }
       const now = performance.now(),
         ids = new Set();
+      let animateFor = 0;
       for (const u of [
         ...next.friends,
         ...next.contacts.filter((c) => !c.expired),
@@ -190,10 +280,23 @@
           meshes.set(u.id, m);
         }
         const y = u.elevation ?? root.OverwatchGeometry.elevation(u);
+        m.blendMs = Math.max(
+          250,
+          Math.min(
+            2000,
+            ((u.observedAt - (m.unit.observedAt || 0) || 1) * 1000) /
+              (next.battle?.speed || 1),
+          ),
+        );
+        m.unit = u;
         m.previous = m.group.position.clone();
         m.desired = new T.Vector3(u.x, y + (u.carriedBy ? 1.15 : 0.12), u.y);
         if (!m.updatedAt) m.previous.copy(m.desired);
         m.updatedAt = now;
+        if (m.previous.distanceToSquared(m.desired) > 0.01)
+          animateFor = Math.max(animateFor, m.blendMs);
+        if (u.weapon?.reloadUntil != null && u.weapon.reloadUntil > next.time)
+          animateFor = Math.max(animateFor, 2100);
         m.group.rotation.y = -(u.heading || 0) + Math.PI / 2;
         m.group.visible = true;
         m.marker.visible = !u.stale;
@@ -209,6 +312,18 @@
       for (const [id, m] of meshes) if (!ids.has(id)) m.group.visible = false;
       for (const fx of next.battle?.effects || []) {
         if (effects.some((v) => v.id === fx.eventId)) continue;
+        // A historical packet/reload never fabricates a new shot animation.
+        if (!initialized || next.paused || next.status !== "running") {
+          effects.push({ id: fx.eventId, line: null, until: 0 });
+          continue;
+        }
+        const shooter = meshes.get(fx.actorId);
+        if (shooter?.group.visible) {
+          shooter.shotAt = now;
+          animateFor = Math.max(animateFor, 1100);
+          shooter.group.rotation.y =
+            -Math.atan2(fx.to.y - fx.from.y, fx.to.x - fx.from.x) + Math.PI / 2;
+        }
         const g = new T.BufferGeometry().setFromPoints([
             new T.Vector3(
               fx.from.x,
@@ -230,11 +345,17 @@
       }
       while (effects.length > 40) {
         const v = effects.shift();
-        scene.remove(v.line);
-        v.line.geometry.dispose();
-        v.line.material.dispose();
+        if (v.line) {
+          scene.remove(v.line);
+          v.line.geometry.dispose();
+          v.line.material.dispose();
+        }
       }
-      animUntil = now + 300;
+      initialized = true;
+      animUntil =
+        next.paused || next.status !== "running"
+          ? now
+          : Math.max(animUntil, now + animateFor);
       invalidate();
     }
     function dispose() {
@@ -244,9 +365,10 @@
       resize?.disconnect();
       for (const off of listeners) off();
       for (const v of effects) {
-        v.line.geometry.dispose();
-        v.line.material.dispose();
+        v.line?.geometry.dispose();
+        v.line?.material.dispose();
       }
+      for (const m of meshes.values()) m.flash.material.dispose();
       for (const g of geometries) g.dispose();
       for (const m of materials.values()) m.dispose();
       renderer?.dispose();
@@ -290,7 +412,29 @@
         );
       ground.computeVertexNormals();
       geometries.push(ground);
-      scene.add(new T.Mesh(ground, mat(0xb8c6a3)));
+      groundMesh = new T.Mesh(ground, mat(0xb8c6a3));
+      scene.add(groundMesh);
+      targetMarker = box(3, 0.15, 3, 0xe7ca83, scene, 0, -100, 0);
+      const ringPoints = Array.from(
+          { length: 65 },
+          (_, i) =>
+            new T.Vector3(
+              Math.cos((i / 64) * Math.PI * 2),
+              0,
+              Math.sin((i / 64) * Math.PI * 2),
+            ),
+        ),
+        ringGeometry = new T.BufferGeometry().setFromPoints(ringPoints);
+      geometries.push(ringGeometry);
+      const ringMaterial = new T.LineBasicMaterial({
+        color: 0x6eacc0,
+        transparent: true,
+        opacity: 0.5,
+      });
+      materials.set("range-ring", ringMaterial);
+      rangeRing = new T.LineLoop(ringGeometry, ringMaterial);
+      rangeRing.visible = false;
+      scene.add(rangeRing);
       for (const b of map.buildings) {
         const x = (b[0] + b[2]) / 2,
           z = (b[1] + b[3]) / 2,
@@ -316,6 +460,17 @@
           z,
         );
       }
+      for (const c of map.covers || [])
+        box(
+          c.w,
+          c.height,
+          c.h,
+          c.type === "vehicle" ? 0x465450 : 0xb9b2a0,
+          scene,
+          c.x,
+          root.OverwatchGeometry.elevation(c) + c.height / 2,
+          c.y,
+        );
       // Sparse actual-size trees outside movement obstacles; decorative only, no extra occlusion.
       for (let i = 0; i < 28; i++) {
         const x = 30 + ((i * 137) % 1120),
@@ -341,20 +496,46 @@
         onFallback("3D 그래픽 연결이 끊겨 2D 상황도로 전환했습니다.");
       });
       listen(renderer.domElement, "pointerdown", (e) => {
-        drag = { x: e.clientX, y: e.clientY };
+        if (e.button !== 0) return;
+        drag = {
+          x: e.clientX,
+          y: e.clientY,
+          startX: e.clientX,
+          startY: e.clientY,
+          moved: false,
+        };
         renderer.domElement.setPointerCapture(e.pointerId);
       });
       listen(renderer.domElement, "pointermove", (e) => {
         if (!drag) return;
+        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 6)
+          drag.moved = true;
+        if (!drag.moved) return;
         yaw += (e.clientX - drag.x) * 0.007;
         pitch = Math.max(
           0.35,
           Math.min(1.4, pitch + (e.clientY - drag.y) * 0.005),
         );
-        drag = { x: e.clientX, y: e.clientY };
+        drag.x = e.clientX;
+        drag.y = e.clientY;
         invalidate();
       });
-      listen(renderer.domElement, "pointerup", () => (drag = null));
+      listen(renderer.domElement, "pointerup", (e) => {
+        if (drag && !drag.moved) {
+          const rect = renderer.domElement.getBoundingClientRect(),
+            caster = new T.Raycaster();
+          caster.setFromCamera(
+            new T.Vector2(
+              ((e.clientX - rect.left) / rect.width) * 2 - 1,
+              (-(e.clientY - rect.top) / rect.height) * 2 + 1,
+            ),
+            camera,
+          );
+          const hit = caster.intersectObject(groundMesh)[0];
+          if (hit) pickHandler({ x: hit.point.x, y: hit.point.z });
+        }
+        drag = null;
+      });
       listen(renderer.domElement, "pointercancel", () => (drag = null));
       listen(
         renderer.domElement,
@@ -396,14 +577,49 @@
       },
       overview() {
         follow = false;
-        target.set(600, 0, 400);
-        span = 900;
+        target.set(frame.map.width / 2, 0, frame.map.height / 2);
+        span = frame.map.height * 1.12;
         size();
       },
       resize: size,
+      focus(id) {
+        focusId = id;
+        follow = true;
+        span = 28;
+        size();
+      },
+      setRange(id) {
+        rangeId = rangeId === id ? null : id;
+        update(frame);
+      },
+      setPickHandler(fn) {
+        pickHandler = fn;
+      },
+      setTarget(p) {
+        const visible = !!p;
+        if (
+          targetMarker.visible === visible &&
+          (!p ||
+            (targetMarker.position.x === p.x &&
+              targetMarker.position.z === p.y))
+        )
+          return;
+        targetMarker.visible = visible;
+        if (p)
+          targetMarker.position.set(
+            p.x,
+            root.OverwatchGeometry.elevation(p) + 0.3,
+            p.y,
+          );
+        invalidate();
+      },
       stats() {
         return {
           meshes: meshes.size,
+          motions: [...meshes]
+            .filter(([, m]) => m.group.visible)
+            .map(([id, m]) => ({ id, mode: m.motion, flash: m.flash.visible })),
+          visibleTracers: effects.filter((v) => v.line?.visible).length,
           knownIds: [...meshes]
             .filter(([id, m]) => m.group.visible)
             .map(([id]) => id),

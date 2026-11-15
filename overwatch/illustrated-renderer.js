@@ -1,0 +1,670 @@
+/* Illustrated battlefield. Input is delivered HQ frames only, never truth actors. */
+(function (root) {
+  "use strict";
+  let active = null;
+  function create(host, initial) {
+    let frame = initial,
+      disposed = false,
+      raf = null,
+      lastDraw = 0,
+      until = 0,
+      dirty = true,
+      span = 60,
+      follow = true,
+      target = { x: initial.map.width / 2, y: initial.map.height / 2 },
+      pick = () => {},
+      rangeId = null,
+      focusId = null,
+      selected = null,
+      drag = null,
+      frameAt = performance.now();
+    const canvas = document.createElement("canvas"),
+      ctx = canvas.getContext("2d", { alpha: false });
+    host.replaceChildren(canvas);
+    canvas.setAttribute(
+      "aria-label",
+      "입체 지형 이미지와 실제 수신 대원의 실시간 전투지도",
+    );
+    canvas.setAttribute("role", "img");
+    const positions = new Map(),
+      shots = new Map(),
+      images = [],
+      handlers = [];
+    let initialized = false;
+    const load = (src) => {
+      const im = new Image();
+      im.onload = () => invalidate();
+      im.src = src;
+      images.push(im);
+      return im;
+    };
+    const map = initial.map.image ? load(initial.map.image) : null;
+    const spriteImages = new Map();
+    // Decode full-quality source once, retain a bounded 512px rendering texture per pose.
+    const artImage = (art) => {
+      const src = art.src;
+      if (!spriteImages.has(src)) {
+        const entry = { texture: null, at: performance.now() },
+          im = new Image();
+        spriteImages.set(src, entry);
+        im.onload = () => {
+          if (disposed) return;
+          const scale = Math.min(
+              1,
+              512 / Math.max(im.naturalWidth, im.naturalHeight),
+            ),
+            texture = document.createElement("canvas");
+          texture.width = Math.round(im.naturalWidth * scale);
+          texture.height = Math.round(im.naturalHeight * scale);
+          texture
+            .getContext("2d")
+            .drawImage(im, 0, 0, texture.width, texture.height);
+          entry.texture = texture;
+          entry.scale = scale;
+          im.onload = null;
+          im.src = "";
+          invalidate();
+        };
+        im.onerror = () => {
+          entry.failed = true;
+        };
+        im.src = src;
+        while (spriteImages.size > 16) {
+          const old = [...spriteImages].sort((a, b) => a[1].at - b[1].at)[0];
+          if (old[0] === src) break;
+          old[1].texture = null;
+          spriteImages.delete(old[0]);
+        }
+      }
+      const entry = spriteImages.get(src);
+      entry.at = performance.now();
+      return entry;
+    };
+    artImage(root.OverwatchSprites.data["sniper-move"]);
+    artImage(root.OverwatchSprites.data["observer-move"]);
+    const listen = (n, fn, opts) => {
+      canvas.addEventListener(n, fn, opts);
+      handlers.push(() => canvas.removeEventListener(n, fn, opts));
+    };
+    function size() {
+      const dpr = Math.min(devicePixelRatio || 1, 1.25);
+      canvas.width = Math.max(1, Math.round(host.clientWidth * dpr));
+      canvas.height = Math.max(1, Math.round(host.clientHeight * dpr));
+      invalidate();
+    }
+    function view() {
+      const w = host.clientWidth,
+        h = host.clientHeight,
+        scale = h / span,
+        visibleW = w / scale;
+      target.x = Math.max(
+        Math.min(visibleW / 2, frame.map.width / 2),
+        Math.min(frame.map.width - visibleW / 2, target.x),
+      );
+      target.y = Math.max(
+        Math.min(span / 2, frame.map.height / 2),
+        Math.min(frame.map.height - span / 2, target.y),
+      );
+      return {
+        w,
+        h,
+        scale,
+        left: target.x - visibleW / 2,
+        top: target.y - span / 2,
+      };
+    }
+    const screen = (p, v) => ({
+      x: (p.x - v.left) * v.scale,
+      y: (p.y - v.top) * v.scale,
+    });
+    function draw(now) {
+      raf = null;
+      if (disposed) return;
+      if (now - lastDraw < 1000 / 15) {
+        raf = requestAnimationFrame(draw);
+        return;
+      }
+      lastDraw = now;
+      if (!dirty && now > until) return;
+      dirty = false;
+      const paused =
+          frame.paused ||
+          frame.status !== "running" ||
+          frame.battle?.reducedMotion,
+        v = view(),
+        dpr = canvas.width / Math.max(1, v.w);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = "#b6bd9a";
+      ctx.fillRect(0, 0, v.w, v.h);
+      const origin = screen({ x: 0, y: 0 }, v);
+      if (map?.complete && map.naturalWidth)
+        ctx.drawImage(
+          map,
+          origin.x,
+          origin.y,
+          frame.map.width * v.scale,
+          frame.map.height * v.scale,
+        );
+      if (!map) {
+        for (const h of frame.map.heights) {
+          const p = screen(h, v);
+          ctx.fillStyle = "#a9b38e";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, h.r * v.scale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        for (const b of frame.map.buildings) {
+          const p = screen({ x: b[0], y: b[1] }, v);
+          ctx.fillStyle = "#a2a693";
+          ctx.fillRect(
+            p.x,
+            p.y,
+            (b[2] - b[0]) * v.scale,
+            (b[3] - b[1]) * v.scale,
+          );
+        }
+      }
+      for (const d of frame.battle?.decals || []) {
+        const p = screen(d, v);
+        ctx.fillStyle = d.kind === "impact" ? "#302b25b0" : "#7f2921aa";
+        ctx.beginPath();
+        ctx.ellipse(
+          p.x,
+          p.y,
+          Math.max(0.6, (d.kind === "impact" ? 0.08 : 0.28) * v.scale),
+          Math.max(0.4, (d.kind === "impact" ? 0.06 : 0.12) * v.scale),
+          0.3,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
+      const rangeUnit = frame.friends.find((u) => u.id === rangeId);
+      if (rangeUnit) {
+        const p = screen(rangeUnit, v),
+          r = (rangeUnit.weapon?.range || 0) * v.scale,
+          vision = (rangeUnit.visionRange || 200) * v.scale,
+          half = rangeUnit.visionHalfAngle || Math.PI * 0.42;
+        ctx.save();
+        ctx.strokeStyle = "#9cd7e6aa";
+        ctx.fillStyle = "#93cdd810";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#f7e7a31c";
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.arc(
+          p.x,
+          p.y,
+          vision,
+          (rangeUnit.heading || 0) - half,
+          (rangeUnit.heading || 0) + half,
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        ctx.font = "11px sans-serif";
+        ctx.fillStyle = "#fff";
+        ctx.shadowColor = "#273626";
+        ctx.shadowBlur = 4;
+        ctx.fillText(
+          "최대 사거리 " +
+            rangeUnit.weapon.range +
+            "m · 관측 방향 표시 · 차폐 별도 판정",
+          12,
+          v.h - 14,
+        );
+        ctx.shadowBlur = 0;
+      }
+      for (const cover of frame.map.covers || []) {
+        const p = screen(cover, v);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.fillStyle = cover.type === "vehicle" ? "#465450" : "#b9b2a0";
+        ctx.strokeStyle = "#252e2888";
+        ctx.lineWidth = 1;
+        ctx.fillRect(
+          (-cover.w * v.scale) / 2,
+          (-cover.h * v.scale) / 2,
+          cover.w * v.scale,
+          cover.h * v.scale,
+        );
+        ctx.strokeRect(
+          (-cover.w * v.scale) / 2,
+          (-cover.h * v.scale) / 2,
+          cover.w * v.scale,
+          cover.h * v.scale,
+        );
+        ctx.restore();
+      }
+      // No marker for an enemy without an actual delivered observation.
+      for (const u of [
+        ...frame.contacts.filter((c) => !c.expired),
+        ...frame.friends,
+      ]) {
+        const m = positions.get(u.id);
+        if (!m) continue;
+        const t = paused
+          ? 1
+          : Math.min(1, Math.max(0, (now - m.at) / m.duration));
+        const p = {
+          x: m.from.x + (m.to.x - m.from.x) * t,
+          y: m.from.y + (m.to.y - m.from.y) * t,
+        };
+        m.drawn = p;
+        const q = screen(p, v);
+        if (q.x < -70 || q.x > v.w + 70 || q.y < -80 || q.y > v.h + 80)
+          continue;
+        const friendly = u.role !== undefined,
+          knownArmed = u.classification === "armed-person",
+          uncertain =
+            !friendly &&
+            (u.classification === "unknown" || u.faction === "unknown");
+        const motion = root.OverwatchMotion.sample(u, {
+          now,
+          shotAt: m.shotAt,
+          paused,
+          moving:
+            t < 1 && Math.hypot(m.from.x - m.to.x, m.from.y - m.to.y) > 0.1,
+          elapsed: now,
+          simulationTime:
+            frame.time +
+            (paused
+              ? 0
+              : Math.min(1, (now - frameAt) / 1000) * frame.battle.speed),
+        });
+        m.motion = motion.mode;
+        m.flash = motion.flash;
+        // Sizes stay bounded; squad identity is a small pin, never an oversized name plate.
+        const height = 1.8 * v.scale,
+          width = height * 0.75,
+          direction = (Math.round((u.heading || 0) / (Math.PI / 2)) + 4) % 4;
+        const bob = motion.mode === "walk" ? Math.sin(now * 0.012) * 1.1 : 0;
+        ctx.save();
+        ctx.globalAlpha = u.stale
+          ? 0.45
+          : friendly
+            ? 1
+            : Math.max(0.25, u.confidence || 0.5);
+        ctx.fillStyle = "#18271b33";
+        ctx.beginPath();
+        ctx.ellipse(q.x, q.y + 2, width * 0.3, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        const chosen = root.OverwatchSprites.select(u, {
+          moving: motion.mode === "walk",
+          mode: motion.mode,
+        });
+        m.sprite = uncertain ? "unidentified" : chosen.key;
+        m.spriteFallback = chosen.fallback;
+        const entry = !uncertain && chosen.art ? artImage(chosen.art) : null;
+        const im = entry?.texture;
+        let rendered = false;
+        if (im) {
+          const [x1, y1, x2, y2] = chosen.art.bounds;
+          const width = chosen.widthM * v.scale,
+            h = (width * (y2 - y1)) / (x2 - x1);
+          const facingLeft = Math.cos(u.heading || 0) < 0;
+          ctx.save();
+          ctx.translate(q.x, q.y + bob);
+          if (facingLeft) ctx.scale(-1, 1);
+          ctx.drawImage(
+            im,
+            x1 * entry.scale,
+            y1 * entry.scale,
+            (x2 - x1) * entry.scale,
+            (y2 - y1) * entry.scale,
+            -width / 2 - motion.recoil * v.scale,
+            -h * 0.85,
+            width,
+            h,
+          );
+          ctx.restore();
+          if (u.health?.wounds?.length) {
+            ctx.fillStyle = "#8e2926bb";
+            for (const wound of u.health.wounds) {
+              const part = wound.part || "torso";
+              const dx = part.includes("Arm")
+                ? width * (part.startsWith("left") ? -0.16 : 0.16)
+                : part.includes("Leg")
+                  ? width * (part.startsWith("left") ? -0.08 : 0.08)
+                  : 0;
+              const dy =
+                h *
+                (part === "head"
+                  ? -0.76
+                  : part.includes("Leg")
+                    ? -0.14
+                    : -0.48);
+              ctx.fillStyle = wound.treated ? "#72504788" : "#8e2926bb";
+              ctx.beginPath();
+              ctx.ellipse(
+                q.x + dx * (facingLeft ? -1 : 1),
+                q.y + bob + dy,
+                Math.max(0.7, 0.1 * v.scale),
+                Math.max(0.7, 0.14 * v.scale),
+                0,
+                0,
+                Math.PI * 2,
+              );
+              ctx.fill();
+            }
+          }
+          rendered = true;
+        }
+        if (!rendered) {
+          ctx.fillStyle = uncertain
+            ? "#d5b782"
+            : friendly
+              ? "#557a8b"
+              : "#9e633c";
+          ctx.beginPath();
+          ctx.arc(q.x, q.y - 5, uncertain ? 5 : 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = friendly
+          ? "#70c4e6"
+          : knownArmed
+            ? "#ec9d76"
+            : "#d6bb7d";
+        ctx.strokeStyle = "#fff9";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(q.x, q.y + 4, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        if (friendly && (v.scale > 6 || focusId === u.id)) {
+          ctx.font = "600 10px -apple-system,sans-serif";
+          ctx.fillStyle = "#fff";
+          ctx.shadowColor = "#16301a";
+          ctx.shadowBlur = 4;
+          ctx.textAlign = "center";
+          ctx.fillText(
+            u.callsign + " · " + (u.role === "sniper" ? "저격" : "관측"),
+            q.x,
+            q.y - height - 3,
+          );
+          ctx.shadowBlur = 0;
+        }
+        if (u.pose === "aid") {
+          ctx.strokeStyle = "#9bdab7";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(q.x, q.y - 7, 12, -Math.PI / 2, Math.PI * 0.9);
+          ctx.stroke();
+        }
+        if (motion.mode === "reload") {
+          ctx.fillStyle = "#f3df9b";
+          ctx.font = "600 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("재장전", q.x, q.y - height - 3);
+        }
+        ctx.restore();
+      }
+      for (const shot of shots.values()) {
+        const age = now - shot.at;
+        if (paused || age < 0 || age > 350) continue;
+        const a = screen(shot.fx.from, v),
+          b = screen(shot.fx.to, v),
+          angle = Math.atan2(b.y - a.y, b.x - a.x);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 1 - age / 350);
+        ctx.strokeStyle = "#ffe5a7";
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y - 9);
+        ctx.lineTo(b.x, b.y - 9);
+        ctx.stroke();
+        if (age < 120) {
+          ctx.translate(a.x, a.y - 9);
+          ctx.rotate(angle);
+          ctx.fillStyle = "#fff0ba";
+          ctx.shadowColor = "#ffc96e";
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.moveTo(0, -3);
+          ctx.lineTo(13, 0);
+          ctx.lineTo(0, 3);
+          ctx.lineTo(3, 0);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      if (selected) {
+        const p = screen(selected, v);
+        ctx.strokeStyle = "#fff3c5";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 11, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(p.x - 17, p.y);
+        ctx.lineTo(p.x + 17, p.y);
+        ctx.moveTo(p.x, p.y - 17);
+        ctx.lineTo(p.x, p.y + 17);
+        ctx.stroke();
+      }
+      if (now < until && !paused) raf = requestAnimationFrame(draw);
+    }
+    function invalidate() {
+      dirty = true;
+      if (raf === null && !disposed) raf = requestAnimationFrame(draw);
+    }
+    function update(next) {
+      frame = next;
+      const now = performance.now();
+      frameAt = now;
+      let animate = 0;
+      const all = [...next.friends, ...next.contacts.filter((c) => !c.expired)];
+      const ids = new Set(all.map((u) => u.id));
+      for (const [id] of positions) if (!ids.has(id)) positions.delete(id);
+      for (const u of all) {
+        let m = positions.get(u.id);
+        if (!m) {
+          m = {
+            from: { x: u.x, y: u.y },
+            to: { x: u.x, y: u.y },
+            drawn: { x: u.x, y: u.y },
+            at: now,
+            duration: 900,
+            observedAt: u.observedAt,
+            shotAt: -Infinity,
+          };
+          positions.set(u.id, m);
+        }
+        if (m.to.x !== u.x || m.to.y !== u.y) {
+          m.from = { ...m.drawn };
+          m.to = { x: u.x, y: u.y };
+          m.duration = Math.max(
+            250,
+            Math.min(
+              2100,
+              ((u.observedAt - m.observedAt || 1) * 1000) /
+                (next.battle?.speed || 1),
+            ),
+          );
+          m.at = now;
+          m.observedAt = u.observedAt;
+          animate = Math.max(animate, m.duration);
+        }
+        if (u.weapon?.reloadUntil != null && u.weapon.reloadUntil > next.time)
+          animate = Math.max(animate, 2100);
+      }
+      for (const fx of next.battle?.effects || []) {
+        if (shots.has(fx.eventId)) continue;
+        const at =
+          initialized && !next.paused && next.status === "running"
+            ? now
+            : -Infinity;
+        shots.set(fx.eventId, { fx, at });
+        const m = positions.get(fx.actorId);
+        if (m && at === now) {
+          m.shotAt = now;
+          animate = Math.max(animate, 1100);
+        }
+      }
+      while (shots.size > 40) shots.delete(shots.keys().next().value);
+      if (follow) {
+        const visible = (
+          focusId
+            ? [...next.friends, ...next.contacts.filter((c) => !c.expired)]
+            : next.friends
+        ).filter(
+          (u) =>
+            !u.stale &&
+            u.health?.alive !== false &&
+            (!focusId || u.id === focusId),
+        );
+        if (visible.length) {
+          target = {
+            x: visible.reduce((n, u) => n + u.x, 0) / visible.length,
+            y: visible.reduce((n, u) => n + u.y, 0) / visible.length,
+          };
+        }
+      }
+      initialized = true;
+      until =
+        next.paused || next.status !== "running" || next.battle?.reducedMotion
+          ? now
+          : Math.max(until, now + animate);
+      invalidate();
+    }
+    listen("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      drag = {
+        x: e.clientX,
+        y: e.clientY,
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false,
+      };
+      canvas.setPointerCapture(e.pointerId);
+    });
+    listen("pointermove", (e) => {
+      if (!drag) return;
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 6)
+        drag.moved = true;
+      if (drag.moved) {
+        const v = view();
+        follow = false;
+        target.x -= (e.clientX - drag.x) / v.scale;
+        target.y -= (e.clientY - drag.y) / v.scale;
+        invalidate();
+      }
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+    });
+    listen("pointerup", (e) => {
+      if (drag && !drag.moved) {
+        const rect = canvas.getBoundingClientRect(),
+          v = view();
+        pick({
+          x: v.left + (e.clientX - rect.left) / v.scale,
+          y: v.top + (e.clientY - rect.top) / v.scale,
+        });
+      }
+      drag = null;
+    });
+    listen("pointercancel", () => (drag = null));
+    listen(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        span = Math.max(
+          18,
+          Math.min(frame.map.height * 1.05, span * Math.exp(e.deltaY * 0.001)),
+        );
+        invalidate();
+      },
+      { passive: false },
+    );
+    const resize = new ResizeObserver(size);
+    resize.observe(host);
+    size();
+    const api = {
+      host,
+      id: initial.id,
+      update,
+      zoom(f) {
+        span = Math.max(18, Math.min(frame.map.height * 1.05, span * f));
+        invalidate();
+      },
+      follow() {
+        follow = !follow;
+        update(frame);
+        return follow;
+      },
+      overview() {
+        follow = false;
+        target = { x: frame.map.width / 2, y: frame.map.height / 2 };
+        span = frame.map.height;
+        invalidate();
+      },
+      focus(id) {
+        focusId = id;
+        follow = true;
+        span = Math.min(frame.map.height, 28);
+        const u = [...frame.friends, ...frame.contacts].find(
+          (u) => u.id === id,
+        );
+        if (u) target = { x: u.x, y: u.y };
+        update(frame);
+      },
+      setRange(id) {
+        rangeId = rangeId === id ? null : id;
+        invalidate();
+      },
+      setPickHandler(fn) {
+        pick = fn;
+      },
+      setTarget(p) {
+        if (JSON.stringify(p) !== JSON.stringify(selected)) {
+          selected = p ? { ...p } : null;
+          invalidate();
+        }
+      },
+      resize: size,
+      stats() {
+        return {
+          knownIds: [...positions.keys()],
+          framesPending: raf === null ? 0 : 1,
+          motions: [...positions].map(([id, m]) => ({
+            id,
+            mode: m.motion,
+            flash: m.flash,
+            sprite: m.sprite,
+            spriteFallback: m.spriteFallback,
+          })),
+          assetsReady:
+            images.every((im) => im.complete && im.naturalWidth > 0) &&
+            [...spriteImages.values()].every((x) => x.texture || x.failed),
+          textures: spriteImages.size,
+        };
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        if (raf !== null) cancelAnimationFrame(raf);
+        resize.disconnect();
+        for (const fn of handlers) fn();
+        for (const im of images) im.onload = null;
+        host.replaceChildren();
+        positions.clear();
+        shots.clear();
+        spriteImages.clear();
+        if (active === api) active = null;
+      },
+    };
+    update(initial);
+    active = api;
+    return api;
+  }
+  root.OverwatchIllustratedRenderer = {
+    create,
+    get: () => active,
+    dispose: () => active?.dispose(),
+  };
+})(typeof window === "undefined" ? globalThis : window);
