@@ -9,13 +9,14 @@ with sync_playwright() as p:
  q.reload(wait_until='networkidle')
  def saved():return q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state')
  def nav(tab):q.locator('nav[aria-label="본부 메뉴"] [data-tab="'+tab+'"]').click()
- q.locator('[data-field-start]').click();q.wait_for_function('!!OverwatchFieldRenderer.get()');assert q.locator('.field-viewport canvas').count()==1
- assert saved()['commandExercise']['paused'] is True
- q.locator('[data-field-command] [name="x"]').fill('555');q.locator('[data-field-command] [name="x"]').focus()
- q.evaluate("window.fieldNode=document.querySelector('.field-viewport canvas');window.fieldInput=document.querySelector('[data-field-command] [name=x]');document.querySelector('[data-field-play]').click();window.fieldScroll=scrollY;")
+ q.locator('[data-field-start]').click();q.locator('[data-field-view="3d"]').click();q.wait_for_function('!!OverwatchFieldRenderer.get()');assert q.locator('.field-viewport canvas').count()==1
+ assert saved()['commandExercise']['paused'] is False
+ q.locator('[data-field-play]').click() # explicit pause after automatic departure
+ q.locator('[data-field-command] [name="kind"]').select_option('roe');q.locator('[data-field-command] [name="kind"]').focus()
+ q.evaluate("window.fieldNode=document.querySelector('.field-viewport canvas');window.fieldInput=document.querySelector('[data-field-command] [name=kind]');document.querySelector('[data-field-play]').click();window.fieldScroll=scrollY;")
  q.wait_for_timeout(3400)
- assert q.evaluate("fieldNode===document.querySelector('.field-viewport canvas')&&fieldInput===document.querySelector('[data-field-command] [name=x]')&&document.activeElement===fieldInput")
- assert q.locator('[data-field-command] [name="x"]').input_value()=='555'
+ assert q.evaluate("fieldNode===document.querySelector('.field-viewport canvas')&&fieldInput===document.querySelector('[data-field-command] [name=kind]')&&document.activeElement===fieldInput")
+ assert q.locator('[data-field-command] [name="kind"]').input_value()=='roe'
  assert q.evaluate('Math.abs(scrollY-fieldScroll)<3'),'automatic ticking reset scroll'
  q.locator('[data-field-play]').evaluate('el=>el.click()');s=saved();assert 2<=s['commandExercise']['time']<=6
  q.wait_for_timeout(700);assert q.evaluate('OverwatchFieldRenderer.get().stats().framesPending')==0,'paused renderer is burning frames'
