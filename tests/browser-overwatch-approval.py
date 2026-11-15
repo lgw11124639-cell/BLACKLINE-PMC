@@ -29,4 +29,6 @@ with sync_playwright() as p:
  q.locator('[data-staff-support]').check();q.wait_for_timeout(1500)
  assert q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state.commandExercise.mission.supports.drone')==1
  assert q.evaluate('document.documentElement.scrollWidth<=innerWidth')
+ q.locator('nav[aria-label="본부 메뉴"] [data-tab=command]').click();assert not q.locator('.field-viewport').count();assert not q.locator('[data-field-start]').count();assert '훈련 대기' in q.locator('#main').inner_text()
+ q.locator('nav[aria-label="본부 메뉴"] [data-tab=field]').click();assert q.locator('.field-viewport').count()==1;assert '실전 작전 관제' in q.locator('.page-title').inner_text()
  assert not errors,errors;b.close();print('PASS real HQ duty forms, contract approval and delegated orders; manual UAV launch/retask; one sortie with automatic support enabled afterward')
