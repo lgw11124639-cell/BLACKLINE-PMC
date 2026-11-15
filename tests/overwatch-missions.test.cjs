@@ -120,7 +120,7 @@ test("in-flight save resumes identically, has no offline advancement and exposes
   const f = D.frame(s);
   assert.ok(f.transports.length);
   assert.ok(!f.contacts.some((c) => c.id === "opposition-3"));
-  assert.ok(f.supportActors.some((a) => a.id === "agency-guide"));
+  assert.ok(!f.supportActors.some((a) => a.id === "agency-guide"));
 });
 test("no phantom casualty support, contract limits and physical drone preparation", () => {
   const s = launch(),
@@ -269,6 +269,16 @@ test("unsafe landing holds the medical helicopter until the crew can observe a s
     w.magazines = [];
     w.initial = w.spent;
   }
+  // Isolate landing safety from an escort neutralizing the deliberately placed threat.
+  for (const actor of [
+    ...e.world.units,
+    ...e.world.actors.filter((a) => a.side === "ally"),
+  ])
+    for (const w of [actor.weapon, actor.sidearm]) {
+      w.loaded = 0;
+      w.magazines = [];
+      w.initial = w.spent;
+    }
   advance(s, 130);
   assert.equal(t.state, "air-hold");
   assert.equal(t.manifest.length, 0);
@@ -317,5 +327,64 @@ test("a vehicle already driving to insertion turns back on abort without inventi
     s.members.map((m) => m.proficiency.primary),
     before,
   );
+  C.validate(s);
+});
+
+for (const key of ["ridge-watch", "aid-cover"])
+  test(
+    key +
+      " returned transport leaves the battlefield projection while its actual saved state and report remain",
+    () => {
+      const s = launch(key),
+        e = s.commandExercise;
+      advance(s, 5);
+      const count = e.mission.transports.length;
+      M.requestReturn(s, { abort: true });
+      advance(s, 500);
+      assert.equal(e.status, "ended");
+      assert.equal(e.mission.transports[0].state, "home");
+      assert.equal(e.mission.transports.length, count);
+      assert.ok(!D.frame(s).transports.some((t) => t.id === "primary"));
+      assert.equal(s.operations.reports.length, 1);
+      C.validate(s);
+    },
+  );
+
+test("personnel waiting to board at HQ cannot be attacked or shown as deployed battlefield troops", () => {
+  const s = launch("aid-cover", 2),
+    e = s.commandExercise;
+  advance(s, 15);
+  for (const u of e.world.units.filter((u) => u.waitingForDeployment)) {
+    assert.equal(u.health.wounds.length, 0);
+    assert.equal(B.snapshot(u).waitingForDeployment, true);
+  }
+  assert.ok(e.world.units.some((u) => u.waitingForDeployment));
+  assert.ok(!D.frame(s).supportActors.some((a) => a.id === "agency-protected"));
+  C.validate(s);
+});
+
+test("a UAV physically returns home after its station time and never restarts departure on every tick", () => {
+  const s = launch("ridge-watch"),
+    e = s.commandExercise;
+  for (const a of e.world.actors.filter((a) => a.side === "red"))
+    a.health.conscious = false;
+  advance(s, 100);
+  M.requestSupport(s, "drone");
+  const t = e.mission.transports.at(-1);
+  advance(s, 400);
+  assert.equal(t.state, "home");
+  assert.equal(t.altitude, 0);
+  const departures = e.mission.log.filter(
+    (ev) => ev.type === "transport-departed" && ev.transportId === t.id,
+  ).length;
+  advance(s, 40);
+  assert.equal(
+    e.mission.log.filter(
+      (ev) => ev.type === "transport-departed" && ev.transportId === t.id,
+    ).length,
+    departures,
+  );
+  assert.ok(!D.frame(s).transports.some((x) => x.id === t.id));
+  assert.equal(e.mission.supports.drone, 1);
   C.validate(s);
 });

@@ -185,3 +185,86 @@ test("actual suppression reduces shot precision for the same skill, range and ra
   }
   assert.ok(shot(true) > shot(false));
 });
+
+test("a normally walking target can be tracked and engaged instead of gaining permanent immunity from aim resets", () => {
+  const { s, e, u } = setup(),
+    t = e.world.actors[0];
+  Object.assign(u, { x: 100, y: 700, path: [], goal: null });
+  Object.assign(t, { x: 200, y: 700, stance: "standing", prone: false });
+  let fired;
+  for (let i = 0; i < 10 && !fired; i++) {
+    e.time = 30 + i;
+    s.clock.elapsedSeconds = e.time;
+    t.x = 200 + i;
+    fired = B.fire(s, e, u, {
+      id: t.id,
+      x: t.x,
+      y: t.y,
+      condition: "standing",
+    });
+  }
+  assert.ok(fired);
+  assert.equal(u.weapon.spent, 1);
+  assert.ok(u.weapon.trackingSpeed > 0);
+  C.validate(s);
+});
+
+test("a light wound does not consume both combat response and medical supplies while actual fire continues", () => {
+  const { s, e, u } = setup(),
+    enemy = e.world.actors[0];
+  e.time = 20;
+  s.clock.elapsedSeconds = 20;
+  Object.assign(enemy, {
+    x: u.x + 100,
+    y: u.y,
+    path: [],
+    stance: "standing",
+    prone: false,
+  });
+  Object.assign(enemy.weapon, {
+    targetId: u.id,
+    aimSince: 0,
+    aimAnchor: { x: u.x, y: u.y },
+    aimOrigin: { x: enemy.x, y: enemy.y },
+  });
+  B.injure(s, e, u, {
+    eventId: "prior-light-wound",
+    part: "leftArm",
+    severity: 1,
+  });
+  const shot = B.fire(s, e, enemy, {
+    id: u.id,
+    x: u.x,
+    y: u.y,
+    condition: "standing",
+  });
+  assert.ok(shot);
+  B.beforeTick(s, e);
+  assert.equal(u.health.aid, null);
+  assert.equal(u.health.kit, 1);
+  C.validate(s);
+  e.time = 30;
+  s.clock.elapsedSeconds = 30;
+  B.beforeTick(s, e);
+  assert.ok(u.health.aid);
+  assert.equal(u.health.kit, 0);
+  C.validate(s);
+});
+
+test("repeated penetrating torso wounds incapacitate without converting nonfatal trauma into instant death", () => {
+  const { s, e, u } = setup();
+  u.protection = { helmet: 100, plate: 0 };
+  for (let i = 0; i < 2; i++)
+    B.ballisticImpact(s, e, u, {
+      eventId: "penetration-" + i,
+      model: "AKM",
+      part: "chest",
+      height: 1.2,
+      lateral: 0,
+      distance: 100,
+    });
+  assert.equal(u.health.conscious, false);
+  assert.equal(u.health.alive, true);
+  assert.equal(u.health.bloodMl, 5000);
+  C.validate(s);
+});

@@ -346,12 +346,13 @@
         );
       }
       // No marker for an enemy without an actual delivered observation.
+      const labelBoxes = [];
       for (const u of [
         ...frame.contacts.filter((c) => !c.expired),
         ...frame.friends,
         ...(frame.supportActors || []),
       ]) {
-        if (u.boardedBy) continue;
+        if (u.boardedBy || u.home || u.waitingForDeployment) continue;
         const m = positions.get(u.id);
         if (!m) continue;
         const t = paused
@@ -392,7 +393,8 @@
             m.to,
             motion.mode === "walk",
           ),
-          height = 1.8 * v.scale,
+          entityScale = Math.max(v.scale, friendly ? 12 : 8),
+          height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
         const bob = motion.mode === "walk" ? Math.sin(now * 0.012) * 1.1 : 0;
@@ -417,7 +419,7 @@
         let rendered = false;
         if (im) {
           const [x1, y1, x2, y2] = chosen.art.bounds;
-          const width = chosen.widthM * v.scale,
+          const width = chosen.widthM * entityScale,
             h = (width * (y2 - y1)) / (x2 - x1);
           const facingLeft = Math.cos(facing) < 0;
           ctx.save();
@@ -494,17 +496,29 @@
           ctx.shadowColor = "#16301a";
           ctx.shadowBlur = 4;
           ctx.textAlign = "center";
-          ctx.fillText(
-            (u.name || u.callsign || "지원요원") +
+          const label =
+              (u.name || u.callsign || "지원요원") +
               " · " +
               (u.role === "sniper"
                 ? "저격수"
                 : u.role === "observer"
                   ? "관측수"
                   : "의무요원"),
-            q.x,
-            q.y - height - 3,
-          );
+            labelWidth = ctx.measureText(label).width;
+          let labelY = Math.max(13, q.y - height - 3);
+          for (
+            let i = 0;
+            i < 6 &&
+            labelBoxes.some(
+              (b) =>
+                Math.abs(b.y - labelY) < 12 &&
+                Math.abs(b.x - q.x) < (b.width + labelWidth) / 2 + 4,
+            );
+            i++
+          )
+            labelY += 13;
+          labelBoxes.push({ x: q.x, y: labelY, width: labelWidth });
+          ctx.fillText(label, q.x, labelY);
           ctx.shadowBlur = 0;
         }
         if (now - (m.hitAt || -Infinity) < 650) {
@@ -680,7 +694,11 @@
       if (follow) {
         const visible = (
           focusId
-            ? [...next.friends, ...next.contacts.filter((c) => !c.expired)]
+            ? [
+                ...next.friends,
+                ...next.contacts.filter((c) => !c.expired),
+                ...(next.transports || []),
+              ]
             : next.friends
         ).filter(
           (u) =>
@@ -764,7 +782,10 @@
         invalidate();
       },
       follow() {
-        follow = !follow;
+        if (focusId) {
+          focusId = null;
+          follow = true;
+        } else follow = !follow;
         update(frame);
         return follow;
       },
@@ -777,10 +798,12 @@
       focus(id) {
         focusId = id;
         follow = true;
-        span = Math.min(frame.map.height, 28);
-        const u = [...frame.friends, ...frame.contacts].find(
-          (u) => u.id === id,
-        );
+        const u = [
+          ...frame.friends,
+          ...frame.contacts,
+          ...(frame.transports || []),
+        ].find((u) => u.id === id);
+        span = Math.min(frame.map.height, u?.type === "drone" ? 520 : 28);
         if (u) target = { x: u.x, y: u.y };
         update(frame);
       },

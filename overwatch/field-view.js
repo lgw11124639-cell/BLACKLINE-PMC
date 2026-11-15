@@ -162,7 +162,7 @@
         )
         .join("") +
       f.friends
-        .filter((u) => !u.boardedBy)
+        .filter((u) => !u.boardedBy && !u.home && !u.waitingForDeployment)
         .map(
           (u) =>
             '<g opacity="' +
@@ -177,7 +177,17 @@
             esc(u.name) +
             " · " +
             u.age +
-            "초 전 보고</title><text x=\"" + u.x + "\" y=\"" + (u.y-14) + "\" text-anchor=\"middle\" fill=\"#eff7ef\" stroke=\"#17291e\" stroke-width=\"0.8\" paint-order=\"stroke\" font-size=\"" + (f.map.width<500?3.2:7) + "\">" + esc(u.name) + " · " + (u.role==="sniper"?"저격수":"관측수") + "</text></g>",
+            '초 전 보고</title><text x="' +
+            u.x +
+            '" y="' +
+            (u.y - 14) +
+            '" text-anchor="middle" fill="#eff7ef" stroke="#17291e" stroke-width="0.8" paint-order="stroke" font-size="' +
+            (f.map.width < 500 ? 3.2 : 7) +
+            '">' +
+            esc(u.name) +
+            " · " +
+            (u.role === "sniper" ? "저격수" : "관측수") +
+            "</text></g>",
         )
         .join("") +
       (f.transports || [])
@@ -427,9 +437,9 @@
       battle = f?.battle,
       active = battle && f.status === "running";
     return (
-      '<section class="page-title"><span class="eyebrow">PHASE 04 / FIELD SIMULATOR</span><h1>OVERWATCH 전장</h1><p>관측수 지휘 아래 움직이는 실시간 모의 전장입니다. 적 AI·탄약·총상·응급처치는 연습 상태에 저장하며, 본부 대원의 영구 손실·재고·계약 보수에는 아직 반영하지 않습니다.</p></section>' +
+      '<section class="page-title"><span class="eyebrow">TRAINING CONTROL</span><h1>저격조 모의 훈련</h1><p>교관이 과업을 통제하는 실시간 훈련입니다. 관측수와 저격수의 행동을 관전하며 연습 부상·전사는 실전 인사 손실로 반영하지 않습니다.</p></section>' +
       (!battle || !active
-        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 지원 헬기·차량은 계약 시스템 연결 전이므로 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
+        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 훈련에는 계약 기관의 실전 수송·지원이 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
           (!editable ||
           !s.squads.length ||
           s.commandExercise?.status === "running"
@@ -443,32 +453,35 @@
       (battle
         ? '<div class="field-layout"><section><div class="panel field-stage" data-field-stage><div class="field-stage-toolbar"><span data-field-clock>' +
           stamp(f.time) +
-          '</span><div><button data-field-view="illustrated">입체 전투지도</button><button data-field-view="2d">전술도</button><button data-field-view="3d">3D 실험실</button><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button data-field-overview>전체 지역</button><button data-field-fullscreen>지도 전체화면</button></div></div><div class="field-viewport" data-field-id="' +
+          '</span><div><select data-field-view-select aria-label="지도 표현"><option value="illustrated">입체 지도</option><option value="2d">전술도</option><option value="3d">3D 보기</option></select><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button data-field-overview>전체 지역</button><button data-field-fullscreen>지도 전체화면</button></div></div><div class="field-viewport" data-field-id="' +
           esc(s.campaignId + ":" + f.id) +
           '"></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단</div>' +
           (active
-            ? '<div class="field-quick-orders"><select data-field-quick-team aria-label="명령할 저격조">' +
+            ? '<div class="field-quick-orders"><select data-field-quick-team aria-label="저격조 선택">' +
               f.squads
                 .map((q) => "<option>" + esc(q.callsign) + "</option>")
                 .join("") +
               "</select>" +
-              [
-                ["cover", "아군 엄호"],
-                ["recon", "정찰"],
-                ["hold", "경계"],
-                ["withdraw", "전체 철수"],
-              ]
-                .map(
-                  ([k, v]) =>
-                    '<button data-field-quick="' +
-                    k +
-                    '"' +
-                    (!editable ? " disabled" : "") +
-                    ">" +
-                    v +
-                    "</button>",
-                )
-                .join("") +
+              (s.commandStaff?.delegated &&
+              root.OverwatchStaff?.authority(s, s.commandExercise)
+                ? '<span class="delegated-label">작전권 위임 · 관전 중</span>'
+                : [
+                    ["cover", "아군 엄호"],
+                    ["recon", "정찰"],
+                    ["hold", "경계"],
+                    ["withdraw", "전체 철수"],
+                  ]
+                    .map(
+                      ([k, v]) =>
+                        '<button data-field-quick="' +
+                        k +
+                        '"' +
+                        (!editable ? " disabled" : "") +
+                        ">" +
+                        v +
+                        "</button>",
+                    )
+                    .join("")) +
               '<p class="field-target-hint" data-field-target>관측수 자율 판단 · 지도 선택은 선택 사항</p><button type="button" data-field-clear-target>관심 구역 해제</button></div>'
             : "") +
           '</div><section class="panel field-comms"><div class="personnel-section-title"><h2>현장 무전</h2><span class="status-pill">LIVE COMMS</span><label class="field-audio-volume">음량<input data-overwatch-volume type="range" min="0" max="100" value="35" aria-label="전장 효과음 음량"></label><a class="audio-credits" href="audio/credits.html" target="_blank" rel="noopener">음원</a></div><ol class="field-radio" data-field-radio></ol></section><section class="panel"><div class="field-controls">' +
@@ -507,21 +520,65 @@
   }
   function render(s, opts) {
     let html = renderBase(s, opts);
-    if (!s?.commandExercise?.mission) return html;
-    const f = D.frame(s);
+    const e = s?.commandExercise;
+    if (!e?.battle)
+      return html + (root.OverwatchStaffUI?.render(s, opts?.editable) || "");
+    const radio =
+      html.match(
+        /<section class="panel field-comms">[\s\S]*?<\/section>/,
+      )?.[0] || "";
+    if (radio) html = html.replace(radio, "");
+    const support =
+      (root.OverwatchStaffUI?.field(s) || "") +
+      (e.mission ? root.OverwatchMissionUI.livePanel(s) : "");
     html = html.replace(
-      /<section class="page-title">[\s\S]*?<\/section>/,
-      '<section class="page-title"><span class="eyebrow">LIVE OPERATION / AGENCY CONTRACT</span><h1>실전 작전 지휘</h1><p>실제 부상·전사·미회수·소모품·보수가 본부 기록에 반영됩니다. 기관이 계약에서 제공한 수송·지원만 사용할 수 있습니다.</p></section>' +
-        root.OverwatchMissionUI.livePanel(s),
+      "<aside>",
+      '<aside><nav class="field-panel-tabs" aria-label="관제 패널"><button data-inspector="radio">무전</button><button data-inspector="roster">대원</button><button data-inspector="support">본부·지원</button></nav>' +
+        radio +
+        support,
     );
-    html = html.replace(
-      /<section class="panel"><h2>전장 연습 편성[\s\S]*?<\/section>/,
-      "",
-    );
-    return html
-      .replace("연습 통제 종료", "작전 중단·철수")
-      .replace("연습 종료", "실전 작전 종료")
-      .replace("조 전체 복귀 명령", "철수·제공 수송 요청");
+    html = html
+      .replace(
+        'class="field-layout"',
+        'class="field-layout" data-inspector="' +
+          (s.ui.fieldInspector || "radio") +
+          '"',
+      )
+      .replace(
+        'class="panel field-comms"',
+        'class="panel field-comms" data-inspector-panel="radio"',
+      )
+      .replace(
+        'class="panel field-control-staff"',
+        'class="panel field-control-staff" data-inspector-panel="support"',
+      )
+      .replace(
+        'class="panel live-field-panel"',
+        'class="panel live-field-panel" data-inspector-panel="support"',
+      )
+      .replace(
+        '<section class="panel"><h2>조원 상태',
+        '<section class="panel" data-inspector-panel="roster"><h2>조원 상태',
+      )
+      .replace(
+        '<section class="panel"><h2>관측 접촉',
+        '<section class="panel" data-inspector-panel="roster"><h2>관측 접촉',
+      );
+    if (e.mission)
+      html = html
+        .replace(
+          /<section class="page-title">[\s\S]*?<\/section>/,
+          '<section class="page-title"><span class="eyebrow">LIVE OPERATION</span><h1>' +
+            esc(e.mission.contract.title) +
+            "</h1></section>",
+        )
+        .replace(
+          /<section class="panel"><h2>전장 연습 편성[\s\S]*?<\/section>/,
+          "",
+        )
+        .replace("연습 통제 종료", "작전 중단·철수")
+        .replace("연습 종료", "실전 작전 종료");
+    return html;
   }
   function refresh(rootNode, s, { playing = false } = {}) {
     const f = D.frame(s);
@@ -672,6 +729,15 @@
             next.commandExercise = null;
         });
     });
+    for (const button of rootNode.querySelectorAll(
+      "[data-inspector] button[data-inspector]",
+    ))
+      button.addEventListener("click", () => {
+        if (editable)
+          commit((next) => {
+            next.ui.fieldInspector = button.dataset.inspector;
+          });
+      });
     const quickTeam = rootNode.querySelector("[data-field-quick-team]");
     if (quickTeam) {
       quickTeam.value =
@@ -704,12 +770,14 @@
     on("[data-field-start]", () => {
       if (editable) root.OverwatchAudio?.startOnGesture?.();
       if (editable)
-        execute((next) =>
-          B.begin(next, {
+        execute((next) => {
+          const why = root.OverwatchStaff?.ready(next, true);
+          if (why) throw Error(why);
+          return B.begin(next, {
             scenario: rootNode.querySelector("[data-field-scenario]").value,
             mapId: rootNode.querySelector("[data-field-map]").value,
-          }),
-        );
+          });
+        });
     });
     on("[data-overwatch-audio]", () => root.OverwatchAudio.toggle());
     rootNode
@@ -745,6 +813,16 @@
           commit((next) => B.speed(next, Number(b.dataset.fieldSpeed)));
       }),
     );
+    const viewSelect = rootNode.querySelector("[data-field-view-select]");
+    if (viewSelect) {
+      viewSelect.value = s.fieldPreferences.view;
+      viewSelect.addEventListener("change", () => {
+        if (editable)
+          commit((next) => {
+            next.fieldPreferences.view = viewSelect.value;
+          });
+      });
+    }
     rootNode.querySelectorAll("[data-field-view]").forEach((b) =>
       b.addEventListener("click", () => {
         if (editable)
@@ -852,5 +930,28 @@
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement) closeMap();
   });
-  root.OverwatchFieldUI = { render, refresh, mount, bind, map2D };
+  root.OverwatchFieldUI = {
+    render,
+    refresh,
+    mount,
+    bind,
+    map2D,
+    selectedPoint: () => (selection ? { ...selection } : null),
+    focusSupport(id) {
+      const t = lastFrame?.transports?.find((t) =>
+        id ? t.id === id : t.type === "drone" && t.state !== "home",
+      );
+      if (!t) return false;
+      if (currentRenderer()) currentRenderer().focus(t.id);
+      else {
+        const svg = document.querySelector(".field-viewport svg"),
+          span = Math.min(lastFrame.map.height, 520);
+        svg?.setAttribute(
+          "viewBox",
+          [t.x - span * 0.75, t.y - span * 0.5, span * 1.5, span].join(" "),
+        );
+      }
+      return true;
+    },
+  };
 })(typeof window === "undefined" ? globalThis : window);

@@ -1,0 +1,10 @@
+"""A transport that actually returns is removed from the existing 3D scene, not only on reload."""
+import os
+from playwright.sync_api import sync_playwright
+BASE=os.environ.get('BLACKLINE_TEST_URL','http://127.0.0.1:8060')
+with sync_playwright() as p:
+ b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox','--use-angle=swiftshader','--enable-webgl']);q=b.new_page(viewport={'width':844,'height':390});errors=[];q.on('pageerror',lambda e:errors.append(str(e)));q.goto(BASE,wait_until='networkidle')
+ q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,P=OverwatchPersonnel,o=P.hire(s,s.market.candidates.find(c=>c.specialty==='observer').id,30),n=P.hire(s,s.market.candidates.find(c=>c.specialty==='sniper').id,30);P.assign(s,'ALPHA',o.id,n.id);delete s.commandStaff;OverwatchMissions.accept(s,s.contracts[0].id);OverwatchMissions.launch(s,s.contracts[0].id);OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,12);s.ui.tab='field';st.save(s,s.revision);}""");q.reload(wait_until='networkidle');q.locator('[data-field-view-select]').select_option('3d');q.wait_for_function('OverwatchFieldRenderer.get()?.stats().transports===1')
+ result=q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,e=s.commandExercise;OverwatchMissions.requestReturn(s,{abort:true});for(let i=0;i<500&&e.status==='running';i++){OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1);}OverwatchCore.validate(s);const frame=OverwatchCommand.frame(s);OverwatchFieldRenderer.get().update(frame);return {ended:e.status==='ended',privateTransports:e.mission.transports.length,publicTransports:frame.transports.length,visible:OverwatchFieldRenderer.get().stats().transports};}""")
+ assert result['ended'];assert result['privateTransports']==1;assert result['publicTransports']==0;assert result['visible']==0,result
+ assert not errors,errors;b.close();print('PASS actual returned transport stays in saved simulation but disappears from public map and existing 3D scene')

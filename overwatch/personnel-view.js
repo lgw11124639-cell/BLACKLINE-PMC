@@ -181,7 +181,13 @@
       ' 병과 모델"></span><span class="member-status ' +
       (why ? "limited" : "ready") +
       '">' +
-      esc(statuses[m.status]) +
+      esc(
+        s.commandStaff?.controllerId === m.id
+          ? "작전통제관"
+          : s.commandStaff?.instructorId === m.id
+            ? "훈련 교관"
+            : statuses[m.status],
+      ) +
       "</span></div><small>" +
       esc(m.id) +
       " · " +
@@ -395,7 +401,7 @@
       return '<section class="panel"><h2>2단계 저장 전환이 필요합니다.</h2><p>저장 관리에서 원본을 보존한 뒤 주 저장을 복구하세요.</p></section>';
     const view = s.ui.personnelTab || "roster";
     return (
-      '<section class="page-title"><span class="eyebrow">PERSONNEL & PAIRS / PHASE 02</span><h1>대원과 저격조</h1><p>현직 ' +
+      '<section class="page-title"><span class="eyebrow">PERSONNEL & PAIRS</span><h1>대원과 저격조</h1><p>현직 ' +
       s.members.length +
       "/10명 · 편성 " +
       s.squads.length +

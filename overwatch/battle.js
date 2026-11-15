@@ -184,6 +184,7 @@
         capacity: WEAPONS[u.weapon.model].capacity,
         range: WEAPONS[u.weapon.model].range,
       },
+      waitingForDeployment: !!u.waitingForDeployment,
       protection: u.protection ? copy(u.protection) : null,
       heading: u.heading || 0,
       mobility: moveFactor(u) > 0,
@@ -559,6 +560,18 @@
       type: blocked ? "방호 충격상" : "총상",
     });
   }
+  function underFire(e, u) {
+    return (
+      e.time - u.lastThreatAt < 8 &&
+      e.battle.shots.some(
+        (shot) =>
+          e.time - shot.time < 8 &&
+          shot.actorId !== u.id &&
+          shot.side !== (u.side || "blue") &&
+          G.distance(shot.to, u) < 12,
+      )
+    );
+  }
   function beforeTick(s, e) {
     for (const u of all(e)) protectionFor(u);
     for (const u of all(e))
@@ -624,7 +637,12 @@
             u.state = "carrying";
           }
         }
-      } else if (healthy(u) && untreated(u)) bandage(s, e, u, u);
+      } else if (
+        healthy(u) &&
+        untreated(u) &&
+        (!underFire(e, u) || h.bloodMl < 3300)
+      )
+        bandage(s, e, u, u);
       if (u.weapon.reloadUntil !== null && e.time >= u.weapon.reloadUntil) {
         u.weapon.loaded = u.weapon.magazines.shift();
         u.weapon.reloadUntil = null;
@@ -678,11 +696,7 @@
               !v.health.aid &&
               ((untreated(v) &&
                 h.kit > 0 &&
-                (!u.combatActive ||
-                  v.health.bloodMl < 3300 ||
-                  v.health.wounds.some(
-                    (w) => !w.treated && w.severity === 3,
-                  ))) ||
+                (!underFire(e, u) || v.health.bloodMl < 3300)) ||
                 (!untreated(v) &&
                   moveFactor(v) === 0 &&
                   (!e.mission ||
@@ -727,11 +741,18 @@
         ? e.world.actors.filter((v) => v.side === "red")
         : [
             ...e.world.units,
-            ...e.world.actors.filter((v) => v.side === "ally"),
+            ...e.world.actors.filter(
+              (v) =>
+                v.side === "ally" &&
+                (v.armed ||
+                  (e.mission?.contract.task === "vip" &&
+                    v.id === "agency-protected")),
+            ),
           ];
     const visible = targets.filter(
       (v) =>
         v.health.alive &&
+        !v.waitingForDeployment &&
         !v.boardedBy &&
         !v.extracted &&
         G.distance(u, v) <
@@ -1093,18 +1114,28 @@
       reload(e, u);
       return;
     }
+    const trackingDisplacement = w.aimAnchor
+        ? G.distance(w.aimAnchor, known)
+        : 0,
+      trackingSeconds = Math.max(1, e.time - (w.aimAnchorAt ?? e.time));
     if (
       w.targetId !== known.id ||
       !w.aimAnchor ||
-      G.distance(w.aimAnchor, known) > 4 ||
+      trackingDisplacement > Math.max(8, d * 0.02) ||
+      (trackingSeconds > 3 && trackingDisplacement > 4) ||
       G.distance(w.aimOrigin || u, u) > 1.5
     ) {
       w.targetId = known.id;
       w.aimSince = e.time;
       w.aimAnchor = { x: known.x, y: known.y };
       w.aimOrigin = { x: u.x, y: u.y };
+      w.aimAnchorAt = e.time;
+      w.trackingSpeed = 0;
       return;
     }
+    w.trackingSpeed = trackingDisplacement / trackingSeconds;
+    w.aimAnchor = { x: known.x, y: known.y };
+    w.aimAnchorAt = e.time;
     // Aim at the observed position, never at the hidden truth position.
     u.heading = Math.atan2(known.y - u.y, known.x - u.x);
     const aimSeconds = u.role === "sniper" || w.model === "SVD" ? 7 : 3;
@@ -1120,6 +1151,7 @@
           (1.55 - u.skill / 100) *
           movement *
           armPenalty *
+          (1 + Math.min(1.5, w.trackingSpeed / 4)) *
           (e.time - u.lastThreatAt < 15 ? 2.2 : 1) *
           Math.max(1, 1.8 - (e.time - w.aimSince) / 12) *
           (stanceOf(u) === "prone"
@@ -1314,6 +1346,19 @@
     u.health.wounds.push(w);
     if (severity === 3 && ["head", "chest", "abdomen"].includes(part))
       u.health.conscious = false;
+    const penetratingTorso = u.health.wounds.filter(
+      (w) =>
+        !w.treated &&
+        ["chest", "abdomen"].includes(w.part) &&
+        w.severity >= 2 &&
+        w.type !== "방호 충격상",
+    );
+    if (
+      penetratingTorso.length >= 3 ||
+      (penetratingTorso.length >= 2 &&
+        penetratingTorso.some((w) => w.part === "chest"))
+    )
+      u.health.conscious = false;
     if (fatal) {
       u.health.alive = false;
     }
@@ -1358,7 +1403,7 @@
           ["unarmed-person", "friendly-person", "unknown"].includes(
             c.classification,
           ) &&
-          (G.distance(c, target) < 12 ||
+          (G.distance(c, target) < 2 ||
             (pointSegment(c, u, target) < 3 && G.distance(u, c) < range)),
       );
     let mode = "hold",
@@ -1774,13 +1819,14 @@
       s.clock.paused = e.status !== "running" || e.paused;
     }
   }
-  function withdraw(s) {
+  function withdraw(s, authority = null) {
     const e = s.commandExercise;
     ok(e?.battle && e.status === "running", "모의 전장이 진행 중이 아닙니다.");
-    if (e.mission) return M().requestReturn(s);
+    if (e.mission) return M().requestReturn(s, { authority });
     e.battle.objective.returnRequested = true;
     for (const q of e.squads)
-      if (I().leader(e, q)?.capable) D().issue(s, q.callsign, "withdraw");
+      if (I().leader(e, q)?.capable)
+        D().issue(s, q.callsign, "withdraw", null, null, authority);
   }
   function project(s, f) {
     const e = s.commandExercise,
@@ -2114,6 +2160,7 @@
     knownFriendEvidence,
     ballisticImpact,
     shotObservation,
+    underFire,
     observerDecision,
     validate,
     withdraw,
