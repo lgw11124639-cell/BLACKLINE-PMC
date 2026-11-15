@@ -293,3 +293,29 @@ test("observer cover uses delivered agency escort positions and chooses a real a
   assert.ok(e.events.some((ev) => ev.type === "tactical-position-selected"));
   C.validate(s);
 });
+
+test("a vehicle already driving to insertion turns back on abort without inventing field experience", () => {
+  const s = launch(),
+    e = s.commandExercise,
+    t = e.mission.transports[0],
+    before = s.members.map((m) => m.proficiency.primary);
+  for (
+    let i = 0;
+    i < 80 && !(t.state === "driving" && G.distance(t, G.MAP.base) > 15);
+    i++
+  )
+    advance(s, 1);
+  assert.equal(e.mission.fieldStartedAt, null);
+  assert.equal(t.state, "driving");
+  M.requestReturn(s, { abort: true });
+  assert.equal(e.mission.phase, "returning");
+  assert.deepEqual(t.target, G.MAP.base);
+  advance(s, 150);
+  assert.equal(e.status, "ended");
+  assert.equal(s.operations.reports[0].reward, 0);
+  assert.deepEqual(
+    s.members.map((m) => m.proficiency.primary),
+    before,
+  );
+  C.validate(s);
+});
