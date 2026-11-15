@@ -1661,7 +1661,7 @@ body[data-screen="headquarters"] .hq-dashboard > .panel {
 }
 
 /* Ended exercises show setup and review together in the scrollable main pane. */
-.workspace > main:not(.battle-screen) .field-layout {
+.workspace > main:not(.battle-screen) .field-layout:not(.field-fullscreen) {
   height: 440px;
   min-height: 440px;
   flex: none;
