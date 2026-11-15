@@ -232,3 +232,23 @@ test("the sniper optical identification is not capped by the observer lower-deta
   );
   C.validate(s);
 });
+
+test("steady tracked contacts update map intelligence without repeated audible coordinate reports", () => {
+  const { s, e, t } = scenario(500);
+  for (let i = 0; i < 120; i++) {
+    t.weapon.nextFireAt = e.time + 20;
+    for (const u of e.world.units) u.weapon.nextFireAt = e.time + 20;
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  const reports = e.radio.filter((r) => r.payload?.contact?.id === t.id);
+  assert.ok(reports.some((r) => r.kind === "position"));
+  assert.ok(reports.filter((r) => r.kind === "observation").length <= 3);
+  assert.ok(D.frame(s).radio.every((r) => r.kind !== "position"));
+  // Old versions stored ordinary tracking packets as voiced observations.
+  for (const r of reports) if (r.kind === "position") r.kind = "observation";
+  assert.ok(
+    D.frame(s).radio.filter((r) => r.kind === "observation").length <= 3,
+  );
+  C.validate(s);
+});

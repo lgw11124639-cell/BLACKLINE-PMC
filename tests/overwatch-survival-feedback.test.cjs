@@ -268,3 +268,33 @@ test("repeated penetrating torso wounds incapacitate without converting nonfatal
   assert.equal(u.health.bloodMl, 5000);
   C.validate(s);
 });
+
+test("heard gunfire reports reference an actual shot without leaking an unseen firing position", () => {
+  const { s, e, u } = setup(),
+    enemy = e.world.actors[0];
+  Object.assign(u, { x: 100, y: 700, path: [], goal: null });
+  Object.assign(enemy, { x: 200, y: 700 });
+  e.time = 30;
+  s.clock.elapsedSeconds = 30;
+  Object.assign(enemy.weapon, {
+    targetId: u.id,
+    aimSince: 0,
+    aimAnchor: { x: u.x, y: u.y },
+    aimOrigin: { x: enemy.x, y: enemy.y },
+  });
+  const shot = B.fire(s, e, enemy, {
+    id: u.id,
+    x: u.x,
+    y: u.y,
+    condition: "standing",
+  });
+  assert.ok(shot);
+  const report = e.radio.find((r) => r.body.includes("총성 청취"));
+  assert.ok(report);
+  assert.ok(
+    e.events.some((ev) => ev.id === report.eventId && ev.type === "shot-fired"),
+  );
+  assert.deepEqual(report.payload, {});
+  assert.ok(!report.body.includes("200"));
+  C.validate(s);
+});

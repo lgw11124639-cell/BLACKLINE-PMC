@@ -393,10 +393,11 @@
             m.to,
             motion.mode === "walk",
           ),
-          entityScale = Math.max(v.scale, friendly ? 12 : 8),
+          entityScale = Math.max(v.scale, 12),
           height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
+        m.entityScale = entityScale;
         const bob = motion.mode === "walk" ? Math.sin(now * 0.012) * 1.1 : 0;
         ctx.save();
         ctx.globalAlpha = u.stale
@@ -722,37 +723,40 @@
       invalidate();
     }
     listen("pointerdown", (e) => {
+      const p = root.OverwatchViewport.point(canvas, e);
       if (e.button !== 0) return;
       drag = {
-        x: e.clientX,
-        y: e.clientY,
-        startX: e.clientX,
-        startY: e.clientY,
+        x: p.x,
+        y: p.y,
+        startX: p.x,
+        startY: p.y,
         moved: false,
       };
       canvas.setPointerCapture(e.pointerId);
     });
     listen("pointermove", (e) => {
+      const p = root.OverwatchViewport.point(canvas, e);
       if (!drag) return;
-      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 6)
+      if (Math.hypot(p.x - drag.startX, p.y - drag.startY) > 6)
         drag.moved = true;
       if (drag.moved) {
         const v = view();
         follow = false;
-        target.x -= (e.clientX - drag.x) / v.scale;
-        target.y -= (e.clientY - drag.y) / v.scale;
+        target.x -= (p.x - drag.x) / v.scale;
+        target.y -= (p.y - drag.y) / v.scale;
         invalidate();
       }
-      drag.x = e.clientX;
-      drag.y = e.clientY;
+      drag.x = p.x;
+      drag.y = p.y;
     });
     listen("pointerup", (e) => {
+      const p = root.OverwatchViewport.point(canvas, e);
       if (drag && !drag.moved) {
         const rect = canvas.getBoundingClientRect(),
           v = view();
         pick({
-          x: v.left + (e.clientX - rect.left) / v.scale,
-          y: v.top + (e.clientY - rect.top) / v.scale,
+          x: v.left + p.x / v.scale,
+          y: v.top + p.y / v.scale,
         });
       }
       drag = null;
@@ -831,6 +835,7 @@
             mode: m.motion,
             flash: m.flash,
             sprite: m.sprite,
+            entityScale: m.entityScale,
             spriteFallback: m.spriteFallback,
           })),
           assetsReady:

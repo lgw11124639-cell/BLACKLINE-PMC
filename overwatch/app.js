@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.15.10",
+  const VERSION = "2026.11.15.11",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -252,10 +252,10 @@
       if (
         source === "primary" &&
         state?.schemaVersion === 5 &&
-        !state.commandStaff
+        (!state.commandStaff || state.commandStaff.marketVersion !== 2)
       ) {
         const next = Core.clone(state);
-        OverwatchStaff.initialize(next);
+        OverwatchStaff.upgrade(next);
         state = store.save(next, state.revision);
       }
       lastSaved = state ? Core.clone(state) : null;
@@ -560,7 +560,7 @@
       PersonnelUI.timestamp(state?.clock.elapsedSeconds || 0) +
       ' / 본부</span><button id="version-check" class="quiet">' +
       VERSION +
-      '</button><button data-game-fullscreen aria-label="게임 전체화면">전체화면</button></div></header><div class="rotate-hint"><span>가로로 돌리면 지도와 관제 패널을 함께 볼 수 있습니다.</span><button data-game-fullscreen>전체화면</button></div><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
+      '</button><button data-game-fullscreen aria-label="게임 전체화면">전체화면</button></div></header><div class="rotate-hint"><span>가로 화면 전용 · 기기를 옆으로 돌려주세요.</span><button data-game-fullscreen>전체화면</button></div><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
       tabs
         .map(
           ([key, label, n]) =>
@@ -707,7 +707,7 @@
         }
       }
       if (wasFullscreen) {
-        root.querySelector(".field-stage")?.classList.add("field-fullscreen");
+        root.querySelector(".field-layout")?.classList.add("field-fullscreen");
         const button = root.querySelector("[data-field-fullscreen]");
         if (button) button.textContent = "전체화면 닫기";
       }

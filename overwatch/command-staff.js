@@ -23,10 +23,132 @@
         autoSupport: true,
         history: [],
       };
-    return s.commandStaff;
+    const c = s.commandStaff;
+    c.members ??= [];
+    c.market ??= [];
+    c.sequence ??= 0;
+    if (!c.market.length) fillMarket(s);
+    return c;
+  }
+  function fillMarket(s) {
+    const c = s.commandStaff;
+    c.market = [];
+    c.nextMarketAt = s.clock.elapsedSeconds + 43200;
+    for (const duty of ["controller", "instructor"])
+      for (let i = 0; i < 3; i++) {
+        const serial = ++c.sequence;
+        c.market.push({
+          id: "staff-candidate-" + serial,
+          name: P().newName(s, serial + 1000),
+          duty,
+          age: 35 + i * 6,
+          years: 12 + i * 5,
+          dailySalary: 160000 + i * 70000,
+          skills: Object.fromEntries(
+            P().SKILLS.map((k) => [k, 72 + i * 8 + (k === "judgment" ? 5 : 0)]),
+          ),
+        });
+      }
+  }
+  function refreshMarket(s) {
+    const c = initialize(s);
+    ok(
+      s.commandExercise?.status !== "running",
+      "복귀 후 지원 인력 시장을 갱신하세요.",
+    );
+    ok(
+      s.clock.elapsedSeconds >= (c.nextMarketAt || 0),
+      "지원 인력 시장은 12시간마다 갱신할 수 있습니다.",
+    );
+    fillMarket(s);
+    P().recordEvent(s, "market-refreshed", "지원 인력 모집 후보 갱신");
+  }
+  function upgrade(s) {
+    const c = initialize(s);
+    if (c.marketVersion === 2) return;
+    // Transfer only already assigned HQ personnel; preserve their identity and paid contract.
+    for (const key of ["controller", "instructor"]) {
+      const i = s.members.findIndex((m) => m.id === c[key + "Id"]);
+      if (i >= 0) {
+        const m = s.members.splice(i, 1)[0];
+        m.duty = key;
+        m.staffOnly = true;
+        c.members.push(m);
+      }
+    }
+    c.marketVersion = 2;
+    P().diversifyMarket(s);
+  }
+  function hire(s, id, days = 30) {
+    const c = initialize(s),
+      candidate = c.market.find((m) => m.id === id);
+    ok(candidate, "지원 인력 후보를 찾을 수 없습니다.");
+    ok(
+      !s.commandExercise || s.commandExercise.status !== "running",
+      "작전 복귀 후 지원 인력을 채용하세요.",
+    );
+    ok(
+      c.members.filter(
+        (m) =>
+          m.duty === candidate.duty &&
+          m.contract.endsAt > s.clock.elapsedSeconds,
+      ).length < 2,
+      "직책별 지원 인력은 최대 2명입니다.",
+    );
+    ok(days === 30, "지원 인력 계약은 30일 단위입니다.");
+    ok(c.members.length < 100, "지원 인력 계약 기록 한도입니다.");
+    const cost = candidate.dailySalary * days;
+    P().finance(s, -cost, "staff-contract", {
+      staffId: id,
+      duty: candidate.duty,
+      days,
+    });
+    const m = {
+      ...copy(candidate),
+      id: "staff-" + ++c.sequence,
+      staffOnly: true,
+      status: "standby",
+      fatigue: 0,
+      stress: 0,
+      injuries: [],
+      aftereffects: [],
+      activityId: null,
+      contract: {
+        startsAt: s.clock.elapsedSeconds,
+        endsAt: s.clock.elapsedSeconds + days * 86400,
+      },
+      history: [],
+    };
+    c.members.push(m);
+    c.market = c.market.filter((m) => m.id !== id);
+    P().recordEvent(
+      s,
+      "recruited",
+      m.name +
+        " · " +
+        (m.duty === "controller" ? "작전통제관" : "훈련 교관") +
+        " 별도 계약",
+      { staffId: m.id },
+    );
+    return m;
+  }
+  function renew(s, id) {
+    const c = initialize(s),
+      m = c.members.find((m) => m.id === id);
+    ok(m, "지원 인력을 찾을 수 없습니다.");
+    P().finance(s, -m.dailySalary * 30, "staff-renewal", {
+      staffId: id,
+      days: 30,
+    });
+    m.contract.endsAt =
+      Math.max(s.clock.elapsedSeconds, m.contract.endsAt) + 30 * 86400;
   }
   function staff(s, key) {
-    return s.members.find((m) => m.id === s.commandStaff?.[key + "Id"]) || null;
+    return (
+      [...(s.commandStaff?.members || []), ...s.members].find(
+        (m) => m.id === s.commandStaff?.[key + "Id"],
+      ) || null
+    );
   }
   function reserved(s, id) {
     return (
@@ -60,7 +182,8 @@
       "진행 중인 지휘 담당자는 복귀 후 교대하세요.",
     );
     if (id) {
-      const m = s.members.find((m) => m.id === id);
+      const m = [...c.members, ...s.members].find((m) => m.id === id);
+      ok(!m?.staffOnly || m.duty === key, "지원 인력의 전문 직책이 다릅니다.");
       ok(available(s, m), "건강하고 대기 중인 본부 대원이 필요합니다.");
       ok(
         !s.squads.some((q) => [q.observerId, q.sniperId].includes(id)),
@@ -307,7 +430,7 @@
       );
     }
     c.coverage ??= {};
-    const chief = s.members.find((m) => m.id === a.id),
+    const chief = staff(s, e.mission ? "controller" : "instructor"),
       assessInterval = Math.max(
         8,
         18 - Math.floor(P().effectiveSkills(chief).judgment / 10),
@@ -595,12 +718,51 @@
         c.history.length <= 100,
       "본부 지휘 편성이 잘못되었습니다.",
     );
+    if (c.members) {
+      ok(
+        Array.isArray(c.members) &&
+          Array.isArray(c.market) &&
+          c.members.length <= 100 &&
+          c.market.length <= 6,
+        "지원 인력 저장이 잘못되었습니다.",
+      );
+      const ids = new Set(
+        [...s.members, ...s.archive.members].map((m) => m.id),
+      );
+      for (const m of [...c.members, ...c.market]) {
+        ok(
+          m &&
+            typeof m.id === "string" &&
+            !ids.has(m.id) &&
+            typeof m.name === "string" &&
+            ["controller", "instructor"].includes(m.duty) &&
+            Number.isFinite(m.dailySalary) &&
+            m.dailySalary > 0 &&
+            P().SKILLS.every(
+              (k) =>
+                Number.isFinite(m.skills?.[k]) &&
+                m.skills[k] >= 0 &&
+                m.skills[k] <= 100,
+            ),
+          "지원 인력 정보가 잘못되었습니다.",
+        );
+        ids.add(m.id);
+        if (c.members.includes(m))
+          ok(
+            m.staffOnly &&
+              m.contract &&
+              Number.isFinite(m.contract.endsAt) &&
+              Array.isArray(m.injuries),
+            "지원 인력 계약이 잘못되었습니다.",
+          );
+      }
+    }
     const e = s.commandExercise,
       control = e?.control;
     if (control) {
       ok(
         control.version === 1 &&
-          [...s.members, ...s.archive.members].some(
+          [...s.members, ...s.archive.members, ...(c.members || [])].some(
             (m) => m.id === control.staffId,
           ) &&
           Number.isFinite(control.lastAssess) &&
@@ -624,7 +786,7 @@
         "지휘 직책 연결이 잘못되었습니다.",
       );
       if (!id) continue;
-      const m = s.members.find((x) => x.id === id);
+      const m = [...s.members, ...(c.members || [])].find((x) => x.id === id);
       ok(
         m &&
           !assigned.includes(id) &&
@@ -642,6 +804,10 @@
   }
   const api = {
     initialize,
+    upgrade,
+    refreshMarket,
+    hire,
+    renew,
     assign,
     staff,
     reserved,

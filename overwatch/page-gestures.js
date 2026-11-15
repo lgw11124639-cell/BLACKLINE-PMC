@@ -1,6 +1,15 @@
 /* Page gestures stay at native scale. The map's own zoom/pan controls are independent. */
 (function () {
   "use strict";
+  window.OverwatchViewport = {
+    point(element, event) {
+      const r = element.getBoundingClientRect();
+      return matchMedia("(orientation: portrait)").matches &&
+        element.closest("#overwatch-root")
+        ? { x: event.clientY - r.top, y: r.right - event.clientX }
+        : { x: event.clientX - r.left, y: event.clientY - r.top };
+    },
+  };
   const cancel = (e) => e.preventDefault();
   for (const type of ["gesturestart", "gesturechange", "gestureend"])
     document.addEventListener(type, cancel, { passive: false });

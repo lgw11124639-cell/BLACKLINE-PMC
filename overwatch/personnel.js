@@ -268,41 +268,111 @@
       activityId: null,
     };
   }
+  function newName(s, serial, extra = []) {
+    const families = [
+      "김",
+      "이",
+      "박",
+      "최",
+      "정",
+      "강",
+      "서",
+      "윤",
+      "한",
+      "오",
+      "임",
+      "장",
+      "조",
+      "신",
+      "송",
+      "유",
+      "문",
+      "배",
+      "남",
+      "백",
+    ];
+    const given = [
+      "도윤",
+      "지훈",
+      "서준",
+      "태성",
+      "준혁",
+      "현우",
+      "수빈",
+      "시우",
+      "정훈",
+      "하준",
+      "도현",
+      "지호",
+      "민재",
+      "진우",
+      "우진",
+      "서진",
+      "성민",
+      "시현",
+      "승현",
+      "건우",
+      "재원",
+      "동현",
+      "영민",
+      "준서",
+      "태준",
+      "정우",
+      "승우",
+      "지환",
+      "성훈",
+      "민석",
+      "준영",
+      "현수",
+      "태현",
+      "재민",
+      "승민",
+      "성진",
+      "정민",
+      "동욱",
+      "민호",
+      "기현",
+      "상윤",
+      "재훈",
+      "은호",
+      "석진",
+      "강민",
+      "태오",
+      "건희",
+      "지성",
+    ];
+    const people = [
+      ...s.members,
+      ...s.archive.members,
+      ...(s.market?.candidates || []),
+      ...(s.commandStaff?.members || []),
+      ...(s.commandStaff?.market || []),
+      ...extra,
+    ];
+    const used = new Set(people.map((m) => m.name)),
+      usedGiven = new Set(people.map((m) => m.name.slice(1)));
+    let hash = 0;
+    for (const c of String(s.campaignId || s.createdAt || "BLACKLINE"))
+      hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+    for (let pass = 0; pass < 2; pass++)
+      for (let i = 0; i < families.length * given.length; i++) {
+        const g = given[(serial * 7 + hash + i) % given.length],
+          name =
+            families[
+              (serial * 3 + Math.floor(i / given.length) + hash) %
+                families.length
+            ] + g;
+        if (!used.has(name) && (pass || !usedGiven.has(g))) return name;
+      }
+    throw Error("새 이름을 생성할 수 없습니다.");
+  }
+  function diversifyMarket(s) {
+    if (s.market.namesVersion === 2) return;
+    for (const [i, m] of s.market.candidates.entries())
+      m.name = newName(s, s.personnel.sequence + i);
+    s.market.namesVersion = 2;
+  }
   function fillMarket(s) {
-    const surnames = [
-        "김",
-        "이",
-        "박",
-        "최",
-        "정",
-        "강",
-        "서",
-        "윤",
-        "한",
-        "오",
-        "임",
-        "장",
-      ],
-      given = [
-        "도윤",
-        "지훈",
-        "서준",
-        "태성",
-        "준혁",
-        "현우",
-        "수빈",
-        "시우",
-        "정훈",
-        "하준",
-        "도현",
-        "지호",
-        "민재",
-        "진우",
-        "우진",
-        "서진",
-        "성민",
-        "시현",
-      ];
     const used = new Set([...s.members, ...s.archive.members].map((m) => m.id));
     s.market.candidates = [];
     for (let i = 0; i < 12; i++) {
@@ -344,7 +414,7 @@
         );
       s.market.candidates.push({
         id,
-        name: surnames[n % 12] + given[Math.floor(n / 12) % given.length],
+        name: newName(s, n),
         age: a,
         birthDate: Number(date(s).slice(0, 4)) - a + "-01-01",
         specialty,
@@ -1446,6 +1516,8 @@
     DAY,
     INITIAL_FUNDS,
     TERMS,
+    newName,
+    diversifyMarket,
     treatmentPlan,
     SKILLS,
     SECONDARIES,

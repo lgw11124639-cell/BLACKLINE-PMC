@@ -891,7 +891,7 @@
       }
     });
     on("[data-field-fullscreen]", async () => {
-      const stage = rootNode.querySelector(".field-stage"),
+      const stage = rootNode.querySelector(".field-layout"),
         full = !stage.classList.contains("field-fullscreen");
       stage.classList.toggle("field-fullscreen", full);
       rootNode.querySelector("[data-field-fullscreen]").textContent = full
@@ -905,7 +905,6 @@
       } else {
         try {
           if (document.fullscreenElement) await document.exitFullscreen();
-          screen.orientation?.unlock?.();
         } catch {}
       }
       currentRenderer()?.resize();
@@ -918,7 +917,6 @@
     const button = stage.querySelector("[data-field-fullscreen]");
     if (button) button.textContent = "지도 전체화면";
     try {
-      screen.orientation?.unlock?.();
       if (document.fullscreenElement)
         document.exitFullscreen()?.catch(() => {});
     } catch {}

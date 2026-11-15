@@ -878,7 +878,7 @@ footer {
     display: none;
   }
 }
-@media (orientation: portrait) {
+@media (max-width: 0px) {
   html,
   body {
     height: auto;
@@ -1115,7 +1115,7 @@ footer {
 .field-person small {
   color: #9eb6ab;
 }
-@media (orientation: portrait) and (max-width: 650px) {
+@media (max-width: 0px) and (max-width: 650px) {
   .field-fullscreen {
     inset: 0;
     top: 0;
@@ -1371,5 +1371,281 @@ body[data-screen="headquarters"] .hq-dashboard > .panel {
   .field-layout > section > section.panel {
     min-height: 30px;
     padding: 3px 5px;
+  }
+}
+
+/* Full battlefield workspace retains its live inspector, rather than isolating the map. */
+.field-layout.field-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100dvw;
+  height: 100dvh;
+  z-index: 80;
+  transform: none;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(235px, 27%);
+}
+.field-layout.field-fullscreen > section,
+.field-layout.field-fullscreen > aside {
+  min-height: 0;
+  overflow: hidden;
+}
+.field-layout.field-fullscreen .field-stage {
+  position: relative;
+  inset: auto;
+  width: auto;
+  height: auto;
+  transform: none;
+}
+.field-layout.field-fullscreen .field-viewport {
+  flex: 1;
+  height: auto !important;
+  min-height: 0;
+}
+
+@media (max-width: 500px) and (orientation: portrait) {
+  .topbar {
+    height: 37px;
+    min-height: 37px;
+    padding: 3px 10px;
+  }
+  .brand {
+    font-size: 13px;
+  }
+  .brand-emblem {
+    width: 23px;
+    height: 27px;
+    font-size: 16px;
+  }
+  .brand small {
+    font-size: 6px;
+  }
+  .workspace {
+    grid-template-columns: 65px minmax(0, 1fr);
+  }
+  .sidebar {
+    padding: 5px 4px;
+  }
+  .sidebar nav {
+    gap: 3px;
+  }
+  .sidebar nav button {
+    min-height: 31px;
+    padding: 4px 2px;
+    font-size: 10px;
+  }
+  .sidebar nav button span {
+    display: none;
+  }
+  .workspace > main {
+    padding: 9px 12px;
+  }
+  .field-layout {
+    grid-template-columns: minmax(0, 1fr) 225px;
+  }
+  .battle-screen {
+    padding: 5px 7px !important;
+  }
+  .battle-screen > .page-title {
+    min-height: 19px;
+    margin-bottom: 3px;
+  }
+  .battle-screen > .page-title h1 {
+    font-size: 12px;
+  }
+  .field-stage-toolbar {
+    gap: 3px;
+  }
+  .field-stage-toolbar button {
+    font-size: 9px;
+    padding: 3px 4px;
+    min-height: 24px;
+  }
+  .field-stage-toolbar > span {
+    font-size: 10px;
+  }
+  .field-stage {
+    padding: 5px;
+  }
+  .field-panel-tabs button {
+    font-size: 10px;
+    min-height: 26px;
+  }
+  .metrics strong {
+    font-size: 17px;
+  }
+  .staff-assignments {
+    gap: 7px;
+  }
+  .staff-assignments form {
+    padding: 8px;
+  }
+  .hq-terrain {
+    height: 110px;
+  }
+  .personnel-dossier {
+    inset: 2dvh 6vw;
+    max-height: 96dvh;
+  }
+  .panel {
+    padding: 12px;
+  }
+  .field-comms .personnel-section-title h2 {
+    display: none;
+  }
+}
+
+@media (max-width: 500px) and (orientation: portrait) {
+  .field-stage-toolbar select {
+    font-size: 9px;
+    min-height: 24px;
+    width: 76px;
+  }
+  .field-stage-toolbar {
+    padding: 0;
+  }
+  .field-stage-toolbar > div {
+    flex-wrap: nowrap;
+  }
+  .field-quick-orders {
+    flex-wrap: nowrap;
+  }
+  .field-quick-orders select {
+    flex: none;
+  }
+  .field-quick-orders button {
+    white-space: nowrap;
+  }
+  .field-quick-orders .delegated-label {
+    white-space: nowrap;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 500px) and (orientation: portrait) {
+  .field-layout .field-stage {
+    padding: 5px;
+  }
+  .field-stage-toolbar button {
+    height: 26px;
+    min-height: 26px;
+  }
+  .field-stage-toolbar select,
+  .field-quick-orders select {
+    height: 29px;
+    min-height: 29px;
+  }
+}
+
+@media (max-width: 500px) and (orientation: portrait) {
+  .page-title > .eyebrow {
+    display: none;
+  }
+  .page-title {
+    margin-bottom: 8px;
+  }
+  .page-title h1 {
+    font-size: 19px;
+  }
+  .page-title p {
+    font-size: 10px;
+    margin: 2px 0;
+  }
+  .metrics article {
+    padding: 7px 10px;
+  }
+  .metrics strong {
+    font-size: 17px;
+    margin: 2px 0;
+  }
+  .hq-dashboard > .panel {
+    padding: 10px;
+  }
+  .staff-panel > .muted {
+    font-size: 9px;
+    line-height: 1.5;
+  }
+  .staff-assignments form {
+    padding: 7px;
+    gap: 4px;
+  }
+  .staff-assignments label {
+    font-size: 11px;
+    gap: 4px;
+  }
+  .staff-assignments small {
+    font-size: 9px;
+    min-height: 24px;
+  }
+  .staff-toggles {
+    margin-top: 8px;
+    gap: 8px;
+  }
+  .staff-panel h2 {
+    font-size: 14px;
+  }
+  .staff-assignments button {
+    min-height: 28px;
+    font-size: 10px;
+  }
+}
+
+.staff-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+.staff-market-card {
+  background: #15242b;
+  padding: 12px;
+  border: 1px solid #2a3e43;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.personnel-dossier h1 {
+  color: #e4ede9 !important;
+}
+.personnel-dossier > header {
+  background: #15242b !important;
+  color: #e4ede9 !important;
+}
+@media (orientation: portrait) {
+  html,
+  body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  #overwatch-root {
+    position: fixed;
+    top: 0;
+    left: 100dvw;
+    width: 100dvh;
+    height: 100dvw;
+    min-height: 0;
+    overflow: hidden;
+    transform-origin: top left;
+    transform: rotate(90deg);
+  }
+  .rotate-hint {
+    display: none !important;
+  }
+  .field-layout.field-fullscreen {
+    width: 100%;
+    height: 100%;
+  }
+  .dossier-overlay {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+@media (orientation: portrait) {
+  .dossier-backdrop {
+    padding: 10px;
+  }
+  .personnel-dossier {
+    height: calc(100% - 20px);
+    max-height: calc(100% - 20px);
   }
 }

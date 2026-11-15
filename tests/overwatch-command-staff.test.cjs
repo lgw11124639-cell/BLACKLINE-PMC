@@ -135,6 +135,7 @@ test("HQ can retask an existing UAV without a second sortie or resetting its end
 });
 test("delegated decisions and assigned staff round-trip through lossless storage", () => {
   const { s } = setup();
+  Staff.upgrade(s);
   B.begin(s, { seed: 7 });
   advance(s, 30);
   const memory = {
@@ -248,5 +249,69 @@ test("a delegated reconnaissance move leaves one actual teammate stationary with
   assert.equal(stationary.length, 1);
   assert.ok(stationary[0].visionRange > 1000);
   assert.ok(e.world.units.some((u) => u.path.length));
+  C.validate(s);
+});
+
+test("legacy HQ appointees migrate to a separate roster without changing paid contracts or field pairings", () => {
+  const { s, controller, instructor } = setup(),
+    before = JSON.stringify(controller.contract),
+    pair = JSON.stringify(s.squads);
+  Staff.upgrade(s);
+  assert.equal(s.members.length, 2);
+  assert.equal(s.commandStaff.members.length, 2);
+  assert.equal(Staff.staff(s, "controller").id, controller.id);
+  assert.equal(JSON.stringify(Staff.staff(s, "controller").contract), before);
+  assert.equal(JSON.stringify(s.squads), pair);
+  Staff.upgrade(s);
+  assert.equal(s.commandStaff.members.length, 2);
+  B.begin(s, { seed: 7 });
+  advance(s, 30);
+  assert.ok(
+    s.commandExercise.commands.some((c) => c.fromId === instructor.id) ||
+      s.commandExercise.radio.some((r) => r.from.id === instructor.id),
+  );
+  C.validate(s);
+});
+test("separate staff contracts charge once, preserve ten field slots, and restore actual delegated authority", () => {
+  const s = C.createCampaign({ id: "EXTERNAL-STAFF" });
+  Staff.upgrade(s);
+  P.finance(s, 50000000, "test-capital");
+  for (let i = 0; i < 10; i++) P.hire(s, s.market.candidates[0].id, 30);
+  const candidate = s.commandStaff.market.find((m) => m.duty === "instructor"),
+    funds = s.headquarters.funds;
+  const m = Staff.hire(s, candidate.id);
+  assert.equal(s.members.length, 10);
+  assert.equal(s.headquarters.funds, funds - candidate.dailySalary * 30);
+  assert.throws(() => Staff.hire(s, candidate.id));
+  Staff.assign(s, "instructor", m.id);
+  const o = s.members.find((m) => m.specialty === "observer"),
+    n = s.members.find((m) => m.specialty === "sniper");
+  P.assign(s, "ALPHA", o.id, n.id);
+  B.begin(s, { seed: 7 });
+  advance(s, 30);
+  assert.ok(s.commandExercise.radio.some((r) => r.from.id === m.id));
+  C.validate(s);
+  const restored = JSON.parse(JSON.stringify(s));
+  C.validate(restored);
+  assert.equal(Staff.authority(restored, restored.commandExercise).id, m.id);
+});
+test("market generation varies given names and refresh does not rename contracted people", () => {
+  const s = C.createCampaign({ id: "NAMES" });
+  assert.equal(
+    new Set(s.market.candidates.map((m) => m.name.slice(1))).size,
+    12,
+  );
+  const m = P.hire(s, s.market.candidates[0].id, 30),
+    name = m.name;
+  Staff.upgrade(s);
+  assert.equal(m.name, name);
+  assert.equal(
+    new Set(s.market.candidates.map((m) => m.name)).size,
+    s.market.candidates.length,
+  );
+  assert.equal(
+    new Set(s.commandStaff.market.map((m) => m.name.slice(1))).size,
+    6,
+  );
   C.validate(s);
 });

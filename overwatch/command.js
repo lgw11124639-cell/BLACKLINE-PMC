@@ -37,7 +37,8 @@
     leader = (e, q) => unit(e, q.leaderId),
     member = (s, id) =>
       s.members.find((m) => m.id === id) ||
-      s.archive.members.find((m) => m.id === id),
+      s.archive.members.find((m) => m.id === id) ||
+      s.commandStaff?.members?.find((m) => m.id === id),
     running = (s) => {
       ok(
         s.commandExercise?.status === "running",
@@ -354,7 +355,9 @@
       const role = e.mission ? "controllerId" : "instructorId";
       ok(
         s.commandStaff?.[role] === authority.id &&
-          s.members.some((m) => m.id === authority.id),
+          [...s.members, ...(s.commandStaff?.members || [])].some(
+            (m) => m.id === authority.id,
+          ),
         "위임된 지휘 담당자가 아닙니다.",
       );
       e.commandAuthority = copy(authority);
@@ -901,6 +904,10 @@
           r.payload?.contact?.id === seen.id
         )
           r.status = "cancelled";
+    const significant =
+      seen.reportedAt < 0 ||
+      seen.reportedCondition !== known.medicalCondition ||
+      (seen.reportedConfidence < 0.8 && known.confidence >= 0.8);
     const a = event(e, "contact-observed", {
       callsign: q.callsign,
       actorId: seen.id,
@@ -910,7 +917,7 @@
       s,
       e,
       q,
-      "observation",
+      significant ? "observation" : "position",
       known.medicalCondition === "dead"
         ? q.callsign +
             ". " +
@@ -938,9 +945,9 @@
             Math.round(known.x) +
             ", " +
             Math.round(known.y) +
-            ". 신뢰도 " +
-            Math.round(known.confidence * 100) +
-            "%.",
+            (known.confidence >= 0.8
+              ? ". 식별 확인. 관측 유지."
+              : ". 소속 미확인. 식별 중."),
       a,
       { contact: known },
     );
@@ -1853,6 +1860,7 @@
     });
     // Keep telemetry delivery and HQ knowledge current without flooding the
     // visible/voiced radio feed. Explicit status requests and urgent events stay.
+    const contactReports = new Map();
     const projected = {
       id: e.id,
       time: e.time,
@@ -1882,6 +1890,16 @@
       radio: e.radio
         .filter((r) => r.hqVisibleAt !== null)
         .filter((r) => r.kind !== "position")
+        .filter((r) => {
+          const c = r.payload?.contact;
+          if (r.kind !== "observation" || !c) return true;
+          const key = r.callsign + ":" + c.id,
+            signature =
+              c.classification + ":" + (c.medicalCondition || "normal");
+          if (contactReports.get(key) === signature) return false;
+          contactReports.set(key, signature);
+          return true;
+        })
         .map((r) => ({
           id: r.id,
           from: copy(r.from),
