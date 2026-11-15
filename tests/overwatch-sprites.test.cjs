@@ -116,3 +116,22 @@ test("all six character families use separate posture and casualty files, never 
     "enemy-sniper-kneeling",
   );
 });
+
+test("agency medic only uses treatment art for an actual treating phase and never carries a rifle sprite", () => {
+  assert.equal(
+    Sprites.select({ role: "medic", pose: "aid", state: "treating" }).key,
+    "medic-aid",
+  );
+  assert.equal(
+    Sprites.select(
+      { role: "medic", pose: "standing", state: "approaching" },
+      { moving: true },
+    ).key,
+    "medic-move",
+  );
+  assert.equal(
+    Sprites.select({ role: "medic", pose: "standing", state: "recovering" })
+      .key,
+    "medic-move",
+  );
+});

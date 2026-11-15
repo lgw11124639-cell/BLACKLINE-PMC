@@ -31,6 +31,7 @@
       rangeRing,
       rangeId = null,
       focusId = null;
+    const transportMeshes = new Map();
     const meshes = new Map(),
       materials = new Map(),
       geometries = [],
@@ -183,13 +184,17 @@
       ).filter(
         (u) =>
           !u.stale &&
+          !u.home &&
           (!u.health || u.health.alive) &&
           (!focusId || u.id === focusId),
       );
       if (follow && visible.length) {
         target.set(
           visible.reduce((n, u) => n + u.x, 0) / visible.length,
-          visible.reduce((n, u) => n + (u.elevation || 0), 0) / visible.length,
+          visible.reduce(
+            (n, u) => n + (u.elevation || 0) + (u.altitude || 0),
+            0,
+          ) / visible.length,
           visible.reduce((n, u) => n + u.y, 0) / visible.length,
         );
       }
@@ -236,6 +241,9 @@
         if (v.line)
           v.line.visible =
             !frame.paused && frame.status === "running" && time < v.until;
+      for (const m of transportMeshes.values())
+        if (m.rotor && m.active && !frame.paused)
+          m.rotor.rotation.y = time * 0.02;
       renderer.render(scene, camera);
       if (time < animUntil) raf = requestAnimationFrame(draw);
     }
@@ -272,6 +280,7 @@
       for (const u of [
         ...next.friends,
         ...next.contacts.filter((c) => !c.expired),
+        ...(next.supportActors || []),
       ]) {
         ids.add(u.id);
         let m = meshes.get(u.id);
@@ -290,7 +299,11 @@
         );
         m.unit = u;
         m.previous = m.group.position.clone();
-        m.desired = new T.Vector3(u.x, y + (u.carriedBy ? 1.15 : 0.12), u.y);
+        m.desired = new T.Vector3(
+          u.x,
+          y + (u.altitude || 0) + (u.carriedBy ? 1.15 : 0.12),
+          u.y,
+        );
         if (!m.updatedAt) m.previous.copy(m.desired);
         m.updatedAt = now;
         if (m.previous.distanceToSquared(m.desired) > 0.01)
@@ -298,16 +311,44 @@
         if (u.weapon?.reloadUntil != null && u.weapon.reloadUntil > next.time)
           animateFor = Math.max(animateFor, 2100);
         m.group.rotation.y = -(u.heading || 0) + Math.PI / 2;
-        m.group.visible = true;
+        m.group.visible = !u.boardedBy;
         m.marker.visible = !u.stale;
         m.group.traverse((o) => {
           if (o.isMesh) o.frustumCulled = true;
         });
         m.gun.visible =
+          u.role !== "medic" &&
+          u.role !== "civilian" &&
           (!!u.role || u.classification === "armed-person") &&
           !["aid", "down", "dead", "carried", "carrying"].includes(u.pose);
         m.gun.scale.z = u.weapon?.model === "G19" ? 0.3 : 1;
         pose(m, u);
+      }
+      for (const t of next.transports || []) {
+        let m = transportMeshes.get(t.id);
+        if (!m) {
+          const g = new T.Group();
+          scene.add(g);
+          box(t.type === "vehicle" ? 5 : 7, 1.6, 2.2, 0x526a59, g, 0, 1, 0);
+          let rotor = null;
+          if (t.type !== "vehicle") {
+            box(6, 0.3, 0.3, 0x526a59, g, -5, 1, 0);
+            rotor = new T.Group();
+            g.add(rotor);
+            box(12, 0.08, 0.18, 0xc4d2bd, rotor, 0, 2.4, 0);
+            box(0.18, 0.08, 12, 0xc4d2bd, rotor, 0, 2.4, 0);
+          }
+          m = { group: g, rotor };
+          transportMeshes.set(t.id, m);
+        }
+        m.group.position.set(
+          t.x,
+          root.OverwatchGeometry.elevation(t) + (t.altitude || 0),
+          t.y,
+        );
+        m.group.rotation.y = -(t.heading || 0);
+        m.active = t.rotorActive;
+        if (m.active) animateFor = Math.max(animateFor, 2100);
       }
       for (const [id, m] of meshes) if (!ids.has(id)) m.group.visible = false;
       for (const fx of next.battle?.effects || []) {
@@ -616,6 +657,7 @@
       stats() {
         return {
           meshes: meshes.size,
+          transports: transportMeshes.size,
           motions: [...meshes]
             .filter(([, m]) => m.group.visible)
             .map(([id, m]) => ({ id, mode: m.motion, flash: m.flash.visible })),

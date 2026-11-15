@@ -72,6 +72,10 @@
       suppressed: false,
     },
   };
+  const M = () =>
+    root.OverwatchMissions ||
+    (typeof require === "function" ? require("./missions.js") : null);
+  const rally = (e) => e.mission?.extractionPoint || G.MAP.base;
   const parts = [
     "head",
     "chest",
@@ -136,6 +140,7 @@
     return u.health.wounds.some((w) => !w.treated);
   }
   function moveFactor(u) {
+    if (u.boardedBy || u.home) return 0;
     if (!u.health) return 1;
     if (!healthy(u) || untreated(u) || u.health.aid?.phase === "treating")
       return 0;
@@ -149,7 +154,12 @@
   function commandReady(u) {
     return (
       !u.health ||
-      (!u.health.aid && !u.carriedBy && !u.carrying && !untreated(u))
+      (!u.boardedBy &&
+        !u.home &&
+        !u.health.aid &&
+        !u.carriedBy &&
+        !u.carrying &&
+        !untreated(u))
     );
   }
   function snapshot(u, now = null) {
@@ -215,18 +225,21 @@
                 ? "carrying"
                 : u.stance || (u.prone ? "prone" : "standing"),
       carriedBy: u.carriedBy || null,
+      boardedBy: u.boardedBy || null,
+      home: !!u.home,
+      altitude: u.altitude || 0,
     };
   }
   function begin(
     s,
-    { scenario = "recon", seed, mapId = "command-range" } = {},
+    { scenario = "recon", seed, mapId = "command-range", live = false } = {},
   ) {
-    ok(s.schemaVersion === 4, "4단계 저장으로 전환해야 합니다.");
+    ok([4, 5].includes(s.schemaVersion), "4단계 저장으로 전환해야 합니다.");
     ok(
       ["recon", "interdiction", "support"].includes(scenario),
       "전장 연습 유형이 잘못되었습니다.",
     );
-    const e = D().begin(s, { mapId });
+    const e = D().begin(s, { mapId, live });
     const baseSeed =
       (seed ??
         (s.commandSequence * 2654435761) ^
@@ -405,7 +418,9 @@
         q,
         "ready",
         q.callsign +
-          ". 전장 연습 시작. 지급 탄약·생체 정보 송신. 실전 계약·본부 재고 정산과 분리한다.",
+          (live
+            ? ". 실전 출격 준비. 지급 탄약·생체 정보 송신."
+            : ". 전장 연습 시작. 지급 탄약·생체 정보 송신. 실전 계약·본부 재고 정산과 분리한다."),
         ev,
         { friends: I().friendSnapshots(e, q) },
       );
@@ -442,6 +457,7 @@
     )
       return;
     u.health.kit--;
+    if (e.mission) u.medicalUses = (u.medicalUses || 0) + 1;
     const duration = u.medicalSkill ? 25 : 45;
     u.health.aid = {
       phase: "treating",
@@ -529,8 +545,8 @@
           if (u.id !== t.id && !t.health.aid && moveFactor(t) === 0) {
             u.carrying = t.id;
             t.carriedBy = u.id;
-            u.path = G.path(u, G.MAP.base);
-            u.goal = copy(G.MAP.base);
+            u.path = G.path(u, rally(e));
+            u.goal = copy(rally(e));
             u.state = "carrying";
           }
         }
@@ -543,7 +559,8 @@
           model: u.weapon.model,
         });
       }
-      if (u.side) continue;
+      if (!u.side) u.capable = healthy(u);
+      if (u.side || u.boardedBy || u.home) continue;
       if (
         healthy(u) &&
         !untreated(u) &&
@@ -558,11 +575,13 @@
         const t = unit(e, u.carrying);
         if (t) {
           t.x = u.x;
-          t.y = u.y + 0.5;
+          t.y = u.y;
           t.state = "carried";
-          if (G.distance(u, G.MAP.base) < (G.MAP.width < 500 ? 8 : 35)) {
-            t.extracted = true;
-            u.extracted = true;
+          if (G.distance(u, rally(e)) < (G.MAP.width < 500 ? 8 : 35)) {
+            if (!e.mission) {
+              t.extracted = true;
+              u.extracted = true;
+            }
             u.carrying = null;
             t.carriedBy = null;
             u.path = [];
@@ -577,6 +596,8 @@
           buddy = e.world.units.find(
             (v) =>
               v.id !== u.id &&
+              !v.boardedBy &&
+              !v.home &&
               qOf(e, v.id)?.callsign === q.callsign &&
               v.health.alive &&
               !v.carriedBy &&
@@ -588,7 +609,11 @@
                   v.health.wounds.some(
                     (w) => !w.treated && w.severity === 3,
                   ))) ||
-                (!untreated(v) && moveFactor(v) === 0)) &&
+                (!untreated(v) &&
+                  moveFactor(v) === 0 &&
+                  (!e.mission ||
+                    G.distance(v, rally(e)) >=
+                      (G.MAP.width < 500 ? 8 : 35)))) &&
               G.distance(u, v) < 80 &&
               G.clear(u, v),
           );
@@ -598,8 +623,8 @@
             else {
               u.carrying = buddy.id;
               buddy.carriedBy = u.id;
-              u.path = G.path(u, G.MAP.base);
-              u.goal = copy(G.MAP.base);
+              u.path = G.path(u, rally(e));
+              u.goal = copy(rally(e));
               u.state = "carrying";
               const ev = I().event(e, "casualty-carried", {
                 actorId: u.id,
@@ -633,6 +658,7 @@
     const visible = targets.filter(
       (v) =>
         v.health.alive &&
+        !v.boardedBy &&
         !v.extracted &&
         G.distance(u, v) <
           ((u.weapon.model === "SVD" ? 750 : u.side === "ally" ? 350 : 240) +
@@ -719,6 +745,10 @@
   }
   function actorTick(s, e) {
     for (const u of e.world.actors) {
+      if (e.mission && u.side === "ally") {
+        M().actorTaskTick(s, e, u);
+        continue;
+      }
       if (!activeActor(u)) continue;
       if (u.health.aid) continue;
       if (
@@ -962,7 +992,7 @@
       !u.weapon.magazines.length &&
       u.weapon.reloadUntil === null &&
       G.distance(u, known) < 65 &&
-      u.sidearm.loaded > 0
+      (u.sidearm.loaded > 0 || u.sidearm.magazines.length > 0)
     ) {
       const old = u.weapon;
       u.weapon = u.sidearm;
@@ -1240,7 +1270,8 @@
       }
       for (const id of [q.observerId, q.sniperId]) {
         const u = unit(e, id);
-        if (!healthy(u) || u.health.aid || u.carrying) continue;
+        if (!healthy(u) || u.boardedBy || u.home || u.health.aid || u.carrying)
+          continue;
         const target = q.contacts
           .filter(
             (c) =>
@@ -1378,6 +1409,10 @@
     friendlyTick(s, e);
     telemetry(s, e);
     const b = e.battle;
+    if (e.mission) {
+      M().tick(s, e);
+      return;
+    }
     b.noises = b.noises.filter((n) => e.time - n.time < 20);
     const confirmed = e.squads
       .flatMap((q) => q.contacts)
@@ -1511,6 +1546,7 @@
   function withdraw(s) {
     const e = s.commandExercise;
     ok(e?.battle && e.status === "running", "모의 전장이 진행 중이 아닙니다.");
+    if (e.mission) return M().requestReturn(s);
     e.battle.objective.returnRequested = true;
     for (const q of e.squads)
       if (I().leader(e, q)?.capable) D().issue(s, q.callsign, "withdraw");
@@ -1518,7 +1554,7 @@
   function project(s, f) {
     const e = s.commandExercise,
       b = e.battle;
-    return {
+    const projected = {
       ...f,
       battle: {
         scenario: b.scenario,
@@ -1534,6 +1570,7 @@
         result: b.result ? copy(b.result) : null,
       },
     };
+    return e.mission ? M().project(s, e, projected) : projected;
   }
   function applyPayload(e, r) {
     if (r.payload?.objective === true) e.battle.knowledge.objective = true;
@@ -1808,6 +1845,7 @@
   const api = {
     WEAPONS,
     parts,
+    bandage,
     initialize,
     begin,
     setPaused,

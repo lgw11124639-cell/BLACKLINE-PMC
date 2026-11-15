@@ -15,6 +15,9 @@
   const Battle = () =>
     root.OverwatchBattle ||
     (typeof require === "function" ? require("./battle.js") : null);
+  const Mission = () =>
+    root.OverwatchMissions ||
+    (typeof require === "function" ? require("./missions.js") : null);
   const ORDERS = {
     cover: "아군 엄호 · 관측수 진지 선정",
     recon: "지역 정찰 · 관측수 경로 판단",
@@ -62,7 +65,14 @@
         callsign: "HQ",
         role: "본부 지휘관",
       };
-    const u = unit(e, id);
+    if (id === "AGENCY" && e.mission)
+      return {
+        id,
+        name: e.mission.contract.issuer + " 지원통제",
+        callsign: "지원망",
+        role: "의뢰기관 지원통제",
+      };
+    const u = unit(e, id) || e.world.actors.find((a) => a.id === id);
     return {
       id: u.id,
       name: u.name,
@@ -72,7 +82,10 @@
   }
   function linked(e, q) {
     const u = leader(e, q);
-    return !!u?.capable && !G.MAP.shadows.some((b) => G.inside(u, b));
+    return (
+      !!u?.capable &&
+      (u.altitude > 40 || !G.MAP.shadows.some((b) => G.inside(u, b)))
+    );
   }
   function latency(s, e, q) {
     const m = member(s, q.leaderId),
@@ -135,10 +148,10 @@
     s.commandArchive = [];
     return s;
   }
-  function begin(s, { mapId = "command-range" } = {}) {
+  function begin(s, { mapId = "command-range", live = false } = {}) {
     G.activate(mapId);
     ok(
-      [3, 4].includes(s.schemaVersion) &&
+      [3, 4, 5].includes(s.schemaVersion) &&
         !s.activeMission &&
         s.commandExercise?.status !== "running",
       "현재 상태에서는 지휘 훈련을 시작할 수 없습니다.",
@@ -221,7 +234,10 @@
         sq.leaderId,
         "HQ",
         "ready",
-        q.callsign + " 관측수. 두 명 지휘 훈련 준비. 현재 위치 보고 전송.",
+        q.callsign +
+          (live
+            ? " 관측수. 실전 출격 준비. 현재 위치 보고 전송."
+            : " 관측수. 두 명 지휘 훈련 준비. 현재 위치 보고 전송."),
         a,
         { friends: friendSnapshots(e, sq) },
       );
@@ -286,7 +302,9 @@
       s,
       e,
       "command-exercise-started",
-      "편성 저격조 지휘 훈련을 시작했습니다. 실제 계약 출격·실탄 교전이 아닙니다.",
+      live
+        ? "실전 출격 지휘 세션을 개설했습니다."
+        : "편성 저격조 지휘 훈련을 시작했습니다. 실제 계약 출격·실탄 교전이 아닙니다.",
     );
     return e;
   }
@@ -492,6 +510,7 @@
       );
     const allies = [
       ...Object.values(e.knowledge.friends),
+      ...(e.mission?.knowledge.actors || []),
       ...Object.values(e.knowledge.contacts).filter(
         (c) =>
           c.classification === "friendly-person" &&
@@ -630,7 +649,9 @@
         q,
         c,
         e.battle
-          ? "모의 전장 교전 규칙 변경 확인. 식별 정보와 사격선에 따라 대응한다."
+          ? e.mission
+            ? "교전 규칙 변경 확인. 식별 정보와 사격선에 따라 대응한다."
+            : "모의 전장 교전 규칙 변경 확인. 식별 정보와 사격선에 따라 대응한다."
           : "교전 규칙 변경 확인. 훈련장에서는 실탄 사격하지 않는다.",
       );
       return;
@@ -728,14 +749,14 @@
     }
     const target =
       c.kind === "withdraw"
-        ? G.MAP.base
+        ? e.mission?.extractionPoint || G.MAP.base
         : ["cover", "recon"].includes(c.kind)
           ? c.position
           : c.target;
     const plans = [];
     for (const id of [q.observerId, q.sniperId]) {
       const u = unit(e, id);
-      if (!u.capable) continue;
+      if (!u.capable || u.home || u.boardedBy) continue;
       const p = planPosition(e, q, target, u.role);
       if (!p) {
         c.status = "failed";
@@ -823,10 +844,14 @@
         (known.classification === "unknown"
           ? "미확인 인원"
           : ["unarmed-target", "unarmed-person"].includes(known.classification)
-            ? "비무장 훈련 인원"
+            ? e.mission
+              ? "비무장 인원"
+              : "비무장 훈련 인원"
             : known.classification === "armed-person"
               ? "무장 인원"
-              : "훈련 표적 인원") +
+              : e.mission
+                ? "지원 아군"
+                : "훈련 표적 인원") +
         " 관측. 좌표 약 " +
         Math.round(known.x) +
         ", " +
@@ -842,6 +867,7 @@
   }
   function applyKnowledge(e, r) {
     if (e.battle) Battle().applyPayload(e, r);
+    if (e.mission) Mission().applyPayload(e, r);
     if (r.payload?.friends)
       for (const f of r.payload.friends) {
         const old = e.knowledge.friends[f.id];
@@ -871,7 +897,9 @@
           ? unit(e, r.from.id)?.capable &&
             unit(e, r.to.id)?.capable &&
             G.distance(unit(e, r.from.id), unit(e, r.to.id)) <= 600
-          : linked(e, q);
+          : e.mission && Mission().agencyId(e, r.from.id)
+            ? true
+            : linked(e, q);
       if (!link) {
         r.sentAt = null;
         continue;
@@ -927,13 +955,20 @@
   }
   function obstructs(u, v) {
     return (
-      v.id !== u.id && v.capable && v.carriedBy !== u.id && u.carriedBy !== v.id
+      !v.boardedBy &&
+      !v.home &&
+      v.id !== u.id &&
+      v.capable &&
+      v.carriedBy !== u.id &&
+      u.carriedBy !== v.id
     );
   }
   function clearOfUnits(e, u, a, b) {
     return e.world.units.every((v) => {
       if (
         v.id === u.id ||
+        v.boardedBy ||
+        v.home ||
         !v.capable ||
         v.carriedBy === u.id ||
         u.carriedBy === v.id
@@ -1038,7 +1073,7 @@
   }
   function observe(s, e, q, sensor = null) {
     const u = sensor || leader(e, q);
-    if (!u?.capable) return;
+    if (!u?.capable || u.boardedBy || u.home) return;
     const task = e.commands.find((c) => c.id === q.commandId);
     const optics = !!(
       e.battle &&
@@ -1070,6 +1105,7 @@
         u.role === "sniper" && !u.path.length ? Math.PI * 0.13 : Math.PI * 0.42;
     }
     for (const actor of e.world.actors) {
+      if (e.mission && actor.side === "ally") continue;
       const d = G.distance(u, actor),
         angle = Math.atan2(actor.y - u.y, actor.x - u.x),
         delta = Math.abs(
@@ -1166,6 +1202,7 @@
   }
   function tick(s, e) {
     e.time++;
+    if (e.mission) Mission().beforeTick(s, e);
     if (e.battle) {
       Battle().beforeTick(s, e);
       Battle().actorTick(s, e);
@@ -1182,10 +1219,15 @@
         actor.y += ((p.y - actor.y) * step) / d;
       }
     for (const q of e.squads) {
-      if (!leader(e, q)?.capable) {
+      if (e.mission && !Mission().allowTeams(e)) continue;
+      if (
+        !leader(e, q)?.capable ||
+        leader(e, q)?.home ||
+        leader(e, q)?.boardedBy
+      ) {
         const replacement = [q.observerId, q.sniperId]
           .map((id) => unit(e, id))
-          .find((u) => u.capable);
+          .find((u) => u.capable && !u.home && !u.boardedBy);
         if (replacement) {
           const old = q.leaderId;
           q.leaderId = replacement.id;
@@ -1229,7 +1271,10 @@
             v.classification === "armed-person" &&
             !q.tactical.reportedContactIds.includes(v.id),
         );
-        const support = Object.values(e.knowledge.friends).filter(
+        const support = [
+          ...Object.values(e.knowledge.friends),
+          ...(e.mission?.knowledge.actors || []),
+        ].filter(
           (v) =>
             v.callsign !== q.callsign &&
             e.time - v.observedAt < 20 &&
@@ -1244,7 +1289,8 @@
         const moved =
           supportPoint &&
           q.tactical.protectedPoint &&
-          G.distance(supportPoint, q.tactical.protectedPoint) > 90;
+          G.distance(supportPoint, q.tactical.protectedPoint) >
+            Math.min(90, G.MAP.width / 5);
         if ((newThreat && !G.clear(leader(e, q), newThreat)) || moved) {
           c.status = "thinking";
           c.completedAt = null;
@@ -1291,7 +1337,7 @@
         ["move", "withdraw", "cover", "recon"].includes(c.kind) &&
         [q.observerId, q.sniperId]
           .map((id) => unit(e, id))
-          .filter((u) => u.capable)
+          .filter((u) => u.capable && !u.home && !u.boardedBy)
           .every(
             (u) =>
               u.goal &&
@@ -1306,7 +1352,9 @@
           q,
           c,
           c.kind === "withdraw"
-            ? "집결지 이동 완료. 훈련 종료 지시 대기."
+            ? e.mission
+              ? "집결지 도착. 기관 수송 탑승 대기."
+              : "집결지 이동 완료. 훈련 종료 지시 대기."
             : "지정 지역 확보. 사수와 분리된 관측·엄호 위치 유지.",
         );
       if (
@@ -1369,6 +1417,7 @@
       if (e.radio.length >= 3000) break;
       const ids = e.world.units.map((u) => u.id);
       if (
+        !e.mission &&
         ids.some(
           (id) =>
             !s.members.some((m) => m.id === id) ||
@@ -1393,6 +1442,11 @@
   }
   function end(s, reason = "hq") {
     const e = running(s);
+    if (e.mission)
+      ok(
+        e.mission.finalizing,
+        "실전 작전은 실제 복귀 또는 미회수 통제 절차를 마쳐야 합니다.",
+      );
     e.status = "ended";
     s.clock.paused = true;
     e.endedAt = s.clock.elapsedSeconds;
@@ -1401,7 +1455,21 @@
       if (["queued", "thinking", "executing", "received"].includes(c.status))
         c.status = "cancelled";
     for (const r of e.radio) if (r.status === "queued") r.status = "cancelled";
-    const battleSummary = e.battle ? Battle().summarize(e) : null;
+    let battleSummary = e.battle ? Battle().summarize(e) : null;
+    if (e.mission) {
+      const report = Mission().settle(s, e);
+      battleSummary =
+        report.title +
+        " 실전 종료 · " +
+        (report.success
+          ? "목표 달성·정산 완료"
+          : "목표 미달성/철수·정산 완료") +
+        " · 실제 복귀 " +
+        report.roster.filter((x) => x.disposition === "returned").length +
+        "명 / 미회수 " +
+        report.missing.length +
+        "명.";
+    }
     s.commandArchive = s.commandArchive || [];
     s.commandArchive.push({
       id: e.id,
@@ -1619,7 +1687,7 @@
           !ids.has(u.id) &&
           member(s, u.id) &&
           point(u) &&
-          !G.blocked(u) &&
+          (!G.blocked(u) || (e.mission && u.boardedBy && u.altitude > 40)) &&
           ["observer", "sniper"].includes(u.role) &&
           typeof u.capable === "boolean" &&
           text(u.name) &&
@@ -1874,8 +1942,12 @@
     }
     for (const r of e.radio) {
       ok(
-        (r.from.id === "HQ" || ids.has(r.from.id)) &&
-          (r.to.id === "HQ" || ids.has(r.to.id)) &&
+        (r.from.id === "HQ" ||
+          ids.has(r.from.id) ||
+          (e.mission && Mission().agencyId(e, r.from.id))) &&
+          (r.to.id === "HQ" ||
+            ids.has(r.to.id) ||
+            (e.mission && Mission().agencyId(e, r.to.id))) &&
           text(r.kind) &&
           text(r.from.role) &&
           text(r.from.callsign) &&
@@ -2009,6 +2081,8 @@
       leader,
       linked,
       applyKnowledge,
+      radio,
+      moveUnit,
     },
     ORDERS,
     initialize,

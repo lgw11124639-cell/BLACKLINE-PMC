@@ -135,8 +135,8 @@
               : (p.stance || p.pose || p.condition) === "kneeling"
                 ? 1.15
                 : 1.7;
-        const startEye = elevation(a) + eyeHeight(a),
-          endEye = elevation(b) + eyeHeight(b);
+        const startEye = elevation(a) + (a.altitude || 0) + eyeHeight(a),
+          endEye = elevation(b) + (b.altitude || 0) + eyeHeight(b);
         const eye = startEye + (endEye - startEye) * t;
         if (MAP.buildings.some((r) => inside(p, r) && eye < r[4])) return false;
         if (

@@ -531,5 +531,31 @@
       1254,
       1254
     ]
+  },
+  "medic-aid": {
+    "src": "images/overwatch/medic-aid.webp",
+    "bounds": [
+      347,
+      252,
+      1027,
+      938
+    ],
+    "size": [
+      1374,
+      1145
+    ]
+  },
+  "medic-move": {
+    "src": "images/overwatch/medic-move.webp",
+    "bounds": [
+      196,
+      109,
+      817,
+      1444
+    ],
+    "size": [
+      1024,
+      1536
+    ]
   }
 }

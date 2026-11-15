@@ -1,11 +1,12 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.15.02",
+  const VERSION = "2026.11.15.03",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
     CommandUI = OverwatchCommandUI,
     FieldUI = OverwatchFieldUI,
+    MissionUI = OverwatchMissionUI,
     Battle = OverwatchBattle,
     root = document.getElementById("overwatch-root");
   const esc = (x) =>
@@ -194,7 +195,7 @@
         try {
           state = store.migrate();
           notice =
-            "본부를 4단계 전장 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
+            "본부를 5단계 실전 계약 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
         } catch (e) {
           source = "migration";
           error = e.message;
@@ -309,7 +310,7 @@
       title +
       "</h2><p>" +
       body +
-      '</p><span class="phase-note">현재 릴리스는 본부·지휘 훈련과 실시간 모의 전장까지 연결되어 있습니다.</span></section>'
+      '</p><span class="phase-note">실전 계약과 기관 수송·지원, 복귀 후 정산을 사용할 수 있습니다.</span></section>'
     );
   }
   function headquarters() {
@@ -348,7 +349,7 @@
             "</span></article>",
         )
         .join("") +
-      '</section><div class="two-column"><section class="panel"><div class="section-heading"><span class="eyebrow">CHAIN OF COMMAND</span><h2>저격조 지휘 구조</h2></div><ol class="command-chain"><li><b>본부 · 플레이어</b><span>임무·지역·관측·교전·철수 명령</span></li><li><b>관측수 · 현장 지휘관</b><span>명령 수신·판단·저격수 지휘·상황 보고</span></li><li><b>저격수</b><span>세부 지시 수행·사격 준비·생존 행동</span></li></ol><p class="muted">지휘 훈련에서 관측수의 명령 수신·판단·보고를 확인할 수 있습니다.</p></section><section class="panel"><span class="eyebrow">DEVELOPMENT STATUS</span><h2>현재 가능한 작업</h2><ul class="plain-list"><li>대원 모집·기간 계약·2인조 편성</li><li>훈련·휴식·진료·재활·공동 훈련</li><li>자금·활동·경력 저장과 이전 기록 보존</li><li>조 단위 명령·무전·제한 정보 지휘 훈련</li><li>실시간 2D/3D 모의 전장·사격·부상·처치</li></ul><button data-tab="storage">저장 관리 열기 <span aria-hidden="true">↗</span></button><p class="muted">실전 계약·수송·본부 재고 정산은 후속 단계에서 연결합니다.</p></section></div>'
+      '</section><div class="two-column"><section class="panel"><div class="section-heading"><span class="eyebrow">CHAIN OF COMMAND</span><h2>저격조 지휘 구조</h2></div><ol class="command-chain"><li><b>본부 · 플레이어</b><span>임무·지역·관측·교전·철수 명령</span></li><li><b>관측수 · 현장 지휘관</b><span>명령 수신·판단·저격수 지휘·상황 보고</span></li><li><b>저격수</b><span>세부 지시 수행·사격 준비·생존 행동</span></li></ol><p class="muted">지휘 훈련에서 관측수의 명령 수신·판단·보고를 확인할 수 있습니다.</p></section><section class="panel"><span class="eyebrow">DEVELOPMENT STATUS</span><h2>현재 가능한 작업</h2><ul class="plain-list"><li>대원 모집·기간 계약·2인조 편성</li><li>훈련·휴식·진료·재활·공동 훈련</li><li>자금·활동·경력 저장과 이전 기록 보존</li><li>조 단위 명령·무전·제한 정보 지휘 훈련</li><li>실시간 2D/3D 모의 전장·사격·부상·처치</li></ul><button data-tab="storage">저장 관리 열기 <span aria-hidden="true">↗</span></button><p class="muted">작전 의뢰에서 계약을 수락하고 편성한 저격조를 출격시키세요. 귀환 후 점검과 부상 치료를 마쳐야 다시 출격할 수 있습니다.</p></section></div>'
     );
   }
   function personnel() {
@@ -481,6 +482,7 @@
         store?.keys.beforeMigration,
         store?.keys.beforeCommandMigration,
         store?.keys.beforeFieldMigration,
+        store?.keys.beforeMissionMigration,
       ]
         .filter(Boolean)
         .map((k) => {
@@ -500,6 +502,7 @@
                   [store.keys.beforeMigration]: "2단계 전환 전 원본",
                   [store.keys.beforeCommandMigration]: "3단계 전환 전 원본",
                   [store.keys.beforeFieldMigration]: "4단계 전환 전 원본",
+                  [store.keys.beforeMissionMigration]: "5단계 전환 전 원본",
                 }[k] +
                 " 내려받기</button>"
             : "";
@@ -584,11 +587,9 @@
             }),
           storage: storagePage,
           contracts: () =>
-            phase(
-              "PHASE 05",
-              "작전 의뢰 연결 대기",
-              "실제 목표·기관·제약·제공 수송 및 지원을 확인하고 계약하는 단계입니다. 현재 생성된 의뢰나 출격 기능은 없습니다.",
-            ),
+            MissionUI.render(state, {
+              editable: source === "primary" && !stale,
+            }),
           equipment: () =>
             phase(
               "PHASE 02 / 06",
@@ -597,7 +598,7 @@
             ),
         }[tab] || storagePage
       )() +
-      "<footer>BLACKLINE: OVERWATCH · 4단계 실시간 모의 전장·3D · 실전 계약·수송·본부 정산은 후속 단계입니다.</footer></main></div>" +
+      "<footer>BLACKLINE: OVERWATCH · 실전 계약·관측수 지휘·기관 수송·복귀 정산</footer></main></div>" +
       PersonnelUI.dossier(state, selectedPerson, {
         editable:
           source === "primary" &&
@@ -650,6 +651,19 @@
     FieldUI.mount(root, state, {
       playing: runtime.isRunning(),
       onFallback: fallbackField,
+    });
+    MissionUI.bind(root, {
+      execute: executeField,
+      play: toggleField,
+      state,
+      editable: source === "primary" && !stale,
+      commit,
+      navigate(next) {
+        if (state && source === "primary" && !stale)
+          commit((s) => (s.ui.tab = next));
+        tab = next;
+        render();
+      },
     });
     FieldUI.bind(root, {
       state,

@@ -241,11 +241,104 @@
         );
         ctx.restore();
       }
+      for (const t of frame.transports || []) {
+        const m = positions.get(t.id);
+        if (!m) continue;
+        const blend = paused ? 1 : Math.min(1, (now - m.at) / m.duration),
+          p = {
+            x: m.from.x + (m.to.x - m.from.x) * blend,
+            y: m.from.y + (m.to.y - m.from.y) * blend,
+          };
+        m.drawn = p;
+        const q = screen(p, v),
+          size =
+            (t.type === "helicopter" ? 14 : t.type === "drone" ? 2.5 : 5) *
+            v.scale;
+        ctx.save();
+        ctx.translate(q.x, q.y);
+        ctx.fillStyle = "#142b3440";
+        ctx.beginPath();
+        ctx.ellipse(4, 6, size * 0.5, size * 0.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.translate(0, -Math.min(20, (t.altitude || 0) * 0.15));
+        ctx.rotate(t.heading || 0);
+        ctx.fillStyle = t.trip === "medical" ? "#e5e8d8" : "#52695a";
+        ctx.strokeStyle = "#b5c8b6";
+        ctx.lineWidth = 1;
+        if (t.type === "vehicle") {
+          ctx.fillRect(-size / 2, -size * 0.22, size, size * 0.44);
+          ctx.fillStyle = "#273d3c";
+          ctx.fillRect(size * 0.15, -size * 0.18, size * 0.2, size * 0.36);
+        } else {
+          ctx.beginPath();
+          ctx.ellipse(
+            size * 0.08,
+            0,
+            size * 0.3,
+            size * 0.13,
+            0,
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillRect(-size * 0.52, -size * 0.025, size * 0.35, size * 0.05);
+          ctx.fillRect(-size * 0.52, -size * 0.12, size * 0.04, size * 0.24);
+          ctx.fillStyle = "#273d3c";
+          ctx.beginPath();
+          ctx.ellipse(
+            size * 0.22,
+            0,
+            size * 0.12,
+            size * 0.095,
+            0,
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
+          ctx.save();
+          ctx.rotate(
+            t.rotorActive
+              ? frame.time * 7 + (paused ? 0 : (now - frameAt) * 0.007)
+              : 0,
+          );
+          ctx.strokeStyle = "#cddbd6aa";
+          ctx.beginPath();
+          ctx.moveTo(-size * 0.48, 0);
+          ctx.lineTo(size * 0.48, 0);
+          ctx.moveTo(0, -size * 0.48);
+          ctx.lineTo(0, size * 0.48);
+          ctx.stroke();
+          ctx.restore();
+        }
+        if (t.trip === "medical") {
+          ctx.fillStyle = "#9b3f38";
+          ctx.fillRect(-size * 0.06, -size * 0.08, size * 0.04, size * 0.16);
+          ctx.fillRect(-size * 0.12, -size * 0.02, size * 0.16, size * 0.04);
+        }
+        ctx.restore();
+        ctx.font = "10px sans-serif";
+        ctx.fillStyle = "#edf6e7";
+        ctx.fillText(
+          (t.type === "helicopter"
+            ? "헬기"
+            : t.type === "drone"
+              ? "드론"
+              : "차량") +
+            " · " +
+            t.manifest.length +
+            "명",
+          q.x + 5,
+          q.y - 12,
+        );
+      }
       // No marker for an enemy without an actual delivered observation.
       for (const u of [
         ...frame.contacts.filter((c) => !c.expired),
         ...frame.friends,
+        ...(frame.supportActors || []),
       ]) {
+        if (u.boardedBy) continue;
         const m = positions.get(u.id);
         if (!m) continue;
         const t = paused
@@ -458,7 +551,13 @@
       const now = performance.now();
       frameAt = now;
       let animate = 0;
-      const all = [...next.friends, ...next.contacts.filter((c) => !c.expired)];
+      const all = [
+        ...next.friends,
+        ...next.contacts.filter((c) => !c.expired),
+        ...(next.supportActors || []),
+        ...(next.transports || []),
+      ];
+      if ((next.transports || []).some((t) => t.rotorActive)) animate = 2100;
       const ids = new Set(all.map((u) => u.id));
       for (const [id] of positions) if (!ids.has(id)) positions.delete(id);
       for (const u of all) {
@@ -515,6 +614,7 @@
         ).filter(
           (u) =>
             !u.stale &&
+            !u.home &&
             u.health?.alive !== false &&
             (!focusId || u.id === focusId),
         );

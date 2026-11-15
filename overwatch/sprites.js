@@ -207,9 +207,29 @@
       bounds: [52, 322, 1204, 966],
       size: [1254, 1254],
     },
+    "medic-aid": {
+      src: "images/overwatch/medic-aid.webp",
+      bounds: [347, 252, 1027, 938],
+      size: [1374, 1145],
+    },
+    "medic-move": {
+      src: "images/overwatch/medic-move.webp",
+      bounds: [196, 109, 817, 1444],
+      size: [1024, 1536],
+    },
   };
 
   function select(u, { moving = false, mode = "ready" } = {}) {
+    if (u.role === "medic") {
+      const key =
+        u.pose === "aid" && u.state === "treating" ? "medic-aid" : "medic-move";
+      return {
+        key,
+        art: data[key],
+        fallback: false,
+        widthM: key === "medic-aid" ? 1.25 : 0.84,
+      };
+    }
     const role =
       u.role === "sniper"
         ? "sniper"

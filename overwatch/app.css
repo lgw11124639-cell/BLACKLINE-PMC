@@ -1685,3 +1685,39 @@ select:disabled {
   font-size: 10px;
   padding: 6px 9px;
 }
+
+.live-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+.live-money {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+.live-money > div,
+.live-report-roster > article {
+  padding: 14px;
+  border: 1px solid var(--line, #dce3d7);
+  border-radius: 10px;
+}
+.live-money small,
+.live-money strong {
+  display: block;
+}
+.live-report-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 10px;
+}
+.live-reports > details {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line, #dce3d7);
+}
+.live-field-panel .inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

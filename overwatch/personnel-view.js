@@ -31,6 +31,7 @@
       deceased: "전사",
       resigned: "퇴사",
       retired: "은퇴",
+      missing: "미회수·실종",
     },
     parts = {
       head: "머리",
@@ -68,6 +69,7 @@
     "contract-expired": "계약 만료",
     resigned: "계약 종료",
     retired: "은퇴",
+    missing: "미회수·실종",
     casualty: "전사",
     death: "전사",
     injury: "부상 기록",
@@ -389,7 +391,7 @@
     );
   }
   function render(s, { editable = true } = {}) {
-    if (![2, 3, 4].includes(s?.schemaVersion))
+    if (![2, 3, 4, 5].includes(s?.schemaVersion))
       return '<section class="panel"><h2>2단계 저장 전환이 필요합니다.</h2><p>저장 관리에서 원본을 보존한 뒤 주 저장을 복구하세요.</p></section>';
     const view = s.ui.personnelTab || "roster";
     return (
@@ -435,7 +437,7 @@
     );
   }
   function dossier(s, id, { editable = true } = {}) {
-    if (![2, 3, 4].includes(s?.schemaVersion)) return "";
+    if (![2, 3, 4, 5].includes(s?.schemaVersion)) return "";
     const m = find(s, id);
     if (!m) return "";
     const hired = s.members.some((x) => x.id === id),
@@ -648,7 +650,7 @@
     root,
     { state: s, commit, openProfile, closeProfile, editable },
   ) {
-    if (![2, 3, 4].includes(s?.schemaVersion)) return;
+    if (![2, 3, 4, 5].includes(s?.schemaVersion)) return;
     const each = (selector, fn) =>
       root.querySelectorAll(selector).forEach((el) =>
         el.addEventListener("click", (e) => {

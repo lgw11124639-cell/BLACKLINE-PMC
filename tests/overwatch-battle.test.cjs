@@ -63,10 +63,10 @@ test("schema 3 field upgrade keeps funds, squad, archive and byte-exact pre-upgr
   store.save(old, null);
   const raw = store.raw(S.KEYS.primary),
     up = store.migrate();
-  assert.equal(up.schemaVersion, 4);
+  assert.equal(up.schemaVersion, C.SCHEMA);
   assert.equal(up.headquarters.funds, old.headquarters.funds);
   assert.deepEqual(up.commandArchive, old.commandArchive);
-  assert.equal(JSON.parse(store.raw(S.KEYS.beforeFieldMigration)).primary, raw);
+  assert.equal(JSON.parse(store.raw(S.KEYS.beforeMissionMigration)).primary, raw);
   assert.equal(
     up.headquarters.ledger.filter((e) => e.kind === "startup-grant").length,
     1,
