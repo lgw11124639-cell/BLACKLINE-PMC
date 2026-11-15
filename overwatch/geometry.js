@@ -2,7 +2,7 @@
    No legacy engine, global actor state, timer or renderer is loaded. Units are metres. */
 (function (root) {
   "use strict";
-  const MAP = {
+  let MAP = {
     id: "command-range",
     name: "능선 지휘 훈련장",
     width: 1200,
@@ -20,6 +20,81 @@
     ],
     shadows: [[500, 440, 780, 680]],
   };
+  const RANGE = MAP,
+    variants = (
+      root.OverwatchMaps ||
+      (typeof require === "function" ? require("./maps.js") : null)
+    ).maps;
+  const maps = {
+    "command-range": RANGE,
+    "ridge-field": {
+      ...RANGE,
+      id: "ridge-field",
+      name: "서부 능선·물류 단지",
+      clearance: 0.5,
+      covers: [
+        {
+          id: "ridge-wall",
+          x: 250,
+          y: 550,
+          w: 10,
+          h: 1,
+          height: 1.2,
+          type: "wall",
+        },
+        {
+          id: "ridge-truck",
+          x: 700,
+          y: 500,
+          w: 4.8,
+          h: 2,
+          height: 1.5,
+          type: "vehicle",
+        },
+        {
+          id: "ridge-barrier",
+          x: 920,
+          y: 550,
+          w: 3,
+          h: 0.7,
+          height: 1.25,
+          type: "barrier",
+        },
+      ],
+      image: "images/maps/overwatch-range.webp",
+      buildings: [
+        [428, 256, 633, 438, 24],
+        [804, 374, 964, 452, 18],
+      ],
+    },
+    ...variants,
+  };
+  function activate(id = "command-range") {
+    if (!maps[id]) throw Error("알 수 없는 전장 지도입니다.");
+    MAP = maps[id];
+    return MAP;
+  }
+  function project(p) {
+    if (!blocked(p)) return { x: p.x, y: p.y };
+    for (let r = 1; r < 80; r++)
+      for (let i = 0; i < 16; i++) {
+        const q = {
+          x: p.x + Math.cos((i * Math.PI) / 8) * r,
+          y: p.y + Math.sin((i * Math.PI) / 8) * r,
+        };
+        if (!blocked(q)) return q;
+      }
+    return { ...MAP.base };
+  }
+  function coverBounds(c) {
+    return [
+      c.x - c.w / 2,
+      c.y - c.h / 2,
+      c.x + c.w / 2,
+      c.y + c.h / 2,
+      c.height,
+    ];
+  }
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
     inside = (p, b, pad = 0) =>
       p.x > b[0] - pad &&
@@ -31,7 +106,8 @@
     p.y < 10 ||
     p.x > MAP.width - 10 ||
     p.y > MAP.height - 10 ||
-    MAP.buildings.some((b) => inside(p, b, 6));
+    MAP.buildings.some((b) => inside(p, b, MAP.clearance ?? 6)) ||
+    (MAP.covers || []).some((c) => inside(p, coverBounds(c), 0.4));
   function elevation(p) {
     return Math.max(
       0,
@@ -41,15 +117,34 @@
     );
   }
   function clear(a, b, ground = false) {
-    const n = Math.max(2, Math.ceil(distance(a, b) / 5));
+    const n = Math.max(
+      2,
+      Math.ceil(distance(a, b) / ((MAP.covers || []).length ? 0.4 : 5)),
+    );
     for (let i = 0; i <= n; i++) {
       const t = i / n,
         p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
       if (ground) {
         if (blocked(p)) return false;
       } else {
-        const eye = elevation(a)+(a.altitude||0)+1.7+(elevation(b)+(b.altitude||0)-elevation(a)-(a.altitude||0))*t;
+        const eyeHeight = (p) =>
+          Number.isFinite(p.eyeHeight)
+            ? p.eyeHeight
+            : (p.stance || p.pose || p.condition) === "prone" || p.prone
+              ? 0.45
+              : (p.stance || p.pose || p.condition) === "kneeling"
+                ? 1.15
+                : 1.7;
+        const startEye = elevation(a) + (a.altitude || 0) + eyeHeight(a),
+          endEye = elevation(b) + (b.altitude || 0) + eyeHeight(b);
+        const eye = startEye + (endEye - startEye) * t;
         if (MAP.buildings.some((r) => inside(p, r) && eye < r[4])) return false;
+        if (
+          (MAP.covers || []).some(
+            (c) => inside(p, coverBounds(c)) && eye < elevation(p) + c.height,
+          )
+        )
+          return false;
         if (elevation(p) > eye + 1) return false;
       }
     }
@@ -125,7 +220,21 @@
     out.push({ x: (start % cols) * g, y: Math.floor(start / cols) * g });
     return out.reverse();
   }
-  const api = { MAP, distance, inside, blocked, elevation, clear, path };
+  const api = {
+    get MAP() {
+      return MAP;
+    },
+    maps,
+    activate,
+    project,
+    coverBounds,
+    distance,
+    inside,
+    blocked,
+    elevation,
+    clear,
+    path,
+  };
   root.OverwatchGeometry = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window === "undefined" ? globalThis : window);

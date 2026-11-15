@@ -80,7 +80,7 @@ test("schema 2 upgrades without another grant and preserves raw source on migrat
   assert.equal(s.commandExercise, null);
   assert.equal(s.headquarters.funds, cash);
   assert.equal(
-    JSON.parse(store.raw(S.KEYS.beforeFieldMigration)).primary,
+    JSON.parse(store.raw(S.KEYS.beforeMissionMigration)).primary,
     raw,
   );
   assert.equal(

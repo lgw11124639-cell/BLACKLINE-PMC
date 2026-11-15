@@ -254,8 +254,20 @@
       "</ol></section>"
     );
   }
-  function render(s, { editable = true } = {}) {
-    if (![3, 4, 5].includes(s?.schemaVersion))
+  function render(s, { editable = true, playing = false } = {}) {
+    if (s?.schemaVersion >= 4) {
+      if (s.commandExercise?.status === "running" && !s.commandExercise.battle)
+        return (
+          '<section class="panel"><h1>실시간 지휘 훈련으로 전환</h1><p>이전 훈련의 무전·명령 기록을 보관하고 현재 편성으로 3D 실시간 훈련을 시작합니다.</p><button data-range-upgrade' +
+          (!editable ? " disabled" : "") +
+          ">기록 보관·실시간 훈련 시작</button></section>"
+        );
+      return root.OverwatchFieldUI.render(s, { editable, playing }).replace(
+        "OVERWATCH 전장",
+        "실시간 저격조 훈련",
+      );
+    }
+    if (![3, 4].includes(s?.schemaVersion))
       return '<section class="panel">본부 저장 복구 후 지휘 훈련을 열 수 있습니다.</section>';
     if (s.commandExercise?.battle)
       return (
@@ -387,7 +399,19 @@
         : "")
     );
   }
-  function bind(root, { state: s, editable, commit }) {
+  function bind(root, { state: s, editable, commit, execute = commit }) {
+    if (s?.schemaVersion >= 4) {
+      root
+        .querySelector("[data-range-upgrade]")
+        ?.addEventListener("click", () => {
+          if (editable)
+            execute((next) => {
+              D.end(next);
+              globalThis.OverwatchBattle.begin(next, { mapId: "ridge-field" });
+            });
+        });
+      return;
+    }
     const on = (key, fn) =>
       root.querySelector(key)?.addEventListener("click", () => {
         if (editable) fn();

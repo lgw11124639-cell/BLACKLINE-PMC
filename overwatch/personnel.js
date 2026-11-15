@@ -61,7 +61,14 @@
     "migration",
     "command-exercise-started",
     "command-exercise-ended",
-    "mission-offered","mission-offer-expired","mission-accepted","mission-cancelled","mission-launched","mission-settled","mission-inspection","mission-unrecovered",
+    "mission-offered",
+    "mission-offer-expired",
+    "mission-accepted",
+    "mission-cancelled",
+    "mission-launched",
+    "mission-settled",
+    "mission-inspection",
+    "mission-unrecovered",
   ];
   const ok = (v, m) => {
       if (!v) throw Error(m);
@@ -79,8 +86,14 @@
       return m;
     },
     current = (s, allowExercise = false) => {
-      ok([2, 3, 4, 5].includes(s.schemaVersion), "본부 저장을 변환해야 합니다.");
-      ok(!s.activeMission||allowExercise, "현장 작전 중에는 본부 활동을 시작할 수 없습니다.");
+      ok(
+        [2, 3, 4, 5].includes(s.schemaVersion),
+        "본부 저장을 변환해야 합니다.",
+      );
+      ok(
+        !s.activeMission || allowExercise,
+        "현장 작전 중에는 본부 활동을 시작할 수 없습니다.",
+      );
       ok(
         allowExercise || s.commandExercise?.status !== "running",
         "지휘 훈련을 종료한 뒤 본부 활동을 변경하세요.",
@@ -182,7 +195,7 @@
       m.fatigue <= 70 &&
       m.stress <= 75;
   function readiness(s, m) {
-    if(s.activeMission?.memberIds.includes(m.id))return "실전 출격 중";
+    if (s.activeMission?.memberIds.includes(m.id)) return "실전 출격 중";
     if (m.contract.endsAt <= time(s)) return "계약 만료";
     if (injured(m)) return "치료·복귀 평가 필요";
     if (m.status !== "standby") return "활동 진행 중";
@@ -382,7 +395,14 @@
     const members = s.members.map((m) => memberDefaults(s, m));
     s.members = [];
     for (const m of members) {
-      if (["deceased", "resigned", "retired",...(s.schemaVersion===5?["missing"]:[])].includes(m.status))
+      if (
+        [
+          "deceased",
+          "resigned",
+          "retired",
+          ...(s.schemaVersion === 5 ? ["missing"] : []),
+        ].includes(m.status)
+      )
         s.archive.members.push({
           ...m,
           endedAt: 0,
@@ -450,7 +470,11 @@
     current(s);
     ok(TERMS.includes(days), "계약 기간은 30일 또는 90일입니다.");
     const m = live(s, id);
-    ok(m.contract.endsAt > time(s)||!!s.activeMission?.memberIds.includes(m.id), "이미 만료된 계약입니다.");
+    ok(
+      m.contract.endsAt > time(s) ||
+        !!s.activeMission?.memberIds.includes(m.id),
+      "이미 만료된 계약입니다.",
+    );
     ok(
       m.contract.endsAt + days * DAY - time(s) <= 365 * DAY,
       "선계약은 최대 1년까지 가능합니다.",
@@ -531,7 +555,11 @@
     const members = memberIds.map((id) => live(s, id));
     for (const m of members) {
       ok(!m.activityId, "이미 진행 중인 활동이 있습니다.");
-      ok(m.contract.endsAt > time(s)||!!s.activeMission?.memberIds.includes(m.id), "계약이 만료된 인원입니다.");
+      ok(
+        m.contract.endsAt > time(s) ||
+          !!s.activeMission?.memberIds.includes(m.id),
+        "계약이 만료된 인원입니다.",
+      );
       if (kind !== "pair")
         ok(!paired(s, m.id), "개인 활동 전 저격조 편성을 해제하세요.");
     }
@@ -789,7 +817,9 @@
         ? "deceased"
         : reason === "retirement"
           ? "retired"
-          : reason==='missing'?'missing':"resigned";
+          : reason === "missing"
+            ? "missing"
+            : "resigned";
     m.endedAt = time(s);
     m.exitReason = reason;
     s.members = s.members.filter((x) => x.id !== id);
@@ -802,7 +832,9 @@
           ? "casualty"
           : reason === "retirement"
             ? "retired"
-            : reason==='missing'?'mission-unrecovered':"resigned",
+            : reason === "missing"
+              ? "mission-unrecovered"
+              : "resigned",
       m.name +
         " · " +
         {
@@ -810,7 +842,7 @@
           death: "전사 · 영구 손실",
           retirement: "은퇴",
           release: "계약 조기 종료",
-          missing:"미회수·실종 보관 · 복귀로 처리하지 않음",
+          missing: "미회수·실종 보관 · 복귀로 처리하지 않음",
         }[reason] +
         " 기록.",
       { memberId: id },
@@ -856,7 +888,11 @@
       const expiry = Math.min(
           target,
           ...s.members
-            .filter((m) => m.contract.endsAt > cursor&&!s.activeMission?.memberIds.includes(m.id))
+            .filter(
+              (m) =>
+                m.contract.endsAt > cursor &&
+                !s.activeMission?.memberIds.includes(m.id),
+            )
             .map((m) => m.contract.endsAt),
         ),
         point = Math.min(
@@ -892,11 +928,20 @@
       ))
         finish(s, a);
       for (const m of s.members.slice())
-        if (m.contract.endsAt <= point&&!s.activeMission?.memberIds.includes(m.id)) exit(s, m.id, "expiry");
+        if (
+          m.contract.endsAt <= point &&
+          !s.activeMission?.memberIds.includes(m.id)
+        )
+          exit(s, m.id, "expiry");
         else m.age = age(s, m);
       cursor = point;
     }
-    if(s.schemaVersion===5){const M=root.OverwatchMissions||(typeof require==='function'?require('./missions.js'):null);M.updateOffers(s);}
+    if (s.schemaVersion === 5) {
+      const M =
+        root.OverwatchMissions ||
+        (typeof require === "function" ? require("./missions.js") : null);
+      M.updateOffers(s);
+    }
     return target;
   }
   function refreshMarket(s) {
@@ -1144,7 +1189,12 @@
         );
         ok(
           group === "archive"
-            ? ["deceased", "resigned", "retired",...(s.schemaVersion===5?["missing"]:[])].includes(m.status)
+            ? [
+                "deceased",
+                "resigned",
+                "retired",
+                ...(s.schemaVersion === 5 ? ["missing"] : []),
+              ].includes(m.status)
             : [
                 "standby",
                 "medical",
@@ -1156,7 +1206,8 @@
         );
         if (group === "live")
           ok(
-            m.contract.endsAt > time(s)||!!s.activeMission?.memberIds.includes(m.id),
+            m.contract.endsAt > time(s) ||
+              !!s.activeMission?.memberIds.includes(m.id),
             "만료 인원이 현직 명부에 남아 있습니다.",
           );
       }
@@ -1279,7 +1330,15 @@
         ),
       "2인 팀워크 정보가 잘못되었습니다.",
     );
-    ok((s.schemaVersion===5||s.activeMission===null)&&Array.isArray(s.contracts)&&(s.schemaVersion===5||s.contracts.length===0)&&s.inventory&&Array.isArray(s.inventory.items)&&s.inventory.items.length===0,'작전·재고 저장 형식이 잘못되었습니다.');
+    ok(
+      (s.schemaVersion === 5 || s.activeMission === null) &&
+        Array.isArray(s.contracts) &&
+        (s.schemaVersion === 5 || s.contracts.length === 0) &&
+        s.inventory &&
+        Array.isArray(s.inventory.items) &&
+        s.inventory.items.length === 0,
+      "작전·재고 저장 형식이 잘못되었습니다.",
+    );
     ok(
       Array.isArray(s.records) && s.records.length <= 500,
       "사건 기록이 잘못되었습니다.",
@@ -1337,7 +1396,8 @@
     }
     if (s.schemaVersion >= 4) {
       ok(
-        s.fieldPreferences && ["2d", "3d"].includes(s.fieldPreferences.view),
+        s.fieldPreferences &&
+          ["2d", "3d", "illustrated"].includes(s.fieldPreferences.view),
         "전장 표시 설정이 잘못되었습니다.",
       );
       if (s.commandExercise?.battle) {
@@ -1347,7 +1407,12 @@
         Battle.validate(s.commandExercise);
       }
     }
-    if(s.schemaVersion===5){const M=root.OverwatchMissions||(typeof require==='function'?require('./missions.js'):null);M.validate(s);}
+    if (s.schemaVersion === 5) {
+      const M =
+        root.OverwatchMissions ||
+        (typeof require === "function" ? require("./missions.js") : null);
+      M.validate(s);
+    }
     return s;
   }
   const api = {
@@ -1359,7 +1424,17 @@
     SKILLS,
     SECONDARIES,
     LABELS,
-    finance:money,recordEvent:emit,markMissing(s,id){current(s);return exit(s,id,'missing');},expireContracts(s){current(s);for(const m of s.members.slice())if(m.contract.endsAt<=time(s))exit(s,m.id,'expiry');},
+    finance: money,
+    recordEvent: emit,
+    markMissing(s, id) {
+      current(s);
+      return exit(s, id, "missing");
+    },
+    expireContracts(s) {
+      current(s);
+      for (const m of s.members.slice())
+        if (m.contract.endsAt <= time(s)) exit(s, m.id, "expiry");
+    },
     initialize,
     validateState,
     hire,

@@ -1555,3 +1555,169 @@ select:disabled {
     transform: translate(-50%, -50%) rotate(90deg);
   }
 }
+
+/* Live radio stays adjacent to the battlefield, including narrow iPhone layouts. */
+.field-comms {
+  margin-top: 12px;
+  padding: 16px 18px;
+}
+.field-comms h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.field-comms .field-radio {
+  max-height: 170px;
+  margin: 10px 0 0;
+  overscroll-behavior: contain;
+}
+.field-comms .field-radio li {
+  padding: 9px 12px;
+}
+.field-target-hint {
+  font-size: 11px;
+  color: #58745b;
+  margin: 4px 0;
+  align-self: center;
+}
+@media (max-width: 700px) {
+  .field-comms .field-radio {
+    max-height: 132px;
+  }
+  .field-stage-toolbar button {
+    min-height: 34px;
+  }
+}
+.member-role-art {
+  display: inline-block;
+  width: 60px;
+  height: 80px;
+  flex-shrink: 0;
+
+  background-size: 400% 200%;
+  background-repeat: no-repeat;
+  background-color: transparent;
+  border-radius: 0;
+}
+.member-role-art.sniper {
+  background-position: 33.333% 0;
+}
+.member-role-art.observer {
+  background-position: 33.333% 100%;
+}
+.dossier-role-art {
+  width: 78px;
+  height: 104px;
+}
+.field-layout form {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.field-layout form > *,
+.field-layout form label {
+  min-width: 0;
+}
+.field-layout form select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 650px) {
+  .field-layout form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.field-audio-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.field-audio-volume input {
+  width: 75px;
+}
+.audio-credits {
+  font-size: 10px;
+  color: var(--muted);
+}
+.member-role-art {
+  background-size: contain;
+  background-position: center;
+}
+.member-role-art.sniper {
+  background-image: url("../images/overwatch/sniper-move.webp");
+  background-position: center;
+}
+.member-role-art.observer {
+  background-image: url("../images/overwatch/observer-move.webp");
+  background-position: center;
+}
+.field-person-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+.field-person-actions button {
+  font-size: 10px;
+  padding: 6px 9px;
+}
+[data-field-contacts] {
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.field-contact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.field-contact strong {
+  font-size: 12px;
+}
+.field-contact small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.field-contact button {
+  font-size: 10px;
+  padding: 6px 9px;
+}
+
+.live-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+.live-money {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+.live-money > div,
+.live-report-roster > article {
+  padding: 14px;
+  border: 1px solid var(--line, #dce3d7);
+  border-radius: 10px;
+}
+.live-money small,
+.live-money strong {
+  display: block;
+}
+.live-report-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 10px;
+}
+.live-reports > details {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line, #dce3d7);
+}
+.live-field-panel .inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

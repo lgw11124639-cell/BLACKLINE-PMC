@@ -31,7 +31,35 @@
       ":" +
       String(t % 60).padStart(2, "0");
   let follow2D = false,
-    lastFrame = null;
+    lastFrame = null,
+    selection = null;
+  const currentRenderer = () =>
+    R.get() || root.OverwatchIllustratedRenderer?.get();
+  function paintSelection(rootNode) {
+    const form = rootNode.querySelector("[data-field-command]");
+    const caption = rootNode.querySelector("[data-field-target]");
+    if (caption)
+      caption.textContent = selection
+        ? "관심 구역 지정됨 · 세부 진지는 관측수가 판단"
+        : "관측수 자율 판단 · 지도 선택은 선택 사항";
+    currentRenderer()?.setTarget?.(selection);
+    const svg = rootNode.querySelector(".field-viewport svg");
+    svg?.querySelector("[data-target-marker]")?.remove();
+    if (svg && selection) {
+      const circle = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle",
+      );
+      circle.setAttribute("cx", selection.x);
+      circle.setAttribute("cy", selection.y);
+      circle.setAttribute("r", "14");
+      circle.setAttribute("fill", "none");
+      circle.setAttribute("stroke", "#f8e7ae");
+      circle.setAttribute("stroke-width", "3");
+      circle.setAttribute("data-target-marker", "");
+      svg.appendChild(circle);
+    }
+  }
   function zoom2D(rootNode, factor) {
     const svg = rootNode.querySelector(".field-viewport svg");
     if (!svg) return;
@@ -45,7 +73,7 @@
   }
   function followFlat(svg, f) {
     const known = f.friends.filter(
-      (u) => !u.stale && (!u.health || u.health.alive),
+      (u) => !u.home && !u.stale && (!u.health || u.health.alive),
     );
     if (!svg || !known.length) return;
     const b = svg.viewBox.baseVal,
@@ -58,7 +86,15 @@
   }
   function map2D(f) {
     return (
-      '<svg viewBox="0 0 1200 800" role="img" aria-label="3D와 같은 본부 수신 정보의 2D 전술지도"><rect width="1200" height="800" fill="#e6edde"/>' +
+      '<svg viewBox="0 0 ' +
+      f.map.width +
+      " " +
+      f.map.height +
+      '" role="img" aria-label="3D와 같은 본부 수신 정보의 2D 전술지도"><rect width="' +
+      f.map.width +
+      '" height="' +
+      f.map.height +
+      '" fill="#e6edde"/>' +
       f.map.heights
         .map(
           (h) =>
@@ -91,7 +127,25 @@
             '" fill="#a6afa0"/>',
         )
         .join("") +
-      '<rect x="80" y="680" width="40" height="40" fill="#637b5c"/>' +
+      '<rect x="' +
+      (f.map.base.x - 3) +
+      '" y="' +
+      (f.map.base.y - 3) +
+      '" width="6" height="6" fill="#637b5c"/>' +
+      (f.map.covers || [])
+        .map(
+          (c) =>
+            '<rect x="' +
+            (c.x - c.w / 2) +
+            '" y="' +
+            (c.y - c.h / 2) +
+            '" width="' +
+            c.w +
+            '" height="' +
+            c.h +
+            '" fill="#7d7f6b"/>',
+        )
+        .join("") +
       f.contacts
         .filter((c) => !c.expired)
         .map(
@@ -108,6 +162,7 @@
         )
         .join("") +
       f.friends
+        .filter((u) => !u.boardedBy)
         .map(
           (u) =>
             '<g opacity="' +
@@ -123,6 +178,22 @@
             " · " +
             u.age +
             "초 전 보고</title></g>",
+        )
+        .join("") +
+      (f.transports || [])
+        .map(
+          (t) =>
+            '<g transform="translate(' +
+            t.x +
+            " " +
+            t.y +
+            ") rotate(" +
+            ((t.heading || 0) * 180) / Math.PI +
+            ')"><rect x="-6" y="-2" width="12" height="4" fill="#647961"/><title>' +
+            esc(t.type) +
+            " · " +
+            t.manifest.length +
+            "명</title></g>",
         )
         .join("") +
       "</svg>"
@@ -197,7 +268,13 @@
                 )
                 .join("<br>") || "부상 보고 없음") +
               "</p><small>" +
+              (u.weapon?.reloadUntil != null && u.weapon.reloadUntil > f.time
+                ? "재장전 중 · "
+                : "") +
               esc(u.weapon?.name || "장비 보고 대기") +
+              (u.weapon?.range
+                ? " · 최대 사거리 " + u.weapon.range + "m"
+                : "") +
               (u.weapon
                 ? " · 장전 " +
                   u.weapon.loaded +
@@ -220,10 +297,53 @@
               u.age +
               "초 전" +
               (u.stale ? " · 통신 갱신 지연" : "") +
-              "</small></div></article>",
+              '</small><div class="field-person-actions"><button data-field-focus="' +
+              esc(u.id) +
+              '">대원 보기</button><button data-field-range="' +
+              esc(u.id) +
+              '">시야·사거리</button></div></div></article>',
           )
           .join("")
       : "<p>텔레메트리 수신 대기. 아직 조원 위치를 본부에 공개하지 않았습니다.</p>";
+  }
+  function contacts(f) {
+    const labels = {
+      unknown: "미확인 인원",
+      "armed-person": "무장 인원",
+      "unarmed-person": "비무장 인원",
+      "friendly-person": "지원 아군",
+    };
+    return (
+      f.contacts
+        .filter((c) => !c.expired)
+        .map(
+          (c) =>
+            '<article class="field-contact"><strong>' +
+            esc(
+              c.specialty === "sniper"
+                ? "저격수 식별"
+                : labels[c.classification] || "인원 관측",
+            ) +
+            "</strong><small>" +
+            esc(
+              {
+                regular: "정규군",
+                insurgent: "반군",
+                allied: "지원 아군",
+                civilian: "민간인",
+              }[c.faction] || "소속 확인 중",
+            ) +
+            " · 신뢰 " +
+            Math.round(c.confidence * 100) +
+            "% · " +
+            c.age +
+            '초 전 보고</small><button data-field-focus="' +
+            esc(c.id) +
+            '">마지막 확인 위치 보기</button></article>',
+        )
+        .join("") ||
+      '<p class="muted">관측 보고 대기 · 미확인 적의 위치는 표시하지 않습니다.</p>'
+    );
   }
   function radio(f) {
     return f.radio
@@ -252,7 +372,13 @@
       .join("");
   }
   function result(f) {
-    if(f.mission)return root.OverwatchMissionUI.result(f.mission.report);
+    if (f.mission)
+      return (
+        root.OverwatchMissionUI.result(f.mission.report) +
+        (f.status === "ended"
+          ? "<button data-field-clear-contract>새 모의 전장 준비</button>"
+          : "")
+      );
     const r = f.battle?.result;
     if (!r) return "";
     return (
@@ -285,7 +411,7 @@
     );
   }
   function renderBase(s, { editable = true, playing = false } = {}) {
-    if (![4,5].includes(s?.schemaVersion))
+    if (![4, 5].includes(s?.schemaVersion))
       return '<section class="panel">본부 저장을 복구한 뒤 전장을 열 수 있습니다.</section>';
     const f = D.frame(s),
       battle = f?.battle,
@@ -293,7 +419,7 @@
     return (
       '<section class="page-title"><span class="eyebrow">PHASE 04 / FIELD SIMULATOR</span><h1>OVERWATCH 전장</h1><p>관측수 지휘 아래 움직이는 실시간 모의 전장입니다. 적 AI·탄약·총상·응급처치는 연습 상태에 저장하며, 본부 대원의 영구 손실·재고·계약 보수에는 아직 반영하지 않습니다.</p></section>' +
       (!battle || !active
-        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 지원 헬기·차량은 계약 시스템 연결 전이므로 출동하지 않습니다.</p><label class="field-label">연습 과업<select data-field-scenario><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
+        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 지원 헬기·차량은 계약 시스템 연결 전이므로 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
           (!editable ||
           !s.squads.length ||
           s.commandExercise?.status === "running"
@@ -301,12 +427,15 @@
             : "") +
           ">편성 저격조 모의 전장 시작</button></section>"
         : "") +
+      (battle && f.map.id === "command-range" && active
+        ? '<p class="notice">이전 훈련장 진행 중 · 훈련 종료 후 새 능선·시가지 지도를 선택할 수 있습니다.</p>'
+        : "") +
       (battle
         ? '<div class="field-layout"><section><div class="panel field-stage" data-field-stage><div class="field-stage-toolbar"><span data-field-clock>' +
           stamp(f.time) +
-          '</span><div><button data-field-view="2d">2D</button><button data-field-view="3d">3D</button><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-field-follow>추적 고정</button><button data-field-overview>전체 지역</button><button data-field-fullscreen>지도 전체화면</button></div></div><div class="field-viewport" data-field-id="' +
+          '</span><div><button data-field-view="illustrated">입체 전투지도</button><button data-field-view="2d">전술도</button><button data-field-view="3d">3D 실험실</button><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button data-field-overview>전체 지역</button><button data-field-fullscreen>지도 전체화면</button></div></div><div class="field-viewport" data-field-id="' +
           esc(s.campaignId + ":" + f.id) +
-          '"></div><div class="field-stage-caption">수신된 위치만 표시 · 적은 실제 관측·보고 후 표시 · 드래그 시점 회전</div></div><section class="panel"><div class="field-controls">' +
+          '"></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단 · 지도에서 관심 구역 선택</div></div><section class="panel field-comms"><div class="personnel-section-title"><h2>현장 무전</h2><span class="status-pill">LIVE COMMS</span><label class="field-audio-volume">음량<input data-overwatch-volume type="range" min="0" max="100" value="35" aria-label="전장 효과음 음량"></label><a class="audio-credits" href="audio/credits.html" target="_blank" rel="noopener">음원</a></div><ol class="field-radio" data-field-radio></ol></section><section class="panel"><div class="field-controls">' +
           (active
             ? "<button data-field-play" +
               (!editable ? " disabled" : "") +
@@ -335,7 +464,7 @@
           esc(f.pauseReason || "본부 명령 대기") +
           "</p><p data-field-weather></p><p data-field-objective>본부 수신 목표: " +
           (battle.objective ? "확인 완료 · 복귀 필요" : "관측·교전 보고 대기") +
-          '</p><p class="muted">재접속·다른 탭·백그라운드 전환 시 정지합니다. 2D/3D 전환은 전장 상태를 다시 생성하지 않습니다.</p>' +
+          '</p><p class="muted">명령을 보내면 관측수가 판단해 이동·관측·교전을 이어갑니다. 재접속·본부 화면·백그라운드 전환 시 정지합니다. 2D/3D 전환은 전장 상태를 다시 생성하지 않습니다.</p>' +
           (active
             ? '<form data-field-command><label>저격조<select name="callsign">' +
               f.squads
@@ -350,27 +479,44 @@
                 .join("") +
               '</select></label><label>명령<select name="kind">' +
               Object.entries(D.ORDERS)
+                .filter(([k]) => !["move", "observe"].includes(k))
                 .map(([k, v]) => '<option value="' + k + '">' + v + "</option>")
                 .join("") +
-              '</select></label><label>X (m)<input name="x" type="number" min="10" max="1190" value="220" required></label><label>Y (m)<input name="y" type="number" min="10" max="790" value="200" required></label><label>교전 규칙<select name="roe"><option value="hold">사격 금지</option><option value="selfDefense">자위 대응</option><option value="authorized">확인된 무장 인원 대응</option></select></label><button type="submit"' +
+              '</select></label><p class="field-target-hint" data-field-target>관측수 자율 판단 · 지도 선택은 선택 사항</p><button type="button" data-field-clear-target>관심 구역 해제</button><label>교전 방침 · 함께 송신<select name="roe"><option value="authorized">식별된 위협 교전 승인</option><option value="selfDefense">자위 대응</option><option value="hold">사격 금지</option></select></label><button type="submit"' +
               (!editable ? " disabled" : "") +
-              ">관측수에게 송신</button></form>"
+              ">명령 송신·자동 수행</button></form>"
             : "") +
           "</section><div data-field-result>" +
           result(f) +
           '</div></section><aside><section class="panel"><h2>조원 상태 · 수신 정보</h2><div data-field-roster>' +
           roster(f) +
-          '</div></section><section class="panel"><h2>현장 무전</h2><ol class="field-radio" data-field-radio>' +
-          radio(f) +
-          "</ol></section></aside></div>"
+          '</div></section><section class="panel"><h2>관측 접촉</h2><div data-field-contacts>' +
+          contacts(f) +
+          "</div></section></aside></div>"
         : "")
     );
   }
-  function render(s,opts){let html=renderBase(s,opts);if(!s?.commandExercise?.mission)return html;const f=D.frame(s);html=html.replace(/<section class="page-title">[\s\S]*?<\/section>/,'<section class="page-title"><span class="eyebrow">LIVE OPERATION / AGENCY CONTRACT</span><h1>실전 작전 지휘</h1><p>실제 부상·전사·미회수·소모품·보수가 본부 기록에 반영됩니다. 기관이 계약에서 제공한 수송·지원만 사용할 수 있습니다.</p></section>'+root.OverwatchMissionUI.livePanel(s));html=html.replace(/<section class="panel"><h2>전장 연습 편성[\s\S]*?<\/section>/,'');return html.replace('연습 통제 종료','작전 중단·철수').replace('조 전체 복귀 명령','철수·제공 수송 요청');}
+  function render(s, opts) {
+    let html = renderBase(s, opts);
+    if (!s?.commandExercise?.mission) return html;
+    const f = D.frame(s);
+    html = html.replace(
+      /<section class="page-title">[\s\S]*?<\/section>/,
+      '<section class="page-title"><span class="eyebrow">LIVE OPERATION / AGENCY CONTRACT</span><h1>실전 작전 지휘</h1><p>실제 부상·전사·미회수·소모품·보수가 본부 기록에 반영됩니다. 기관이 계약에서 제공한 수송·지원만 사용할 수 있습니다.</p></section>' +
+        root.OverwatchMissionUI.livePanel(s),
+    );
+    html = html.replace(
+      /<section class="panel"><h2>전장 연습 편성[\s\S]*?<\/section>/,
+      "",
+    );
+    return html
+      .replace("연습 통제 종료", "작전 중단·철수")
+      .replace("조 전체 복귀 명령", "철수·제공 수송 요청");
+  }
   function refresh(rootNode, s, { playing = false } = {}) {
     const f = D.frame(s);
     if (!f?.battle) return;
-    if(f.mission)root.OverwatchMissionUI.refresh(rootNode,s);
+    if (f.mission) root.OverwatchMissionUI.refresh(rootNode, s);
     lastFrame = f;
     const set = (selector, text) => {
       const el = rootNode.querySelector(selector);
@@ -398,10 +544,19 @@
     );
     set("[data-field-play]", !f.paused && playing ? "일시정지" : "재생");
     const people = rootNode.querySelector("[data-field-roster]");
-    if(f.mission)root.OverwatchMissionUI.refresh(rootNode,s);
+    if (f.mission) root.OverwatchMissionUI.refresh(rootNode, s);
     if (people) {
       const text = roster(f);
       if (people.innerHTML !== text) people.innerHTML = text;
+    }
+    const contactList = rootNode.querySelector("[data-field-contacts]");
+    if (contactList) {
+      const html = contacts(f);
+      if (contactList.innerHTML !== html) {
+        const top = contactList.scrollTop;
+        contactList.innerHTML = html;
+        contactList.scrollTop = top;
+      }
     }
     const messages = rootNode.querySelector("[data-field-radio]");
     if (messages) {
@@ -417,7 +572,7 @@
     if (res && f.status === "ended") res.innerHTML = result(f);
     const viewport = rootNode.querySelector(".field-viewport");
     if (viewport) {
-      if (s.fieldPreferences.view === "3d") R.get()?.update(f);
+      if (s.fieldPreferences.view !== "2d") currentRenderer()?.update(f);
       else {
         const viewBox = viewport.querySelector("svg")?.getAttribute("viewBox");
         viewport.innerHTML = map2D(f);
@@ -426,15 +581,28 @@
         if (follow2D) followFlat(svg, f);
       }
     }
+    paintSelection(rootNode);
+    root.OverwatchAudio?.sync(f, { active: playing });
   }
   function mount(rootNode, s, { onFallback = () => {}, playing = false } = {}) {
     const f = D.frame(s),
       host = rootNode.querySelector(".field-viewport");
+    if (f?.id !== lastFrame?.id) selection = null;
     if (!host || !f?.battle) {
       R.dispose();
+      root.OverwatchIllustratedRenderer?.dispose();
+      root.OverwatchAudio?.sync(f, { active: false });
       return;
     }
-    if (s.fieldPreferences.view === "3d") {
+    if (s.fieldPreferences.view === "illustrated") {
+      R.dispose();
+      const A = root.OverwatchIllustratedRenderer;
+      if (A.get()?.host !== host) {
+        A.dispose();
+        A.create(host, f);
+      } else A.get().update(f);
+    } else if (s.fieldPreferences.view === "3d") {
+      root.OverwatchIllustratedRenderer?.dispose();
       if (R.get()?.host !== host) {
         R.dispose();
         host.replaceChildren();
@@ -442,35 +610,80 @@
       } else R.get().update(f);
     } else {
       R.dispose();
+      root.OverwatchIllustratedRenderer?.dispose();
       host.innerHTML = map2D(f);
     }
     refresh(rootNode, s, { playing });
   }
-  function bind(rootNode, { state: s, editable, commit, play, onFallback }) {
+  function bind(
+    rootNode,
+    { state: s, editable, commit, execute = commit, play, onFallback },
+  ) {
     const on = (sel, fn) =>
       rootNode.querySelector(sel)?.addEventListener("click", fn);
+    if (!rootNode.dataset.fieldActions) {
+      rootNode.dataset.fieldActions = "1";
+      rootNode.addEventListener("click", (event) => {
+        const button = event.target.closest(
+          "[data-field-focus],[data-field-range]",
+        );
+        if (!button) return;
+        const id = button.dataset.fieldFocus || button.dataset.fieldRange;
+        if (
+          ![
+            ...(lastFrame?.friends || []),
+            ...(lastFrame?.contacts || []).filter((c) => !c.expired),
+          ].some((u) => u.id === id)
+        )
+          return;
+        if (button.hasAttribute("data-field-focus"))
+          currentRenderer()?.focus?.(id);
+        else currentRenderer()?.setRange?.(id);
+      });
+    }
+    on("[data-field-clear-contract]", () => {
+      if (editable)
+        commit((next) => {
+          if (next.commandExercise?.status === "ended" && !next.activeMission)
+            next.commandExercise = null;
+        });
+    });
     on("[data-field-start]", () => {
       if (editable)
-        commit((next) =>
+        execute((next) =>
           B.begin(next, {
             scenario: rootNode.querySelector("[data-field-scenario]").value,
+            mapId: rootNode.querySelector("[data-field-map]").value,
           }),
         );
     });
+    on("[data-overwatch-audio]", () => root.OverwatchAudio.toggle());
+    rootNode
+      .querySelector("[data-overwatch-volume]")
+      ?.addEventListener("input", (event) =>
+        root.OverwatchAudio.setVolume(event.target.value),
+      );
+    root.OverwatchAudio?.controls();
     on("[data-field-play]", () => {
       if (editable) play();
     });
     on("[data-field-withdraw]", () => {
-      if (editable) commit((next) => B.withdraw(next));
+      if (editable) execute((next) => B.withdraw(next));
     });
     on("[data-field-end]", () => {
       if (
         editable &&
         confirm(
-          "모의 전장을 통제 종료할까요? 집결지에 도착하지 않은 인원은 복귀 완료로 처리하지 않습니다.",
+          s.commandExercise?.mission
+            ? "작전을 중단하고 실제 철수·수송 절차를 요청할까요?"
+            : "모의 전장을 통제 종료할까요? 집결지에 도착하지 않은 인원은 복귀 완료로 처리하지 않습니다.",
         )
       )
-        commit((next) => next.commandExercise.mission?root.OverwatchMissions.requestReturn(next,{abort:true}):D.end(next, "control"));
+        commit((next) =>
+          next.commandExercise.mission
+            ? root.OverwatchMissions.requestReturn(next, { abort: true })
+            : D.end(next, "control"),
+        );
     });
     rootNode.querySelectorAll("[data-field-speed]").forEach((b) =>
       b.addEventListener("click", () => {
@@ -492,42 +705,88 @@
         event.preventDefault();
         if (!editable) return;
         const f = event.currentTarget;
-        commit((next) => {
+        execute((next) => {
           next.ui.fieldCallsign = f.elements.callsign.value;
+          if (["cover", "recon"].includes(f.elements.kind.value))
+            D.issue(
+              next,
+              f.elements.callsign.value,
+              "roe",
+              null,
+              f.elements.roe.value,
+            );
           D.issue(
             next,
             f.elements.callsign.value,
             f.elements.kind.value,
-            { x: Number(f.elements.x.value), y: Number(f.elements.y.value) },
+            ["cover", "recon"].includes(f.elements.kind.value) && selection
+              ? { ...selection }
+              : null,
             f.elements.roe.value,
           );
         });
       });
     }
+    const pick = (p) => {
+      const form = rootNode.querySelector("[data-field-command]");
+      if (form?.dataset.fieldEditable !== "true" || !p) return;
+      if (root.OverwatchGeometry.blocked(p)) {
+        const hint = rootNode.querySelector("[data-field-target]");
+        if (hint)
+          hint.textContent =
+            "건물 밖의 관심 구역을 선택하세요. 세부 진지는 관측수가 결정합니다.";
+        return;
+      }
+      selection = { x: p.x, y: p.y };
+      paintSelection(rootNode);
+    };
+    currentRenderer()?.setPickHandler?.(pick);
+    const viewport = rootNode.querySelector(".field-viewport");
+    if (viewport && !viewport.dataset.pickBound) {
+      viewport.dataset.pickBound = "1";
+      viewport.addEventListener("click", (event) => {
+        const svg = event.target.closest("svg");
+        if (!svg || !svg.getScreenCTM()) return;
+        const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(
+          svg.getScreenCTM().inverse(),
+        );
+        pick(p);
+      });
+    }
+    on("[data-field-clear-target]", () => {
+      selection = null;
+      paintSelection(rootNode);
+    });
+    paintSelection(rootNode);
     rootNode
       .querySelectorAll("[data-field-zoom]")
       .forEach((b) =>
         b.addEventListener("click", () =>
-          R.get()
-            ? R.get().zoom(Number(b.dataset.fieldZoom))
+          currentRenderer()
+            ? currentRenderer().zoom(Number(b.dataset.fieldZoom))
             : zoom2D(rootNode, Number(b.dataset.fieldZoom)),
         ),
       );
     on("[data-field-follow]", () => {
-      const follow = R.get() ? R.get().follow() : (follow2D = !follow2D);
-      if (!R.get() && follow2D && lastFrame)
+      const follow = currentRenderer()
+        ? currentRenderer().follow()
+        : (follow2D = !follow2D);
+      if (!currentRenderer() && follow2D && lastFrame)
         followFlat(rootNode.querySelector(".field-viewport svg"), lastFrame);
       rootNode.querySelector("[data-field-follow]").textContent = follow
         ? "추적 고정"
         : "자유 시점";
     });
     on("[data-field-overview]", () => {
-      if (R.get()) R.get().overview();
+      if (currentRenderer()) currentRenderer().overview();
       else {
         follow2D = false;
         rootNode
           .querySelector(".field-viewport svg")
-          ?.setAttribute("viewBox", "0 0 1200 800");
+          ?.setAttribute(
+            "viewBox",
+            "0 0 " + lastFrame.map.width + " " + lastFrame.map.height,
+          );
       }
     });
     on("[data-field-fullscreen]", async () => {
@@ -548,7 +807,7 @@
           screen.orientation?.unlock?.();
         } catch {}
       }
-      R.get()?.resize();
+      currentRenderer()?.resize();
     });
   }
   function closeMap() {
@@ -562,7 +821,7 @@
       if (document.fullscreenElement)
         document.exitFullscreen()?.catch(() => {});
     } catch {}
-    R.get()?.resize();
+    currentRenderer()?.resize();
   }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeMap();

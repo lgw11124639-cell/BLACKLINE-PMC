@@ -254,7 +254,24 @@
               Command.initialize(v);
               return validate(v);
             })()
-          : schemaVersion===4?(()=>{const v=personnel().initialize(legacy),D=root.OverwatchCommand||(typeof require==='function'?require('./command.js'):null),B=root.OverwatchBattle||(typeof require==='function'?require('./battle.js'):null);D.initialize(v);B.initialize(v);return validate(v);})():upgrade(legacy);
+          : schemaVersion === 4
+            ? (() => {
+                const v = personnel().initialize(legacy),
+                  D =
+                    root.OverwatchCommand ||
+                    (typeof require === "function"
+                      ? require("./command.js")
+                      : null),
+                  B =
+                    root.OverwatchBattle ||
+                    (typeof require === "function"
+                      ? require("./battle.js")
+                      : null);
+                D.initialize(v);
+                B.initialize(v);
+                return validate(v);
+              })()
+            : upgrade(legacy);
   }
   const personnel = () =>
     root.OverwatchPersonnel ||
@@ -286,7 +303,13 @@
       requireThat(Battle, "전장 저장 전환기를 불러오지 못했습니다.");
       Battle.initialize(next);
     }
-    if(next.schemaVersion===4){const M=root.OverwatchMissions||(typeof require==='function'?require('./missions.js'):null);requireThat(M,'실전 계약 전환기를 불러오지 못했습니다.');M.initialize(next);}
+    if (next.schemaVersion === 4) {
+      const M =
+        root.OverwatchMissions ||
+        (typeof require === "function" ? require("./missions.js") : null);
+      requireThat(M, "실전 계약 전환기를 불러오지 못했습니다.");
+      M.initialize(next);
+    }
     return validate(next);
   }
   const api = {

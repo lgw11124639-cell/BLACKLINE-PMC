@@ -63,10 +63,10 @@ test("schema 3 field upgrade keeps funds, squad, archive and byte-exact pre-upgr
   store.save(old, null);
   const raw = store.raw(S.KEYS.primary),
     up = store.migrate();
-  assert.equal(up.schemaVersion, 4);
+  assert.equal(up.schemaVersion, C.SCHEMA);
   assert.equal(up.headquarters.funds, old.headquarters.funds);
   assert.deepEqual(up.commandArchive, old.commandArchive);
-  assert.equal(JSON.parse(store.raw(S.KEYS.beforeFieldMigration)).primary, raw);
+  assert.equal(JSON.parse(store.raw(S.KEYS.beforeMissionMigration)).primary, raw);
   assert.equal(
     up.headquarters.ledger.filter((e) => e.kind === "startup-grant").length,
     1,
@@ -115,7 +115,11 @@ test("actual observed armed contact halts unsafe approach and produces a causal 
   assert.ok(s.commandExercise.events.some((e) => e.type === "contact-halt"));
   assert.equal(c.status, "failed");
   assert.ok(
-    D.frame(s).contacts.some((c) => c.classification === "armed-person"),
+    s.commandExercise.radio.some(
+      (r) =>
+        r.status === "delivered" &&
+        r.payload?.contact?.classification === "armed-person",
+    ),
   );
 });
 test("actual shots debit real magazine rounds and every weapon conserves initial ammunition across reloads", () => {
@@ -478,5 +482,78 @@ test("a depleted primary switches to a real loaded sidearm only within its close
   assert.ok(e.events.some((a) => a.type === "weapon-switched"));
   assert.equal(total(u.weapon), u.weapon.initial);
   assert.equal(total(u.sidearm), u.sidearm.initial);
+  C.validate(s);
+});
+
+test("reported impact traces are causal, delayed, deduplicated and survive save restoration", () => {
+  const s = make(),
+    e = s.commandExercise,
+    b = e.battle;
+  const friends = e.world.units.map((u) => ({
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    callsign: u.callsign,
+    x: u.x,
+    y: u.y,
+    state: u.state,
+    capable: u.capable,
+    observedAt: 0,
+    ...B.snapshot(u, 0),
+  }));
+  const effect = {
+    eventId: "trace-test",
+    time: 0,
+    kind: "shot",
+    actorId: e.world.units[0].id,
+    targetId: null,
+    model: "HK416",
+    hit: false,
+    impactVisible: true,
+    side: "blue",
+    from: { x: 100, y: 700 },
+    to: { x: 120, y: 700 },
+  };
+  b.packets.push({
+    callsign: "ALPHA",
+    observedAt: 0,
+    dueAt: 2,
+    friends,
+    effects: [effect],
+  });
+  B.tick(s, e);
+  assert.equal(D.frame(s).battle.decals.length, 0);
+  e.time = 2;
+  s.clock.elapsedSeconds = 2;
+  B.tick(s, e);
+  assert.equal(D.frame(s).battle.decals[0].kind, "impact");
+  b.packets.push({
+    callsign: "ALPHA",
+    observedAt: 0,
+    dueAt: 2,
+    friends,
+    effects: [effect],
+  });
+  B.tick(s, e);
+  assert.equal(D.frame(s).battle.decals.length, 1);
+  assert.deepEqual(D.frame(C.clone(s)).battle.decals, D.frame(s).battle.decals);
+  b.packets.push({
+    callsign: "ALPHA",
+    observedAt: 0,
+    dueAt: 2,
+    friends,
+    effects: [{ ...effect, eventId: "unseen", impactVisible: false }],
+  });
+  B.tick(s, e);
+  assert.equal(D.frame(s).battle.decals.length, 1);
+  b.packets.push({
+    callsign: "ALPHA",
+    observedAt: 0,
+    dueAt: 2,
+    friends,
+    effects: [{ ...effect, eventId: "hit-trace", hit: true }],
+  });
+  B.tick(s, e);
+  assert.equal(D.frame(s).battle.decals[1].kind, "blood");
   C.validate(s);
 });
