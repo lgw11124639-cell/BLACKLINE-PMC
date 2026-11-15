@@ -386,9 +386,15 @@
         m.motion = motion.mode;
         m.flash = motion.flash;
         // Sizes stay bounded; squad identity is a small pin, never an oversized name plate.
-        const height = 1.8 * v.scale,
+        const facing = root.OverwatchMotion.facing(
+            u,
+            m.from,
+            m.to,
+            motion.mode === "walk",
+          ),
+          height = 1.8 * v.scale,
           width = height * 0.75,
-          direction = (Math.round((u.heading || 0) / (Math.PI / 2)) + 4) % 4;
+          direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
         const bob = motion.mode === "walk" ? Math.sin(now * 0.012) * 1.1 : 0;
         ctx.save();
         ctx.globalAlpha = u.stale
@@ -413,7 +419,7 @@
           const [x1, y1, x2, y2] = chosen.art.bounds;
           const width = chosen.widthM * v.scale,
             h = (width * (y2 - y1)) / (x2 - x1);
-          const facingLeft = Math.cos(u.heading || 0) < 0;
+          const facingLeft = Math.cos(facing) < 0;
           ctx.save();
           ctx.translate(q.x, q.y + bob);
           if (facingLeft) ctx.scale(-1, 1);

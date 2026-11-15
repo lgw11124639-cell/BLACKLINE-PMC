@@ -837,6 +837,14 @@
             }
           : {}),
       };
+    if (known.medicalCondition === "dead")
+      for (const r of e.radio)
+        if (
+          r.status === "queued" &&
+          r.callsign === q.callsign &&
+          r.payload?.contact?.id === seen.id
+        )
+          r.status = "cancelled";
     const a = event(e, "contact-observed", {
       callsign: q.callsign,
       actorId: seen.id,
@@ -847,29 +855,40 @@
       e,
       q,
       "observation",
-      q.callsign +
-        ". " +
-        (known.classification === "unknown"
-          ? "미확인 인원"
-          : ["unarmed-target", "unarmed-person"].includes(known.classification)
-            ? e.mission
-              ? "비무장 인원"
-              : "비무장 훈련 인원"
-            : known.classification === "armed-person"
-              ? "무장 인원"
-              : e.mission
-                ? "지원 아군"
-                : "훈련 표적 인원") +
-        " 관측. 좌표 약 " +
-        Math.round(known.x) +
-        ", " +
-        Math.round(known.y) +
-        ". 신뢰도 " +
-        Math.round(known.confidence * 100) +
-        "%.",
+      known.medicalCondition === "dead"
+        ? q.callsign +
+            ". " +
+            (known.classification === "armed-person"
+              ? "표적 사살 확인. 위협 해제."
+              : "관측 인원 사망 확인.")
+        : known.medicalCondition === "down"
+          ? q.callsign + ". 표적 쓰러짐 확인. 사망 여부 미확인."
+          : q.callsign +
+            ". " +
+            (known.classification === "unknown"
+              ? "미확인 인원"
+              : ["unarmed-target", "unarmed-person"].includes(
+                    known.classification,
+                  )
+                ? e.mission
+                  ? "비무장 인원"
+                  : "비무장 훈련 인원"
+                : known.classification === "armed-person"
+                  ? "무장 인원"
+                  : e.mission
+                    ? "지원 아군"
+                    : "훈련 표적 인원") +
+            " 관측. 좌표 약 " +
+            Math.round(known.x) +
+            ", " +
+            Math.round(known.y) +
+            ". 신뢰도 " +
+            Math.round(known.confidence * 100) +
+            "%.",
       a,
       { contact: known },
     );
+    seen.reportedCondition = known.medicalCondition || "normal";
     seen.reportedAt = e.time;
     seen.reportedConfidence = seen.confidence;
   }
@@ -1070,13 +1089,13 @@
         return;
       }
       u.blockedAt = null;
+      u.heading = Math.atan2(p.y - u.y, p.x - u.x);
       u.x = p.x;
       u.y = p.y;
       if (e.battle && step > 0) {
         u.prone = false;
         u.stance = "standing";
       }
-      u.heading = Math.atan2(next.y - u.y, next.x - u.x);
       left -= step;
       if (step === d) u.path.shift();
     }
@@ -1115,7 +1134,10 @@
             : 500 + v.observation * 3) +
           G.elevation(u) * 2
         : (75 + v.observation) * observerFactor,
-      heading = Math.atan2(q.sector.y - u.y, q.sector.x - u.x);
+      heading =
+        u.path.length || u.state === "moving"
+          ? u.heading
+          : Math.atan2(q.sector.y - u.y, q.sector.x - u.x);
     u.heading = heading;
     if (e.battle) {
       u.visionRange = radius * e.battle.weather.visibility;
@@ -1180,12 +1202,21 @@
               : "unarmed-person"
         : actor.kind;
       if (e.battle) {
-        seen.condition = Battle().snapshot(actor).pose;
+        const deathConfirmed =
+          !actor.health.alive &&
+          seen.confidence >= 0.8 &&
+          d <= u.identificationRange;
+        seen.condition =
+          !actor.health.alive && !deathConfirmed
+            ? "down"
+            : Battle().snapshot(actor).pose;
         seen.heading = actor.heading;
         seen.activity = Battle().snapshot(actor, e.time).activity;
         seen.combatActive = !!actor.combatActive;
         seen.medicalCondition = !actor.health.alive
-          ? "dead"
+          ? deathConfirmed
+            ? "dead"
+            : "down"
           : !actor.health.conscious
             ? "down"
             : actor.health.wounds.some((w) => !w.treated) && !actor.combatActive
@@ -1203,13 +1234,24 @@
                   : "regular")
             : "unknown";
       }
+      // A confirmed casualty is terminal information, not a fresh active contact
+      // every scan. Optional marker also upgrades existing saves on next sighting.
       if (
-        e.time - seen.reportedAt >= 20 ||
-        (seen.reportedConfidence < 0.8 && seen.confidence >= 0.8)
+        seen.reportedCondition !== "dead" &&
+        (seen.medicalCondition === "dead" ||
+          (seen.medicalCondition === "down" &&
+            seen.reportedCondition !== "down") ||
+          (seen.medicalCondition !== "down" &&
+            (e.time - seen.reportedAt >= 20 ||
+              (seen.reportedConfidence < 0.8 && seen.confidence >= 0.8) ||
+              seen.reportedCondition === "down")))
       )
         sendContact(s, e, q, seen);
       if (
-        (!e.battle || actor.side === "red") &&
+        (!e.battle ||
+          (actor.side === "red" &&
+            actor.health.alive &&
+            actor.health.conscious)) &&
         d < 65 &&
         seen.confidence >= 0.8 &&
         e.time - q.lastCriticalAt > 60
@@ -1301,6 +1343,7 @@
             e.time - v.lastSeen < 12 &&
             v.confidence >= 0.8 &&
             v.classification === "armed-person" &&
+            !["dead", "down"].includes(v.medicalCondition) &&
             !q.tactical.reportedContactIds.includes(v.id),
         );
         const support = [
@@ -1624,6 +1667,12 @@
         classification: confidence >= 0.65 ? c.classification : "unknown",
       };
     });
+    // Keep telemetry delivery and HQ knowledge current without flooding the
+    // visible/voiced radio feed. Explicit status requests and urgent events stay.
+    let lastRoutineVisibleAt = -Infinity;
+    const routineEvents = new Set(
+      e.events.filter((a) => a.type === "position-report").map((a) => a.id),
+    );
     const projected = {
       id: e.id,
       time: e.time,
@@ -1652,6 +1701,13 @@
       })),
       radio: e.radio
         .filter((r) => r.hqVisibleAt !== null)
+        .filter((r) => {
+          if (r.kind !== "position" || !routineEvents.has(r.eventId))
+            return true;
+          if (r.hqVisibleAt - lastRoutineVisibleAt < 180) return false;
+          lastRoutineVisibleAt = r.hqVisibleAt;
+          return true;
+        })
         .map((r) => ({
           id: r.id,
           from: copy(r.from),

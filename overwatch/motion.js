@@ -46,7 +46,12 @@
       hand: reloading ? Math.sin(elapsed * 0.01) * 0.35 : 0,
     };
   }
-  const api = { sample };
+  function facing(unit, from, to, moving = false) {
+    if (moving && from && to && Math.hypot(to.x - from.x, to.y - from.y) > 0.1)
+      return Math.atan2(to.y - from.y, to.x - from.x);
+    return unit.heading || 0;
+  }
+  const api = { sample, facing };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.OverwatchMotion = api;
 })(typeof window === "undefined" ? globalThis : window);

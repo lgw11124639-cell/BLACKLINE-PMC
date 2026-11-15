@@ -55,3 +55,20 @@ test("reload follows actual weapon clock and walking follows actual displacement
     0,
   );
 });
+
+test("walking faces actual displacement while stationary aiming retains target heading", () => {
+  const u = { heading: 0 };
+  assert.equal(
+    Motion.facing(u, { x: 20, y: 10 }, { x: 10, y: 10 }, true),
+    Math.PI,
+  );
+  assert.equal(
+    Motion.facing(u, { x: 10, y: 20 }, { x: 10, y: 10 }, true),
+    -Math.PI / 2,
+  );
+  assert.equal(Motion.facing(u, { x: 20, y: 10 }, { x: 10, y: 10 }, false), 0);
+  assert.equal(
+    Motion.facing({ heading: 1 }, { x: 10, y: 10 }, { x: 10, y: 10 }, true),
+    1,
+  );
+});

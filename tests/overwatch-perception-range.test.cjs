@@ -75,3 +75,101 @@ test("weapon range never reveals someone outside unassisted sight", () => {
   assert.ok(u.visionRange < 400);
   assert.equal(e.battle.totalShots, 0);
 });
+
+test("a visibly killed target is confirmed once instead of repeating active coordinate reports", () => {
+  const { s, e, t } = scenario(500);
+  B.injure(s, e, t, { eventId: "confirmed-impact", part: "head", severity: 3 });
+  assert.equal(t.health.alive, false);
+  const start = e.radio.length;
+  for (let i = 0; i < 90; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+    C.validate(s);
+  }
+  const reports = e.radio
+    .slice(start)
+    .filter((r) => r.payload?.contact?.id === t.id);
+  assert.equal(reports.length, 1);
+  assert.match(reports[0].body, /사살 확인/);
+  assert.doesNotMatch(reports[0].body, /좌표|무장 인원 관측/);
+  assert.equal(reports[0].payload.contact.medicalCondition, "dead");
+  assert.equal(
+    D.frame(s).contacts.find((c) => c.id === t.id).medicalCondition,
+    "dead",
+  );
+  // Existing saves have no terminal-report marker; the next actual sighting repairs it.
+  delete e.squads[0].contacts.find((c) => c.id === t.id).reportedCondition;
+  const restoreStart = e.radio.length;
+  for (let i = 0; i < 60; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  assert.equal(
+    e.radio.slice(restoreStart).filter((r) => r.payload?.contact?.id === t.id)
+      .length,
+    1,
+  );
+});
+
+test("an unidentifiable distant body cannot produce a confirmed kill report", () => {
+  const { s, e, t } = scenario(900);
+  B.injure(s, e, t, { eventId: "distant-impact", part: "head", severity: 3 });
+  const start = e.radio.length;
+  for (let i = 0; i < 60; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+    C.validate(s);
+  }
+  const reports = e.radio
+    .slice(start)
+    .filter((r) => r.payload?.contact?.id === t.id);
+  assert.equal(reports.length, 1);
+  assert.match(reports[0].body, /사망 여부 미확인/);
+  assert.doesNotMatch(reports[0].body, /사살 확인/);
+  assert.equal(reports[0].payload.contact.medicalCondition, "down");
+});
+
+test("moving units face their route instead of turning toward the observation sector", () => {
+  const { s, e, u } = scenario(400, false);
+  Object.assign(u, { x: 600, y: 700, path: [], goal: null });
+  Object.assign(e.world.units[1], { x: 590, y: 680, path: [], goal: null });
+  D.issue(s, "ALPHA", "move", { x: 200, y: 700 });
+  let checked = 0;
+  for (let i = 0; i < 50; i++) {
+    e.squads[0].sector = { x: 1190, y: 700 };
+    const x = u.x,
+      y = u.y;
+    B.setPaused(s, false);
+    D.step(s, 1);
+    C.validate(s);
+    if (u.path.length && Math.hypot(u.x - x, u.y - y) > 0.1) {
+      const expected = Math.atan2(u.y - y, u.x - x);
+      assert.ok(Math.cos(u.heading - expected) > 0.99);
+      checked++;
+    }
+  }
+  assert.ok(checked > 5);
+});
+
+test("routine status telemetry stays fresh while visible radio updates are throttled", () => {
+  const { s, e } = scenario(400, false);
+  e.world.actors = [];
+  for (let i = 0; i < 240; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  const raw = e.radio.filter(
+    (r) => r.kind === "position" && r.hqVisibleAt !== null,
+  );
+  const f = D.frame(s),
+    visible = f.radio.filter((r) => r.kind === "position");
+  assert.ok(raw.length >= 7);
+  assert.ok(visible.length <= 2);
+  assert.ok(f.friends.every((u) => u.age < 35));
+  // Never suppress important messages while hiding redundant routine updates.
+  for (const r of e.radio.filter(
+    (r) => r.kind === "urgent" && r.hqVisibleAt !== null,
+  ))
+    assert.ok(f.radio.some((v) => v.id === r.id));
+  C.validate(s);
+});
