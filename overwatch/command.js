@@ -84,7 +84,15 @@
     const u = leader(e, q);
     return (
       !!u?.capable &&
-      (u.altitude > 40 || !G.MAP.shadows.some((b) => G.inside(u, b)))
+      (u.altitude > 40 ||
+        !G.MAP.shadows.some((b) => G.inside(u, b)) ||
+        e.mission?.transports.some(
+          (t) =>
+            t.type !== "foot" &&
+            t.type !== "drone" &&
+            G.distance(u, t) < (t.altitude > 40 ? 600 : 200) &&
+            G.clear(u, t),
+        ))
     );
   }
   function latency(s, e, q) {
@@ -943,7 +951,11 @@
       }
       if (r.route === "up") {
         applyKnowledge(e, r);
-        if (r.kind === "urgent" && s.clock.emergencyPause) {
+        if (
+          r.kind === "urgent" &&
+          s.clock.emergencyPause &&
+          !e.battle?.continuous
+        ) {
           e.paused = true;
           e.pauseReason = r.body;
         }

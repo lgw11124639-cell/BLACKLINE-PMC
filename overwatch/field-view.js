@@ -231,11 +231,17 @@
               healthBody(u) +
               "<div><strong>" +
               esc(u.name) +
+              (u.stale
+                ? '<span class="field-stale">마지막 수신 ' +
+                  Math.floor(u.age / 60) +
+                  "분 전 · 현재 상태 미확인</span>"
+                : "") +
               " <small>" +
               esc(u.callsign) +
               "</small></strong><p>" +
               (u.role === "observer" ? "관측수" : "저격수") +
               " · " +
+              (u.stale ? "최종 보고: " : "") +
               esc(
                 u.pose === "aid"
                   ? "처치 중"
@@ -267,7 +273,7 @@
                     (w.treated ? "처치 완료" : "미처치"),
                 )
                 .join("<br>") || "부상 보고 없음") +
-              "</p><small>" +
+              "</p><details data-field-unit-extra><summary>장비·생체 수신 정보</summary><small>" +
               (u.weapon?.reloadUntil != null && u.weapon.reloadUntil > f.time
                 ? "재장전 중 · "
                 : "") +
@@ -297,7 +303,7 @@
               u.age +
               "초 전" +
               (u.stale ? " · 통신 갱신 지연" : "") +
-              '</small><div class="field-person-actions"><button data-field-focus="' +
+              '</small></details><div class="field-person-actions"><button data-field-focus="' +
               esc(u.id) +
               '">대원 보기</button><button data-field-range="' +
               esc(u.id) +
@@ -435,14 +441,35 @@
           stamp(f.time) +
           '</span><div><button data-field-view="illustrated">입체 전투지도</button><button data-field-view="2d">전술도</button><button data-field-view="3d">3D 실험실</button><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button data-field-overview>전체 지역</button><button data-field-fullscreen>지도 전체화면</button></div></div><div class="field-viewport" data-field-id="' +
           esc(s.campaignId + ":" + f.id) +
-          '"></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단 · 지도에서 관심 구역 선택</div></div><section class="panel field-comms"><div class="personnel-section-title"><h2>현장 무전</h2><span class="status-pill">LIVE COMMS</span><label class="field-audio-volume">음량<input data-overwatch-volume type="range" min="0" max="100" value="35" aria-label="전장 효과음 음량"></label><a class="audio-credits" href="audio/credits.html" target="_blank" rel="noopener">음원</a></div><ol class="field-radio" data-field-radio></ol></section><section class="panel"><div class="field-controls">' +
+          '"></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단</div>' +
           (active
-            ? "<button data-field-play" +
-              (!editable ? " disabled" : "") +
-              ">" +
-              (!f.paused && playing ? "일시정지" : "재생") +
-              "</button>" +
-              [1, 2, 4]
+            ? '<div class="field-quick-orders"><select data-field-quick-team aria-label="명령할 저격조">' +
+              f.squads
+                .map((q) => "<option>" + esc(q.callsign) + "</option>")
+                .join("") +
+              "</select>" +
+              [
+                ["cover", "아군 엄호"],
+                ["recon", "정찰"],
+                ["hold", "경계"],
+                ["withdraw", "전체 철수"],
+              ]
+                .map(
+                  ([k, v]) =>
+                    '<button data-field-quick="' +
+                    k +
+                    '"' +
+                    (!editable ? " disabled" : "") +
+                    ">" +
+                    v +
+                    "</button>",
+                )
+                .join("") +
+              "</div>"
+            : "") +
+          '</div><section class="panel field-comms"><div class="personnel-section-title"><h2>현장 무전</h2><span class="status-pill">LIVE COMMS</span><label class="field-audio-volume">음량<input data-overwatch-volume type="range" min="0" max="100" value="35" aria-label="전장 효과음 음량"></label><a class="audio-credits" href="audio/credits.html" target="_blank" rel="noopener">음원</a></div><ol class="field-radio" data-field-radio></ol></section><section class="panel"><div class="field-controls">' +
+          (active
+            ? [1, 2, 4]
                 .map(
                   (v) =>
                     '<button data-field-speed="' +
@@ -464,7 +491,7 @@
           esc(f.pauseReason || "본부 명령 대기") +
           "</p><p data-field-weather></p><p data-field-objective>본부 수신 목표: " +
           (battle.objective ? "확인 완료 · 복귀 필요" : "관측·교전 보고 대기") +
-          '</p><p class="muted">명령을 보내면 관측수가 판단해 이동·관측·교전을 이어갑니다. 재접속·본부 화면·백그라운드 전환 시 정지합니다. 2D/3D 전환은 전장 상태를 다시 생성하지 않습니다.</p>' +
+          '</p><p class="muted">명령을 보내면 관측수가 판단해 이동·관측·교전을 이어갑니다. 본부·장비 화면에서도 작전은 계속됩니다. 백그라운드에서 돌아오면 자동으로 이어집니다. 2D/3D 전환은 전장 상태를 다시 생성하지 않습니다.</p>' +
           (active
             ? '<form data-field-command><label>저격조<select name="callsign">' +
               f.squads
@@ -535,7 +562,13 @@
     );
     set(
       "[data-field-status]",
-      f.pauseReason || (!f.paused && playing ? "실시간 전장 진행" : "일시정지"),
+      f.status === "running"
+        ? (f.mission?.waitReason ||
+            "실시간 작전 진행 · 보고 수신 중에도 계속 진행") +
+            (f.friends.some((u) => u.stale)
+              ? " · 통신 지연: 대원 카드는 마지막 보고입니다."
+              : "")
+        : "작전 종료",
     );
     set(
       "[data-field-objective]",
@@ -547,7 +580,15 @@
     if (f.mission) root.OverwatchMissionUI.refresh(rootNode, s);
     if (people) {
       const text = roster(f);
-      if (people.innerHTML !== text) people.innerHTML = text;
+      if (people.innerHTML !== text) {
+        const expanded = [...people.querySelectorAll("[data-field-person]")]
+          .filter((n) => n.querySelector("details")?.open)
+          .map((n) => n.dataset.fieldPerson);
+        people.innerHTML = text;
+        for (const n of people.querySelectorAll("[data-field-person]"))
+          if (expanded.includes(n.dataset.fieldPerson))
+            n.querySelector("details")?.setAttribute("open", "");
+      }
     }
     const contactList = rootNode.querySelector("[data-field-contacts]");
     if (contactList) {
@@ -648,6 +689,40 @@
             next.commandExercise = null;
         });
     });
+    const quickTeam = rootNode.querySelector("[data-field-quick-team]");
+    const quickForm = rootNode.querySelector("[data-field-command]");
+    if (quickTeam && quickForm) {
+      quickTeam.value = quickForm.elements.callsign.value;
+      quickTeam.addEventListener(
+        "change",
+        () => (quickForm.elements.callsign.value = quickTeam.value),
+      );
+    }
+    for (const b of rootNode.querySelectorAll("[data-field-quick]"))
+      b.addEventListener("click", () => {
+        if (!editable) return;
+        const kind = b.dataset.fieldQuick,
+          team =
+            quickForm?.elements.callsign.value ||
+            lastFrame?.squads[0]?.callsign;
+        execute((next) => {
+          if (kind === "withdraw") return B.withdraw(next);
+          if (["cover", "recon"].includes(kind))
+            D.issue(
+              next,
+              team,
+              "roe",
+              null,
+              quickForm?.elements.roe.value || "authorized",
+            );
+          D.issue(
+            next,
+            team,
+            kind,
+            ["cover", "recon"].includes(kind) ? selection : null,
+          );
+        });
+      });
     on("[data-field-start]", () => {
       if (editable)
         execute((next) =>

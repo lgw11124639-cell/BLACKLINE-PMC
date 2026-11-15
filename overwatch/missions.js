@@ -671,10 +671,16 @@
         return false;
       }
     }
+    if (u.carriedBy && t.crew?.patientId === u.id) return false;
     if (G.distance(u, t) > 20) return false;
     if (!t.boarding) t.boarding = { id: u.id, until: e.time + 4 };
     if (t.boarding.id !== u.id) return false;
     if (e.time < t.boarding.until) return false;
+    if (u.carriedBy) {
+      const carrier = actor(e, u.carriedBy);
+      if (carrier) carrier.carrying = null;
+      u.carriedBy = null;
+    }
     t.manifest.push(u.id);
     u.boardedBy = t.id;
     u.path = [];
@@ -718,6 +724,8 @@
       );
       u.altitude = 0;
       u.boardedBy = null;
+      u.carriedBy = null;
+      u.carrying = null;
       u.extracted = true;
       u.home = true;
       u.state = "returned";
@@ -742,6 +750,8 @@
       );
     }
     t.manifest = [];
+    t.crew = null;
+    t.loadingSince = null;
     t.state = "home";
     t.trip = "extraction";
     t.altitude = 0;
@@ -851,8 +861,40 @@
         } else if (t.state === "pickup-hold") {
           if (safeLanding(e, t)) t.state = "pickup-landed";
         } else if (t.state === "loading") {
+          t.loadingSince ??= e.time;
+          if (t.crew) {
+            medicalCrew(s, e, t);
+            if (t.state !== "loading") continue;
+          }
           const done = board(s, e, t, m.memberIds);
-          if (done && t.manifest.length) {
+          if (
+            !t.crew &&
+            e.time - t.loadingSince >= 15 &&
+            (!done || !t.manifest.length)
+          ) {
+            t.crew = {
+              id: t.id + "-recovery",
+              name: "기관 수송 회수요원",
+              x: t.x,
+              y: t.y,
+              state: "search",
+              targetId: null,
+              patientId: null,
+              path: [],
+              dueAt: null,
+            };
+            const ev = log(e, "transport-recovery-started", {
+              transportId: t.id,
+            });
+            say(
+              s,
+              e,
+              "transport",
+              "탑승 대기 인원이 접근하지 못했다. 기존 수송 승무원이 마지막 보고 지점에서 직접 확인·회수한다. 추가 지원 인원이나 헬기를 생성하지 않는다.",
+              ev,
+            );
+          }
+          if (done && t.manifest.length && !t.crew) {
             t.trip = "extraction";
             beginTravel(e, t, G.MAP.base, "home-unload");
             m.phase = "returning";
@@ -899,6 +941,17 @@
     const e = s.commandExercise,
       m = e?.mission;
     ok(m && e.status === "running", "진행 중인 실전 작전이 없습니다.");
+    if (!pickup && m.contract.transport !== "foot") {
+      const known = Object.values(e.knowledge.friends).filter(
+        (f) => !m.home.includes(f.id) && !f.boardedBy,
+      );
+      if (
+        known.some(
+          (f) => f.health?.wounds?.length || e.time - f.observedAt > 45,
+        )
+      )
+        pickup = pickupPoint(s);
+    }
     if (pickup) {
       ok(
         point(pickup) && !G.blocked(pickup),
@@ -1200,7 +1253,8 @@
         return;
       }
       if (!c.dueAt) {
-        c.dueAt = e.time + (u.health.alive ? 25 : 8);
+        c.dueAt =
+          e.time + (u.health.alive ? (t.id === "primary" ? 45 : 25) : 8);
         c.state = u.health.alive ? "treating" : "recovering";
         c.heading = Math.atan2(u.y - c.y, u.x - c.x);
         log(
@@ -1433,6 +1487,19 @@
     if (e.time - m.lastTrack >= 2) {
       m.lastTrack = e.time;
       m.knowledge.phase = m.phase;
+      const primary = m.transports[0];
+      m.knowledge.waitReason = [
+        "air-hold",
+        "ground-hold",
+        "pickup-hold",
+        "insert-hold",
+      ].includes(primary.state)
+        ? "수송 승무원이 접근 구역 위협을 확인해 안전 확보를 기다립니다."
+        : primary.crew?.targetId
+          ? "수송 회수요원이 실제 부상자에게 접근·회수 중입니다."
+          : primary.state === "loading"
+            ? "차량 도착 · 실제 인원 확인과 탑승을 기다립니다."
+            : null;
       m.knowledge.transports = m.transports
         .filter((t) => t.type !== "foot")
         .map((t) => ({
@@ -1451,7 +1518,7 @@
           observedAt: e.time,
         }));
       m.knowledge.crew = m.transports
-        .filter((t) => t.crew && t.state === "medical-work")
+        .filter((t) => t.crew && ["medical-work", "loading"].includes(t.state))
         .map((t) => ({
           id: t.crew.id,
           name: t.crew.name,
@@ -1813,6 +1880,7 @@
         extractionPoint: copy(m.extractionPoint),
         escrow: m.escrow,
         returnRequested: m.returnRequested,
+        waitReason: m.knowledge.waitReason || null,
         report: r ? { ...copy(r), radio: undefined, events: undefined } : null,
       },
       transports: copy(m.knowledge.transports),
