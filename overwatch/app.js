@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.15.11",
+  const VERSION = "2026.11.15.12",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -335,7 +335,9 @@
   }
   function headquarters() {
     const active = state?.commandExercise?.status === "running",
-      ready = state.members.filter(m=>P.readiness(state,m)===null).length;
+      ready = state.members.filter(
+        (m) => P.readiness(state, m) === null,
+      ).length;
     return (
       '<section class="page-title"><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>작전 본부</h1><p>인원을 편성하고 작전을 승인하세요. 현장 운용은 작전통제관에게 위임할 수 있습니다.</p></section><section class="metrics">' +
       [
@@ -593,12 +595,14 @@
           personnel,
           command: () =>
             FieldUI.render(state, {
+              mode: "training",
               playing: runtime.isRunning(),
               editable: source === "primary" && !stale,
             }),
           records,
           field: () =>
             FieldUI.render(state, {
+              mode: "operation",
               editable: source === "primary" && !stale,
               playing: runtime.isRunning(),
             }),
@@ -650,7 +654,12 @@
           !stale &&
           state?.commandExercise?.status !== "running",
       });
-    if (["field", "command"].includes(tab) && state?.commandExercise?.battle)
+    if (
+      ["field", "command"].includes(tab) &&
+      state?.commandExercise?.battle &&
+      state.commandExercise.status === "running" &&
+      (tab === "field") === !!state.commandExercise.mission
+    )
       root.querySelector("#main")?.classList.add("battle-screen");
     OverwatchStaffUI.bind(root, {
       state,

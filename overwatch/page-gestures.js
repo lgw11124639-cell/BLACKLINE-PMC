@@ -10,6 +10,74 @@
         : { x: event.clientX - r.left, y: event.clientY - r.top };
     },
   };
+  // Native horizontal swipes on a rotated page can become browser history gestures.
+  // Scroll only the touched scroll container in its logical vertical direction.
+  let scrolling = null;
+  document.addEventListener(
+    "touchstart",
+    (e) => {
+      scrolling = null;
+      if (
+        !matchMedia("(orientation: portrait)").matches ||
+        e.touches.length !== 1
+      )
+        return;
+      let el = e.target instanceof Element ? e.target : null;
+      while (el && el.id !== "overwatch-root") {
+        const css = getComputedStyle(el);
+        if (
+          /auto|scroll/.test(css.overflowY) &&
+          el.scrollHeight > el.clientHeight + 1
+        ) {
+          scrolling = {
+            el,
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+            startX: e.touches[0].clientX,
+            startY: e.touches[0].clientY,
+            moved: false,
+          };
+          break;
+        }
+        el = el.parentElement;
+      }
+    },
+    { passive: true },
+  );
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!scrolling || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (
+        Math.hypot(t.clientX - scrolling.startX, t.clientY - scrolling.startY) >
+        5
+      )
+        scrolling.moved = true;
+      if (scrolling.moved) {
+        e.preventDefault();
+        scrolling.el.scrollTop += t.clientX - scrolling.x;
+      }
+      scrolling.x = t.clientX;
+      scrolling.y = t.clientY;
+    },
+    { passive: false },
+  );
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      if (scrolling?.moved) e.preventDefault();
+      scrolling = null;
+    },
+    { passive: false },
+  );
+  document.addEventListener(
+    "touchcancel",
+    () => {
+      scrolling = null;
+    },
+    { passive: true },
+  );
   const cancel = (e) => e.preventDefault();
   for (const type of ["gesturestart", "gesturechange", "gestureend"])
     document.addEventListener(type, cancel, { passive: false });

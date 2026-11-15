@@ -1385,10 +1385,20 @@ body[data-screen="headquarters"] .hq-dashboard > .panel {
   gap: 8px;
   grid-template-columns: minmax(0, 1fr) minmax(235px, 27%);
 }
-.field-layout.field-fullscreen > section,
-.field-layout.field-fullscreen > aside {
+.field-layout.field-fullscreen > section {
   min-height: 0;
   overflow: hidden;
+}
+.field-layout.field-fullscreen > aside {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.field-layout > aside > [data-inspector-panel="roster"],
+.field-layout > aside > [data-inspector-panel="support"] {
+  flex-shrink: 0;
 }
 .field-layout.field-fullscreen .field-stage {
   position: relative;
@@ -1647,5 +1657,25 @@ body[data-screen="headquarters"] .hq-dashboard > .panel {
   .personnel-dossier {
     height: calc(100% - 20px);
     max-height: calc(100% - 20px);
+  }
+}
+
+/* Ended exercises show setup and review together in the scrollable main pane. */
+.workspace > main:not(.battle-screen) .field-layout {
+  height: 440px;
+  min-height: 440px;
+  flex: none;
+}
+.workspace > main {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (orientation: portrait) {
+  .workspace > main,
+  .field-layout > aside,
+  .field-radio,
+  .dossier-content {
+    touch-action: none;
   }
 }

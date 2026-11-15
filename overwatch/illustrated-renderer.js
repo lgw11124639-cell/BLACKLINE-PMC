@@ -393,7 +393,7 @@
             m.to,
             motion.mode === "walk",
           ),
-          entityScale = Math.max(v.scale, 12),
+          entityScale = Math.max(v.scale, 4),
           height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
@@ -488,23 +488,28 @@
         ctx.strokeStyle = "#fff9";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(q.x, q.y + 4, 2.5, 0, Math.PI * 2);
+        ctx.arc(q.x, q.y + 4, Math.min(2.5, entityScale * 0.4), 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         if (friendly) {
-          ctx.font = "600 10px -apple-system,sans-serif";
+          ctx.font =
+            entityScale < 8
+              ? "600 8px -apple-system,sans-serif"
+              : "600 10px -apple-system,sans-serif";
           ctx.fillStyle = "#fff";
           ctx.shadowColor = "#16301a";
           ctx.shadowBlur = 4;
           ctx.textAlign = "center";
           const label =
               (u.name || u.callsign || "지원요원") +
-              " · " +
-              (u.role === "sniper"
-                ? "저격수"
-                : u.role === "observer"
-                  ? "관측수"
-                  : "의무요원"),
+              (entityScale < 8
+                ? ""
+                : " · " +
+                  (u.role === "sniper"
+                    ? "저격수"
+                    : u.role === "observer"
+                      ? "관측수"
+                      : "의무요원")),
             labelWidth = ctx.measureText(label).width;
           let labelY = Math.max(13, q.y - height - 3);
           for (

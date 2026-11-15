@@ -396,7 +396,7 @@
       return (
         root.OverwatchMissionUI.result(f.mission.report) +
         (f.status === "ended"
-          ? "<button data-field-clear-contract>새 모의 전장 준비</button>"
+          ? "<button data-field-clear-contract>작전 검토 종료</button>"
           : "")
       );
     const r = f.battle?.result;
@@ -438,7 +438,7 @@
       active = battle && f.status === "running";
     return (
       '<section class="page-title"><span class="eyebrow">TRAINING CONTROL</span><h1>저격조 모의 훈련</h1><p>교관이 과업을 통제하는 실시간 훈련입니다. 관측수와 저격수의 행동을 관전하며 연습 부상·전사는 실전 인사 손실로 반영하지 않습니다.</p></section>' +
-      (!battle || !active
+      (!s?.commandExercise?.mission && (!battle || !active)
         ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 훈련에는 계약 기관의 실전 수송·지원이 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
           (!editable ||
           !s.squads.length ||
@@ -519,6 +519,19 @@
     );
   }
   function render(s, opts) {
+    const mode =
+        opts?.mode || (s.ui.tab === "command" ? "training" : "operation"),
+      isMission = !!s.commandExercise?.mission;
+    if (mode === "operation" && !isMission)
+      return '<section class="page-title"><h1>실전 작전 관제</h1><p>실전 계약과 작전통제관의 현장 지휘를 확인합니다.</p></section><section class="panel"><h2>진행 중인 실전 작전 없음</h2><p>작전 의뢰에서 계약을 승인하고 출격하세요. 모의 훈련은 훈련 관제에서 확인할 수 있습니다.</p><button data-tab="contracts">작전 의뢰·승인</button><button data-tab="command">훈련 관제</button></section>';
+    if (mode === "training" && isMission)
+      return (
+        '<section class="page-title"><h1>훈련 관제</h1></section><section class="panel"><h2>모의 훈련 대기</h2><p>실전 작전과 훈련은 동시에 진행하지 않습니다. 실전 현장과 복귀 결과는 작전 관제에서 확인하세요.</p><button data-tab="field">실전 작전 관제</button>' +
+        (s.commandExercise.status === "ended"
+          ? "<button data-field-clear-contract>실전 검토 종료·훈련 준비</button>"
+          : "") +
+        "</section>"
+      );
     let html = renderBase(s, opts);
     const e = s?.commandExercise;
     if (!e?.battle)
@@ -568,7 +581,7 @@
       html = html
         .replace(
           /<section class="page-title">[\s\S]*?<\/section>/,
-          '<section class="page-title"><span class="eyebrow">LIVE OPERATION</span><h1>' +
+          '<section class="page-title"><span class="eyebrow">LIVE OPERATION</span><h1>실전 작전 관제 · ' +
             esc(e.mission.contract.title) +
             "</h1></section>",
         )
