@@ -283,6 +283,13 @@
   }
   function ready(s, c) {
     if (!c || c.status !== "accepted") return "수락한 계약이 없습니다.";
+    if (s.commandStaff?.delegated) {
+      const Staff =
+        root.OverwatchStaff ||
+        (typeof require === "function" ? require("./command-staff.js") : null);
+      const why = Staff.ready(s);
+      if (why) return why;
+    }
     if (s.activeMission || s.commandExercise?.status === "running")
       return "진행 중인 전장·훈련을 먼저 종료하세요.";
     if (s.operations.inspection && !s.operations.inspection.completed)
@@ -421,6 +428,8 @@
     c.launchedAt = s.clock.elapsedSeconds;
     for (const u of e.world.units) {
       u.medicalUses = 0;
+      u.waitingForDeployment = c.transport !== "foot";
+      u.deployedAt = c.transport === "foot" ? 0 : null;
       u.home = false;
       m.stats[u.id] = {
         shots: 0,
@@ -465,7 +474,14 @@
       { missionId: mid },
     );
     if (c.transport === "foot") {
-      for (const q of e.squads) D().issue(s, q.callsign, "move", c.insertion);
+      const Staff =
+          root.OverwatchStaff ||
+          (typeof require === "function"
+            ? require("./command-staff.js")
+            : null),
+        authority = s.commandStaff?.delegated ? Staff.authority(s, e) : null;
+      for (const q of e.squads)
+        D().issue(s, q.callsign, "move", c.insertion, null, authority);
     }
     return e;
   }
@@ -490,6 +506,7 @@
       sidearm: B().weapon("G19", 1),
       skill: 62,
       medicalSkill: role === "기관 구출요원",
+      waitingForDeployment: true,
       path: [],
       goal: null,
       taskRole: role,
@@ -520,6 +537,7 @@
           false,
         );
       h.health.kit = 0;
+      h.waitingForDeployment = false;
       h.state = "held";
       m.taskGoal = copy(m.contract.extraction);
       e.world.actors.push(a, h);
@@ -776,9 +794,11 @@
       const ev = log(e, "transport-home", {
         transportId: t.id,
         memberIds: t.manifest.slice(),
-        friends:e.squads.flatMap(q=>I().friendSnapshots(e,q)).filter(f=>t.manifest.includes(f.id)),
+        friends: e.squads
+          .flatMap((q) => I().friendSnapshots(e, q))
+          .filter((f) => t.manifest.includes(f.id)),
       });
-      const homeReport=say(
+      const homeReport = say(
         s,
         e,
         "transport",
@@ -790,8 +810,7 @@
             .filter((f) => t.manifest.includes(f.id)),
         },
       );
-      I().applyKnowledge(e,homeReport);
-
+      I().applyKnowledge(e, homeReport);
     }
     t.manifest = [];
     t.crew = null;
@@ -918,6 +937,8 @@
               u = blue(e, id),
               i = m.memberIds.indexOf(id);
             u.boardedBy = null;
+            u.waitingForDeployment = false;
+            u.deployedAt = e.time;
             u.altitude = 0;
             Object.assign(
               u,
@@ -1050,7 +1071,10 @@
     );
     return G.project(f || e.mission.extractionPoint);
   }
-  function requestReturn(s, { abort = false, pickup = null } = {}) {
+  function requestReturn(
+    s,
+    { abort = false, pickup = null, authority = null } = {},
+  ) {
     const e = s.commandExercise,
       m = e?.mission;
     ok(m && e.status === "running", "진행 중인 실전 작전이 없습니다.");
@@ -1130,7 +1154,7 @@
         .filter((u) => u.capable && !u.home && !u.boardedBy);
       if (!field.length) continue;
       if (!field.some((u) => u.id === q.leaderId)) q.leaderId = field[0].id;
-      D().issue(s, q.callsign, "withdraw");
+      D().issue(s, q.callsign, "withdraw", null, null, authority);
     }
     const ev = log(
       e,
@@ -1218,6 +1242,35 @@
       ev,
     );
   }
+  function retaskDrone(s, target) {
+    const e = s.commandExercise,
+      m = e?.mission;
+    ok(m && e.status === "running", "실전 UAV가 필요합니다.");
+    const t = m.transports.find(
+      (t) => t.trip === "drone" && t.state !== "home",
+    );
+    ok(t, "운용 중인 UAV가 없습니다.");
+    ok(!t.until || e.time < t.until - 10, "잔여 체공 시간이 부족합니다.");
+    target = target || G.project(e.squads[0].sector);
+    ok(
+      target && point(target) && !G.blocked(target),
+      "지도에서 관측할 구역을 선택하세요.",
+    );
+    t.supportTarget = copy(target);
+    if (t.state !== "dispatch") beginTravel(e, t, target, "on-station");
+    const ev = log(e, "drone-retasked", {
+      transportId: t.id,
+      target: copy(target),
+      remaining: t.until ? Math.max(0, t.until - e.time) : null,
+    });
+    say(
+      s,
+      e,
+      "support",
+      "UAV 관측 구역 변경. 기존 기체를 재배치하며 새 출동 횟수나 체공 시간을 추가하지 않는다.",
+      ev,
+    );
+  }
   function supportTick(s, e, t) {
     const m = e.mission;
     if (t.state === "dispatch" && e.time >= t.dispatchAt) {
@@ -1229,7 +1282,11 @@
       );
     }
     if (t.trip === "drone") {
-      if (t.state === "landing") {
+      if (t.state === "home-unload") {
+        homeUnload(s, e, t);
+        return;
+      }
+      if (t.state === "landing" && t.arrival === "on-station") {
         if (
           t.type === "helicopter" &&
           ["support-landed", "pickup-landed", "insert-landed"].includes(
@@ -1248,40 +1305,78 @@
         t.altitude = 110;
         t.until ??= e.time + 120;
         if (e.time % 8 === 0) {
-          const q = e.squads[0];
+          t.observations ??= [];
           for (const a of e.world.actors.filter(
             (a) => a.side === "red" && G.distance(t, a) < 260 && G.clear(t, a),
           )) {
-            const seen = {
-              id: a.id,
-              x: Math.round(a.x / 10) * 10,
-              y: Math.round(a.y / 10) * 10,
-              observedAt: e.time,
-              confidence: 0.85,
-              classification: "armed-person",
-              observerId: t.id,
-              callsign: "UAV",
-              uncertainty: 10,
-              pose: a.health.conscious ? "standing" : "down",
-              heading: a.heading,
-            };
+            const medicalCondition = !a.health.alive
+                ? "dead"
+                : !a.health.conscious
+                  ? "down"
+                  : "normal",
+              old = t.observations.find((o) => o.id === a.id),
+              seen = {
+                id: a.id,
+                x: Math.round(a.x / 10) * 10,
+                y: Math.round(a.y / 10) * 10,
+                observedAt: e.time,
+                confidence: 0.85,
+                classification: "armed-person",
+                observerId: t.id,
+                callsign: "UAV",
+                uncertainty: 10,
+                pose: !a.health.alive
+                  ? "dead"
+                  : !a.health.conscious
+                    ? "down"
+                    : B().snapshot(a, e.time).pose,
+                medicalCondition,
+                heading: a.heading,
+              };
             const ev = log(e, "drone-observation", {
               transportId: t.id,
               actorId: a.id,
+              observation: copy(seen),
               observedAt: e.time,
             });
-            say(
-              s,
-              e,
-              "observation",
-              "드론이 관측한 무장 인원. 위치 약 " +
-                seen.x +
-                ", " +
-                seen.y +
-                ". 직접 확인이 필요한 영상 정보다.",
-              ev,
-              { contact: seen },
-            );
+            if (
+              !old ||
+              medicalCondition !== old.condition ||
+              (medicalCondition !== "dead" &&
+                (e.time - old.lastReportAt >= 45 || G.distance(old, seen) > 20))
+            ) {
+              say(
+                s,
+                e,
+                "observation",
+                medicalCondition === "dead"
+                  ? "UAV 관측 표적 사망 확인. 해당 위치의 반복 보고를 종료한다."
+                  : medicalCondition === "down"
+                    ? "UAV 관측 인원 쓰러짐. 사망 미확인."
+                    : "UAV 영상으로 무장 인원 관측. 지상 관측수의 직접 식별과 사격선 확인이 필요하다.",
+                ev,
+                { contact: seen },
+              );
+              if (old) old.lastReportAt = e.time;
+            } else {
+              say(s, e, "position", "UAV 영상 수신 갱신.", ev, {
+                contact: seen,
+              });
+            }
+            if (old) {
+              old.x = seen.x;
+              old.y = seen.y;
+              old.condition = medicalCondition;
+              old.observedAt = e.time;
+            } else
+              t.observations.push({
+                id: a.id,
+                x: seen.x,
+                y: seen.y,
+                condition: medicalCondition,
+                lastReportAt: e.time,
+                observedAt: e.time,
+              });
           }
         }
         if (e.time >= t.until) beginTravel(e, t, G.MAP.base, "home-unload");
@@ -1504,6 +1599,11 @@
     }
   }
   function actorTaskTick(s, e, u) {
+    if (u.waitingForDeployment) {
+      if (e.mission.fieldStartedAt == null) return;
+      u.waitingForDeployment = false;
+      u.state = "holding";
+    }
     const m = e.mission;
     if (
       !["field", "extracting", "withdrawing", "returning"].includes(m.phase) ||
@@ -1712,7 +1812,17 @@
           observedAt: e.time,
         }));
       m.knowledge.actors = e.world.actors
-        .filter((a) => a.side === "ally")
+        .filter(
+          (a) =>
+            a.side === "ally" &&
+            !a.waitingForDeployment &&
+            (a.id !== "agency-protected" ||
+              m.contract.task !== "rescue" ||
+              m.taskLinked ||
+              e.squads.some((q) =>
+                q.contacts.some((c) => c.id === a.id && c.confidence >= 0.8),
+              )),
+        )
         .map((a) => ({
           id: a.id,
           name: a.name,
@@ -2054,7 +2164,7 @@
         title: m.contract.title,
         issuer: m.contract.issuer,
         task: m.contract.task,
-        phase: e.status==='ended'?'settled':m.knowledge.phase,
+        phase: e.status === "ended" ? "settled" : m.knowledge.phase,
         objective: m.knowledge.objective,
         transport: m.contract.transport,
         support: copy(m.contract.support),
@@ -2072,7 +2182,21 @@
         })),
         report: r ? { ...copy(r), radio: undefined, events: undefined } : null,
       },
-      transports: copy(m.knowledge.transports),
+      transports: copy(
+        m.knowledge.transports.filter(
+          (t) =>
+            !["home", "unused"].includes(t.state) &&
+            !["home", "unused"].includes(
+              m.transports.find((actual) => actual.id === t.id)?.state,
+            ) &&
+            !m.log.some(
+              (ev) =>
+                ev.type === "transport-home" &&
+                ev.transportId === t.id &&
+                ev.time >= t.reportedAt,
+            ),
+        ),
+      ),
       supportActors: [...copy(m.knowledge.actors), ...copy(m.knowledge.crew)],
     };
   }
@@ -2295,6 +2419,7 @@
     requestReturn,
     pickupPoint,
     requestSupport,
+    retaskDrone,
     actorTaskTick,
     tick,
     applyPayload,

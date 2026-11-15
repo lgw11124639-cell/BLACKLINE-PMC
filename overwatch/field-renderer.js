@@ -179,7 +179,11 @@
       dirty = false;
       const visible = (
         focusId
-          ? [...frame.friends, ...frame.contacts.filter((c) => !c.expired)]
+          ? [
+              ...frame.friends,
+              ...frame.contacts.filter((c) => !c.expired),
+              ...(frame.transports || []),
+            ]
           : frame.friends
       ).filter(
         (u) =>
@@ -311,7 +315,7 @@
         if (u.weapon?.reloadUntil != null && u.weapon.reloadUntil > next.time)
           animateFor = Math.max(animateFor, 2100);
         m.group.rotation.y = -(u.heading || 0) + Math.PI / 2;
-        m.group.visible = !u.boardedBy;
+        m.group.visible = !u.boardedBy && !u.home && !u.waitingForDeployment;
         m.marker.visible = !u.stale;
         m.group.traverse((o) => {
           if (o.isMesh) o.frustumCulled = true;
@@ -324,6 +328,12 @@
         m.gun.scale.z = u.weapon?.model === "G19" ? 0.3 : 1;
         pose(m, u);
       }
+      const transportIds = new Set((next.transports || []).map((t) => t.id));
+      for (const [id, m] of transportMeshes)
+        if (!transportIds.has(id)) {
+          m.group.visible = false;
+          m.active = false;
+        }
       for (const t of next.transports || []) {
         let m = transportMeshes.get(t.id);
         if (!m) {
@@ -341,6 +351,7 @@
           m = { group: g, rotor };
           transportMeshes.set(t.id, m);
         }
+        m.group.visible = true;
         m.group.position.set(
           t.x,
           root.OverwatchGeometry.elevation(t) + (t.altitude || 0),
@@ -612,7 +623,10 @@
         size();
       },
       follow() {
-        follow = !follow;
+        if (focusId) {
+          focusId = null;
+          follow = true;
+        } else follow = !follow;
         invalidate();
         return follow;
       },
@@ -626,7 +640,9 @@
       focus(id) {
         focusId = id;
         follow = true;
-        span = 28;
+        span = frame.transports?.some((t) => t.id === id && t.type === "drone")
+          ? Math.min(520, frame.map.height)
+          : 28;
         size();
       },
       setRange(id) {
@@ -657,7 +673,9 @@
       stats() {
         return {
           meshes: meshes.size,
-          transports: transportMeshes.size,
+          transports: [...transportMeshes.values()].filter(
+            (m) => m.group.visible,
+          ).length,
           motions: [...meshes]
             .filter(([, m]) => m.group.visible)
             .map(([id, m]) => ({ id, mode: m.motion, flash: m.flash.visible })),

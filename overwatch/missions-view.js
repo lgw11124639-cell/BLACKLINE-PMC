@@ -24,7 +24,7 @@
       expired: "기한 만료",
     },
     phases = {
-      settled:"작전 종료 · 정산 완료",
+      settled: "작전 종료 · 정산 완료",
       boarding: "탑승 중",
       inserting: "작전지 수송 중",
       infiltration: "도보 투입 중",
@@ -149,7 +149,7 @@
       active = !!s.activeMission,
       inspection = s.operations.inspection;
     return (
-      '<section class="page-title"><span class="eyebrow">PHASE 05 / AGENCY CONTRACTS</span><h1>작전 의뢰·계약</h1><p>실전 계약은 실제 부상·전사·미회수, 소모품 사용과 보수에 영향을 줍니다. 단 한 작전만 진행하며 귀환 점검 후 다음 출격이 가능합니다.</p></section>' +
+      '<section class="page-title"><span class="eyebrow">OPERATIONS / AGENCY CONTRACTS</span><h1>작전 의뢰·계약</h1><p>실전 계약은 실제 부상·전사·미회수, 소모품 사용과 보수에 영향을 줍니다. 단 한 작전만 진행하며 귀환 점검 후 다음 출격이 가능합니다.</p></section>' +
       (active
         ? '<section class="panel"><h2>실전 작전 진행 중</h2><p>의뢰 기관 수송·지원과 철수 진행을 전장에서 확인할 수 있습니다.</p><button data-live-open-field>진행 중 작전 관찰</button></section>'
         : "") +
@@ -302,7 +302,7 @@
       cash(m.escrow) +
       '</p><div class="inline-actions">' +
       [
-        ["drone", "관측 구역 드론 요청"],
+        ["drone", "UAV 정찰 요청"],
         ["medical", "보고된 부상자 의료 회수"],
         ["supply", "집결지 재보급"],
       ]
@@ -324,7 +324,13 @@
             "</button>",
         )
         .join("") +
-      '</div><p class="muted">지원은 출발 준비와 이동 시간이 필요합니다. 위협이 관측되면 착륙을 보류합니다. 계약에 없는 지원은 제공되지 않습니다.</p><details><summary>회수·미회수 통제</summary><button data-live-pickup' +
+      "</div><button data-live-drone-retask" +
+      (!s.commandExercise.mission.transports.some(
+        (t) => t.trip === "drone" && t.state !== "home",
+      )
+        ? " disabled"
+        : "") +
+      '>UAV 관측구역 변경</button><button data-live-drone-camera disabled>UAV 추적 관전</button><p class="muted">지원은 출발 준비와 이동 시간이 필요합니다. 위협이 관측되면 착륙을 보류합니다. 계약에 없는 지원은 제공되지 않습니다.</p><details><summary>회수·미회수 통제</summary><button data-live-pickup' +
       (s.commandExercise.status !== "running" || m.transport === "foot"
         ? " disabled"
         : "") +
@@ -346,7 +352,7 @@
     if (!m) return;
     const names = {
       home: "본부 대기",
-      settled:"작전 종료 · 정산 완료",
+      settled: "작전 종료 · 정산 완료",
       boarding: "탑승 중",
       driving: "지상 이동",
       flying: "비행",
@@ -386,7 +392,11 @@
           complete: "확인 완료 · 철수 필요",
           failed: "목표 실패 · 철수 판단 필요",
         }[m.objective];
-    if(m.phase==='settled'&&goal)goal.textContent='작전 종료 · '+(m.report?.success?'목표 달성':'목표 미달성·중단')+' · 정산 완료';
+    if (m.phase === "settled" && goal)
+      goal.textContent =
+        "작전 종료 · " +
+        (m.report?.success ? "목표 달성" : "목표 미달성·중단") +
+        " · 정산 완료";
     const clock = rootNode.querySelector("[data-field-objective]");
     if (clock)
       clock.textContent =
@@ -394,6 +404,16 @@
         { pending: "임무 진행", complete: "목표 확인", failed: "목표 실패" }[
           m.objective
         ];
+    const camera = rootNode.querySelector("[data-live-drone-camera]");
+    if (camera)
+      camera.disabled = !f.transports.some(
+        (t) => t.type === "drone" && t.state !== "home",
+      );
+    const retask = rootNode.querySelector("[data-live-drone-retask]");
+    if (retask)
+      retask.disabled = !s.commandExercise.mission.transports.some(
+        (t) => t.trip === "drone" && t.state !== "home",
+      );
     for (const el of rootNode.querySelectorAll("[data-live-support]"))
       el.disabled =
         s.commandExercise.status !== "running" ||
@@ -423,6 +443,7 @@
       commit((next) => M.cancel(next, b.dataset.liveCancel)),
     );
     each("[data-live-launch]", (b) => {
+      root.OverwatchAudio?.startOnGesture?.();
       if (
         confirm(
           "실전 계약 출격: 부상·전사·미회수는 영구 기록됩니다. 출격합니까?",
@@ -442,7 +463,23 @@
     each("[data-live-refresh]", () => commit((next) => M.refresh(next)));
     each("[data-live-open-field]", () => navigate("field"));
     each("[data-live-support]", (b) =>
-      execute((next) => M.requestSupport(next, b.dataset.liveSupport)),
+      execute((next) =>
+        M.requestSupport(
+          next,
+          b.dataset.liveSupport,
+          b.dataset.liveSupport === "drone"
+            ? root.OverwatchFieldUI?.selectedPoint?.()
+            : null,
+        ),
+      ),
+    );
+    each("[data-live-drone-camera]", () =>
+      root.OverwatchFieldUI?.focusSupport?.(),
+    );
+    each("[data-live-drone-retask]", () =>
+      execute((next) =>
+        M.retaskDrone(next, root.OverwatchFieldUI?.selectedPoint?.()),
+      ),
     );
     each("[data-live-pickup]", () =>
       execute((next) => M.requestReturn(next, { pickup: M.pickupPoint(next) })),

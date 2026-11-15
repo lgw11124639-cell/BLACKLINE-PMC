@@ -4,7 +4,7 @@ const test = require("node:test"),
   P = require("../overwatch/personnel"),
   D = require("../overwatch/command"),
   B = require("../overwatch/battle");
-function scenario(distance, optics = true) {
+function scenario(distance, optics = true, soloObserver = false) {
   const s = C.createCampaign({ id: "VISION" }),
     o = P.hire(
       s,
@@ -32,6 +32,7 @@ function scenario(distance, optics = true) {
     speed: 0,
   });
   e.world.actors = [t];
+  if (soloObserver) e.world.units[1].home = true;
   if (optics) D.issue(s, "ALPHA", "observe", { x: 1190, y: 700 });
   else D.issue(s, "ALPHA", "hold");
   for (let i = 0; i < 45; i++) {
@@ -60,7 +61,7 @@ test("an observer identifies a target beyond rifle range but cannot fire at it",
   assert.ok(u.visionRange > B.WEAPONS[u.weapon.model].range);
 });
 test("a detected distant person does not become an identified armed target outside identification range", () => {
-  const { s, u, t } = scenario(900);
+  const { s, u, t } = scenario(900, true, true);
   const c = D.frame(s).contacts.find((c) => c.id === t.id);
   assert.ok(c);
   assert.equal(c.classification, "unknown");
@@ -112,7 +113,7 @@ test("a visibly killed target is confirmed once instead of repeating active coor
 });
 
 test("an unidentifiable distant body cannot produce a confirmed kill report", () => {
-  const { s, e, t } = scenario(900);
+  const { s, e, t } = scenario(900, true, true);
   B.injure(s, e, t, { eventId: "distant-impact", part: "head", severity: 3 });
   const start = e.radio.length;
   for (let i = 0; i < 60; i++) {
@@ -214,4 +215,20 @@ test("observer approves cover fire independently of the old HQ hold setting but 
     classification: "unarmed-person",
   });
   assert.equal(B.observerDecision(s, e, q, u, target), false);
+});
+
+test("the sniper optical identification is not capped by the observer lower-detail long-range view", () => {
+  const { s, e, t } = scenario(900);
+  const c = D.frame(s).contacts.find((c) => c.id === t.id);
+  assert.equal(c.classification, "armed-person");
+  assert.ok(e.squads[0].contacts.find((x) => x.id === t.id).confidence >= 0.8);
+  for (let i = 0; i < 20; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  assert.equal(
+    D.frame(s).contacts.find((c) => c.id === t.id).classification,
+    "armed-person",
+  );
+  C.validate(s);
 });

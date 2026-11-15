@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.15.09",
+  const VERSION = "2026.11.15.10",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -24,10 +24,10 @@
   const tabs = [
     ["headquarters", "본부", "01"],
     ["personnel", "대원·저격조", "02"],
-    ["command", "지휘 훈련", "03"],
-    ["field", "전장", "04"],
-    ["contracts", "작전 의뢰", "05"],
-    ["equipment", "장비고", "06"],
+    ["command", "훈련 관제", "03"],
+    ["field", "작전 관제", "04"],
+    ["contracts", "작전 승인", "05"],
+    ["equipment", "장비 현황", "06"],
     ["records", "기록 보관함", "07"],
     ["storage", "저장 관리", "08"],
   ];
@@ -87,6 +87,7 @@
       dirty = true;
       if (state.commandExercise.status === "ended") setTimeout(render, 0);
       FieldUI.refresh(root, state, { playing: true });
+      OverwatchStaffUI.refresh(root, state);
       const liveClock = root.querySelector("[data-live-clock]");
       if (liveClock)
         liveClock.textContent =
@@ -248,6 +249,15 @@
           error = e.message;
         }
       }
+      if (
+        source === "primary" &&
+        state?.schemaVersion === 5 &&
+        !state.commandStaff
+      ) {
+        const next = Core.clone(state);
+        OverwatchStaff.initialize(next);
+        state = store.save(next, state.revision);
+      }
       lastSaved = state ? Core.clone(state) : null;
       tab = state?.ui.tab || "storage";
     } catch (e) {
@@ -324,42 +334,38 @@
     );
   }
   function headquarters() {
-    const members = state?.members || [],
-      ready = members.filter((m) => m.status === "standby").length;
+    const active = state?.commandExercise?.status === "running",
+      ready = state.members.filter(m=>P.readiness(state,m)===null).length;
     return (
-      '<section class="hq-hero"><div><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>관측하고, 판단하고,<br>명령한다.</h1><p>본부의 명령은 관측수를 통해 저격수에게 전달됩니다.<br>현장에서 확인된 정보가 판단의 기준입니다.</p><span class="build-tag">4단계 · 실시간 모의 전장</span></div><div class="terrain-preview" role="img" aria-label="기존 프로젝트에서 보존한 산악 전장 이미지"><span>보존된 전장 자산 / 실시간 전장 연결 전</span></div></section><section class="metrics" aria-label="본부 현황">' +
+      '<section class="page-title"><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>작전 본부</h1><p>인원을 편성하고 작전을 승인하세요. 현장 운용은 작전통제관에게 위임할 수 있습니다.</p></section><section class="metrics">' +
       [
-        [
-          "본부 대원",
-          members.filter(
-            (m) => !["deceased", "resigned", "retired"].includes(m.status),
-          ).length + " / 10",
-          "모집 시장에서 기간 계약",
-        ],
-        ["대기 인원", ready + "명", "저격수·관측수 상태 기준"],
-        [
-          "편성 저격조",
-          (state?.squads.length || 0) + " / 3",
-          "조당 관측수 1명 + 저격수 1명",
-        ],
-        [
-          "운영자금",
-          PersonnelUI.money(state?.headquarters.funds || 0),
-          "급여·활동비 실제 장부 기준",
-        ],
+        ["본부 인원", state.members.length + " / 10"],
+        ["출격 편성", state.squads.length + "개 조"],
+        ["가용 인원", ready + "명"],
+        ["운영 자금", PersonnelUI.money(state.headquarters.funds)],
       ]
         .map(
-          ([a, b, c]) =>
+          ([k, v]) =>
             "<article><small>" +
-            a +
+            k +
             "</small><strong>" +
-            b +
-            "</strong><span>" +
-            c +
-            "</span></article>",
+            v +
+            "</strong></article>",
         )
         .join("") +
-      '</section><div class="two-column"><section class="panel"><div class="section-heading"><span class="eyebrow">CHAIN OF COMMAND</span><h2>저격조 지휘 구조</h2></div><ol class="command-chain"><li><b>본부 · 플레이어</b><span>임무·지역·관측·교전·철수 명령</span></li><li><b>관측수 · 현장 지휘관</b><span>명령 수신·판단·저격수 지휘·상황 보고</span></li><li><b>저격수</b><span>세부 지시 수행·사격 준비·생존 행동</span></li></ol><p class="muted">지휘 훈련에서 관측수의 명령 수신·판단·보고를 확인할 수 있습니다.</p></section><section class="panel"><span class="eyebrow">DEVELOPMENT STATUS</span><h2>현재 가능한 작업</h2><ul class="plain-list"><li>대원 모집·기간 계약·2인조 편성</li><li>훈련·휴식·진료·재활·공동 훈련</li><li>자금·활동·경력 저장과 이전 기록 보존</li><li>조 단위 명령·무전·제한 정보 지휘 훈련</li><li>실시간 2D/3D 모의 전장·사격·부상·처치</li></ul><button data-tab="storage">저장 관리 열기 <span aria-hidden="true">↗</span></button><p class="muted">작전 의뢰에서 계약을 수락하고 편성한 저격조를 출격시키세요. 귀환 후 점검과 부상 치료를 마쳐야 다시 출격할 수 있습니다.</p></section></div>'
+      '</section><div class="hq-dashboard">' +
+      OverwatchStaffUI.render(state, source === "primary" && !stale) +
+      '<section class="panel operation-brief"><span class="eyebrow">OPERATIONS</span><h2>' +
+      (active ? "전장 진행 중" : "다음 작전 준비") +
+      "</h2><p>" +
+      (active
+        ? "작전통제관의 판단과 무전, 대원 상태를 관전할 수 있습니다."
+        : "현장 저격조 2~6명과 본부 작전통제관을 편성하세요. 훈련에는 교관을 따로 배정할 수 있습니다.") +
+      '</p><div class="inline-actions"><button data-tab="personnel">인원·편제</button><button data-tab="contracts">작전 승인</button><button data-tab="' +
+      (active ? "field" : "command") +
+      '">' +
+      (active ? "작전 관제" : "훈련장") +
+      '</button></div><div class="hq-terrain" aria-hidden="true"></div></section></div>'
     );
   }
   function personnel() {
@@ -548,12 +554,13 @@
     document.documentElement.dataset.reducedMotion = String(
       state?.settings.reducedMotion || false,
     );
+    document.body.dataset.screen = tab;
     root.innerHTML =
       '<header class="topbar"><a class="brand" href="#" data-tab="headquarters"><span class="brand-emblem" aria-hidden="true">B</span><span>BLACKLINE<small>OVERWATCH</small></span></a><div class="topbar-status"><span class="status-dot"></span><span data-live-clock>본부 ' +
       PersonnelUI.timestamp(state?.clock.elapsedSeconds || 0) +
       ' / 본부</span><button id="version-check" class="quiet">' +
       VERSION +
-      '</button></div></header><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
+      '</button><button data-game-fullscreen aria-label="게임 전체화면">전체화면</button></div></header><div class="rotate-hint"><span>가로로 돌리면 지도와 관제 패널을 함께 볼 수 있습니다.</span><button data-game-fullscreen>전체화면</button></div><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
       tabs
         .map(
           ([key, label, n]) =>
@@ -585,7 +592,7 @@
           headquarters,
           personnel,
           command: () =>
-            CommandUI.render(state, {
+            FieldUI.render(state, {
               playing: runtime.isRunning(),
               editable: source === "primary" && !stale,
             }),
@@ -600,12 +607,40 @@
             MissionUI.render(state, {
               editable: source === "primary" && !stale,
             }),
-          equipment: () =>
-            phase(
-              "PHASE 02 / 06",
-              "장비고 연결 대기",
-              "모의 전장 지급 무기·탄창·의료품은 계산합니다. 본부 장비 구매·재고·수리·정산은 후속 단계이며 이전 장비 재고는 PMC 원본에 남아 있습니다.",
-            ),
+          equipment: () => {
+            const friends = OverwatchCommand.frame(state)?.friends || [];
+            return (
+              '<section class="page-title"><span class="eyebrow">FIELD EQUIPMENT</span><h1>지급 장비 · 수신 현황</h1><p>현장에서 전달된 실제 장전·예비 탄약과 무장·방호 상태입니다.</p></section><section class="member-grid">' +
+              (friends.length
+                ? friends
+                    .map(
+                      (u) =>
+                        '<article class="panel"><h2>' +
+                        esc(u.name) +
+                        " · " +
+                        roles[u.role] +
+                        "</h2><p>" +
+                        esc(u.weapon?.name || "장비 보고 대기") +
+                        "</p><p>장전 " +
+                        (u.weapon?.loaded ?? "—") +
+                        "발 · 예비 " +
+                        (u.weapon?.magazines?.reduce((n, v) => n + v, 0) ??
+                          "—") +
+                        "발</p><p>무장 상태 " +
+                        Math.round(u.weapon?.condition ?? 100) +
+                        "% · 헬멧 " +
+                        Math.round(u.protection?.helmet ?? 0) +
+                        "% · 방탄판 " +
+                        Math.round(u.protection?.plate ?? 0) +
+                        "%</p><small>마지막 보고 " +
+                        u.age +
+                        "초 전</small></article>",
+                    )
+                    .join("")
+                : '<article class="panel"><h2>현장 수신 대기</h2><p>대원을 편성하고 훈련 또는 실전 작전을 승인하면 실제 지급 상태를 확인할 수 있습니다.</p></article>') +
+              "</section>"
+            );
+          },
         }[tab] || storagePage
       )() +
       "<footer>BLACKLINE: OVERWATCH · 실전 계약·관측수 지휘·기관 수송·복귀 정산</footer></main></div>" +
@@ -614,6 +649,25 @@
           source === "primary" &&
           !stale &&
           state?.commandExercise?.status !== "running",
+      });
+    if (["field", "command"].includes(tab) && state?.commandExercise?.battle)
+      root.querySelector("#main")?.classList.add("battle-screen");
+    OverwatchStaffUI.bind(root, {
+      state,
+      editable: source === "primary" && !stale,
+      commit,
+    });
+    for (const b of root.querySelectorAll("[data-game-fullscreen]"))
+      b.addEventListener("click", async () => {
+        try {
+          if (!document.fullscreenElement)
+            await document.documentElement.requestFullscreen?.();
+          await screen.orientation?.lock?.("landscape");
+        } catch (e) {}
+        FieldUI.mount(root, state, {
+          playing: runtime.isRunning(),
+          onFallback: fallbackField,
+        });
       });
     if (selectedPerson) {
       root.querySelector(".topbar").inert = true;
@@ -917,5 +971,17 @@
         saveRuntime();
       } catch {}
   });
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (
+        state?.commandExercise?.status === "running" &&
+        event.target.closest("button,select") &&
+        !event.target.closest("[data-overwatch-audio]")
+      )
+        OverwatchAudio.startOnGesture?.();
+    },
+    { passive: true },
+  );
   load();
 })();

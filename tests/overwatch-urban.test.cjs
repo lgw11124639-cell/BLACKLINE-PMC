@@ -93,6 +93,8 @@ test("actual rifle range prevents ammunition use outside the supported envelope"
       stance: "standing",
     });
     u.weapon.targetId = t.id;
+    u.weapon.aimAnchor = { x: t.x, y: t.y };
+    u.weapon.aimOrigin = { x: u.x, y: u.y };
     u.weapon.aimSince = 0;
     const before = u.weapon.loaded;
     B.fire(s, e, u, { id: t.id, x: t.x, y: t.y, condition: "standing" });

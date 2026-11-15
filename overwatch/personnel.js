@@ -196,6 +196,8 @@
       m.stress <= 75;
   function readiness(s, m) {
     if (s.activeMission?.memberIds.includes(m.id)) return "실전 출격 중";
+    if (s.commandStaff?.controllerId === m.id) return "본부 작전통제관 근무";
+    if (s.commandStaff?.instructorId === m.id) return "훈련 교관 근무";
     if (m.contract.endsAt <= time(s)) return "계약 만료";
     if (injured(m)) return "치료·복귀 평가 필요";
     if (m.status !== "standby") return "활동 진행 중";
@@ -505,6 +507,12 @@
       "관측수 1명과 저격수 1명을 배정해야 합니다.",
     );
     for (const m of [o, n]) {
+      ok(
+        ![s.commandStaff?.controllerId, s.commandStaff?.instructorId].includes(
+          m.id,
+        ),
+        "본부 지휘 직책을 먼저 해제하세요.",
+      );
       ok(available(s, m), m.name + ": " + readiness(s, m));
       ok(
         !s.squads.some(
@@ -554,6 +562,12 @@
     );
     const members = memberIds.map((id) => live(s, id));
     for (const m of members) {
+      ok(
+        ![s.commandStaff?.controllerId, s.commandStaff?.instructorId].includes(
+          m.id,
+        ),
+        "본부 직책 담당자는 별도 개인 활동을 시작할 수 없습니다.",
+      );
       ok(!m.activityId, "이미 진행 중인 활동이 있습니다.");
       ok(
         m.contract.endsAt > time(s) ||
@@ -799,6 +813,12 @@
   }
   function exit(s, id, reason) {
     const m = live(s, id);
+    if (s.commandStaff) {
+      const Staff =
+        root.OverwatchStaff ||
+        (typeof require === "function" ? require("./command-staff.js") : null);
+      Staff.release(s, id);
+    }
     if (m.activityId)
       cancel(s, m.activityId, m.name + " 복무 종료로 활동 중단");
     const q = paired(s, id);
@@ -1412,6 +1432,12 @@
         root.OverwatchMissions ||
         (typeof require === "function" ? require("./missions.js") : null);
       M.validate(s);
+    }
+    if (s.commandStaff) {
+      const Staff =
+        root.OverwatchStaff ||
+        (typeof require === "function" ? require("./command-staff.js") : null);
+      Staff.validate(s);
     }
     return s;
   }

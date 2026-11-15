@@ -184,6 +184,8 @@
         capacity: WEAPONS[u.weapon.model].capacity,
         range: WEAPONS[u.weapon.model].range,
       },
+      waitingForDeployment: !!u.waitingForDeployment,
+      protection: u.protection ? copy(u.protection) : null,
       heading: u.heading || 0,
       mobility: moveFactor(u) > 0,
       combatActive: !!u.combatActive,
@@ -487,7 +489,91 @@
       { friends: friendsFor(e, u) },
     );
   }
+  function protectionFor(u) {
+    if (
+      !u.protection &&
+      (u.role === "sniper" ||
+        u.role === "observer" ||
+        u.side === "ally" ||
+        u.faction === "regular")
+    )
+      u.protection = { helmet: 100, plate: 100 };
+    return u.protection;
+  }
+  function bleedRate(w) {
+    if (w.bleedRate != null) return w.bleedRate;
+    return [0, 0.15, 1.2, 4][w.severity] * (/Arm|Leg/.test(w.part) ? 0.75 : 1);
+  }
+  function ballisticImpact(
+    s,
+    e,
+    u,
+    { eventId, model, part, lateral = 0, height = 1.2, distance = 0 },
+  ) {
+    const power = WEAPONS[model].power,
+      armor = protectionFor(u),
+      graze =
+        Math.abs(lateral) > 0.28 ||
+        (part === "head" && (Math.abs(lateral) > 0.1 || height > 1.8));
+    let severity = graze ? Math.max(1, power - 1) : power,
+      blocked = false;
+    if (
+      part === "chest" &&
+      armor?.plate > 15 &&
+      power <= 2 &&
+      Math.abs(lateral) < 0.25
+    ) {
+      armor.plate = Math.max(0, armor.plate - power * 18);
+      severity = 1;
+      blocked = true;
+    } else if (part === "chest" && armor?.plate > 15 && power === 3) {
+      armor.plate = Math.max(0, armor.plate - 65);
+      if (graze || distance > 600) severity = 2;
+    }
+    if (part === "head" && armor?.helmet > 10 && graze) {
+      armor.helmet = Math.max(0, armor.helmet - power * 25);
+      severity = Math.min(severity, 2);
+    }
+    // Only a penetrating central cranial strike is immediately fatal. A graze
+    // is not promoted to a lethal brain injury merely by the weapon category.
+    const fatal =
+      part === "head" &&
+      !graze &&
+      !blocked &&
+      height >= 1.62 &&
+      height <= 1.8 &&
+      Math.abs(lateral) < 0.1;
+    if (fatal) severity = 3;
+    if (blocked)
+      I().event(e, "armor-impact", {
+        actorId: u.id,
+        sourceEventId: eventId,
+        part,
+        condition: armor.plate,
+      });
+    return injure(s, e, u, {
+      eventId,
+      part,
+      severity,
+      fatal,
+      bleedRate: blocked ? 0 : undefined,
+      type: blocked ? "방호 충격상" : "총상",
+    });
+  }
+  function underFire(e, u) {
+    return (
+      e.time - u.lastThreatAt < 8 &&
+      e.battle.shots.some(
+        (shot) =>
+          e.time - shot.time < 8 &&
+          shot.actorId !== u.id &&
+          shot.side !== (u.side || "blue") &&
+          G.distance(shot.to, u) < 12,
+      )
+    );
+  }
   function beforeTick(s, e) {
+    for (const u of all(e)) protectionFor(u);
     for (const u of all(e))
       u.combatActive =
         e.time - u.lastThreatAt < 8 ||
@@ -498,7 +584,7 @@
       if (!h?.alive) continue;
       const loss = h.wounds
         .filter((w) => !w.treated)
-        .reduce((n, w) => n + [0, 0.25, 1.5, 7][w.severity], 0);
+        .reduce((n, w) => n + bleedRate(w), 0);
       h.bloodMl = Math.max(0, h.bloodMl - loss);
       if (h.bloodMl < 2600) h.conscious = false;
       if (h.bloodMl < 1600) {
@@ -551,7 +637,12 @@
             u.state = "carrying";
           }
         }
-      } else if (healthy(u) && untreated(u)) bandage(s, e, u, u);
+      } else if (
+        healthy(u) &&
+        untreated(u) &&
+        (!underFire(e, u) || h.bloodMl < 3300)
+      )
+        bandage(s, e, u, u);
       if (u.weapon.reloadUntil !== null && e.time >= u.weapon.reloadUntil) {
         u.weapon.loaded = u.weapon.magazines.shift();
         u.weapon.reloadUntil = null;
@@ -605,11 +696,7 @@
               !v.health.aid &&
               ((untreated(v) &&
                 h.kit > 0 &&
-                (!u.combatActive ||
-                  v.health.bloodMl < 3300 ||
-                  v.health.wounds.some(
-                    (w) => !w.treated && w.severity === 3,
-                  ))) ||
+                (!underFire(e, u) || v.health.bloodMl < 3300)) ||
                 (!untreated(v) &&
                   moveFactor(v) === 0 &&
                   (!e.mission ||
@@ -654,11 +741,18 @@
         ? e.world.actors.filter((v) => v.side === "red")
         : [
             ...e.world.units,
-            ...e.world.actors.filter((v) => v.side === "ally"),
+            ...e.world.actors.filter(
+              (v) =>
+                v.side === "ally" &&
+                (v.armed ||
+                  (e.mission?.contract.task === "vip" &&
+                    v.id === "agency-protected")),
+            ),
           ];
     const visible = targets.filter(
       (v) =>
         v.health.alive &&
+        !v.waitingForDeployment &&
         !v.boardedBy &&
         !v.extracted &&
         G.distance(u, v) <
@@ -676,6 +770,7 @@
     );
     for (const v of visible) {
       let m = u.memory.find((m) => m.id === v.id);
+      if (m && e.time - m.lastSeen > 8) m.firstSeen = e.time;
       if (!m) {
         m = { id: v.id, firstSeen: e.time };
         u.memory.push(m);
@@ -1019,11 +1114,28 @@
       reload(e, u);
       return;
     }
-    if (w.targetId !== known.id) {
+    const trackingDisplacement = w.aimAnchor
+        ? G.distance(w.aimAnchor, known)
+        : 0,
+      trackingSeconds = Math.max(1, e.time - (w.aimAnchorAt ?? e.time));
+    if (
+      w.targetId !== known.id ||
+      !w.aimAnchor ||
+      trackingDisplacement > Math.max(8, d * 0.02) ||
+      (trackingSeconds > 3 && trackingDisplacement > 4) ||
+      G.distance(w.aimOrigin || u, u) > 1.5
+    ) {
       w.targetId = known.id;
       w.aimSince = e.time;
+      w.aimAnchor = { x: known.x, y: known.y };
+      w.aimOrigin = { x: u.x, y: u.y };
+      w.aimAnchorAt = e.time;
+      w.trackingSpeed = 0;
       return;
     }
+    w.trackingSpeed = trackingDisplacement / trackingSeconds;
+    w.aimAnchor = { x: known.x, y: known.y };
+    w.aimAnchorAt = e.time;
     // Aim at the observed position, never at the hidden truth position.
     u.heading = Math.atan2(known.y - u.y, known.x - u.x);
     const aimSeconds = u.role === "sniper" || w.model === "SVD" ? 7 : 3;
@@ -1039,6 +1151,9 @@
           (1.55 - u.skill / 100) *
           movement *
           armPenalty *
+          (1 + Math.min(1.5, w.trackingSpeed / 4)) *
+          (e.time - u.lastThreatAt < 15 ? 2.2 : 1) *
+          Math.max(1, 1.8 - (e.time - w.aimSince) / 12) *
           (stanceOf(u) === "prone"
             ? 0.7
             : stanceOf(u) === "kneeling"
@@ -1142,7 +1257,14 @@
                 ? "leftLeg"
                 : "rightLeg";
       shot.part = part;
-      injure(s, e, target, { eventId: shot.id, part, severity: stats.power });
+      ballisticImpact(s, e, target, {
+        eventId: shot.id,
+        model: w.model,
+        part,
+        lateral: dx,
+        height: bodyHeight,
+        distance: d,
+      });
     }
     e.battle.totalShots++;
     e.battle.shots.push(shot);
@@ -1190,7 +1312,19 @@
       );
     return Math.hypot(p.x - a.x - t * x, p.y - a.y - t * y);
   }
-  function injure(s, e, u, { eventId, part, severity }) {
+  function injure(
+    s,
+    e,
+    u,
+    {
+      eventId,
+      part,
+      severity,
+      fatal = severity === 3 && part === "head",
+      bleedRate: bleeding,
+      type = "총상",
+    },
+  ) {
     ok(
       typeof eventId === "string" &&
         eventId.length > 0 &&
@@ -1206,12 +1340,26 @@
       part,
       severity,
       treated: false,
-      type: "총상",
+      type,
+      ...(bleeding != null ? { bleedRate: bleeding } : {}),
     };
     u.health.wounds.push(w);
     if (severity === 3 && ["head", "chest", "abdomen"].includes(part))
       u.health.conscious = false;
-    if (severity === 3 && part === "head") {
+    const penetratingTorso = u.health.wounds.filter(
+      (w) =>
+        !w.treated &&
+        ["chest", "abdomen"].includes(w.part) &&
+        w.severity >= 2 &&
+        w.type !== "방호 충격상",
+    );
+    if (
+      penetratingTorso.length >= 3 ||
+      (penetratingTorso.length >= 2 &&
+        penetratingTorso.some((w) => w.part === "chest"))
+    )
+      u.health.conscious = false;
+    if (fatal) {
       u.health.alive = false;
     }
     u.capable = healthy(u);
@@ -1227,7 +1375,9 @@
       e,
       u,
       "urgent",
-      "부상 발생. " + part + " 총상. 이동 중단·처치 필요.",
+      u.health.alive
+        ? "부상 발생. " + part + " " + type + ". 이동 중단·처치 필요."
+        : u.name + " 치명상. 전사 확인.",
       ev,
       { friends: friendsFor(e, u) },
     );
@@ -1253,7 +1403,7 @@
           ["unarmed-person", "friendly-person", "unknown"].includes(
             c.classification,
           ) &&
-          (G.distance(c, target) < 12 ||
+          (G.distance(c, target) < 2 ||
             (pointSegment(c, u, target) < 3 && G.distance(u, c) < range)),
       );
     let mode = "hold",
@@ -1417,6 +1567,59 @@
       }
     }
   }
+  function shotObservation(e, q, shot) {
+    const shooterKnown =
+        q.observerId === shot.actorId ||
+        q.sniperId === shot.actorId ||
+        q.contacts.some(
+          (c) =>
+            c.id === shot.actorId &&
+            e.time - c.lastSeen < 6 &&
+            c.confidence >= 0.8,
+        ),
+      ownTarget = [q.observerId, q.sniperId].includes(shot.targetId),
+      near = [q.observerId, q.sniperId].some(
+        (id) => G.distance(unit(e, id), shot.to) < 20,
+      );
+    if (!shooterKnown && !near && !ownTarget) return null;
+    if (!shooterKnown)
+      return {
+        eventId: shot.id,
+        time: shot.time,
+        kind: "incoming",
+        sourceKnown: false,
+        actorId: null,
+        targetId: ownTarget ? shot.targetId : null,
+        model: "incoming",
+        side: "unknown",
+        from: copy(shot.to),
+        to: copy(shot.to),
+        hit: ownTarget && shot.hit,
+        impactVisible: true,
+      };
+    const seenTarget =
+      ownTarget ||
+      q.contacts.some(
+        (c) =>
+          c.id === shot.targetId &&
+          e.time - c.lastSeen <= 2 &&
+          c.confidence >= 0.8,
+      );
+    return {
+      eventId: shot.id,
+      time: shot.time,
+      kind: "shot",
+      sourceKnown: true,
+      actorId: shot.actorId,
+      targetId: seenTarget ? shot.targetId : null,
+      model: shot.model,
+      side: shot.side,
+      from: copy(shot.from),
+      to: copy(shot.to),
+      hit: shot.hit && seenTarget,
+      impactVisible: G.clear(I().leader(e, q), shot.to),
+    };
+  }
   function telemetry(s, e) {
     const b = e.battle;
     if (e.time - b.lastPacket >= 2) {
@@ -1424,51 +1627,9 @@
       for (const q of e.squads) {
         if (!I().linked(e, q)) continue;
         const effects = b.shots
-          .filter(
-            (shot) =>
-              e.time - shot.time <= 2 &&
-              (q.observerId === shot.actorId ||
-                q.sniperId === shot.actorId ||
-                q.contacts.some(
-                  (c) =>
-                    c.id === shot.actorId &&
-                    e.time - c.lastSeen < 6 &&
-                    c.confidence >= 0.8,
-                )),
-          )
-          .map((shot) => ({
-            eventId: shot.id,
-            time: shot.time,
-            kind: "shot",
-            impactVisible: G.clear(I().leader(e, q), shot.to),
-            actorId: shot.actorId,
-            targetId:
-              q.observerId === shot.targetId ||
-              q.sniperId === shot.targetId ||
-              q.contacts.some(
-                (c) =>
-                  c.id === shot.targetId &&
-                  e.time - c.lastSeen <= 2 &&
-                  c.confidence >= 0.8,
-              )
-                ? shot.targetId
-                : null,
-            model: shot.model,
-            hit:
-              shot.hit &&
-              (q.observerId === shot.targetId ||
-                q.sniperId === shot.targetId ||
-                q.contacts.some(
-                  (c) =>
-                    c.id === shot.targetId &&
-                    e.time - c.lastSeen <= 2 &&
-                    c.confidence >= 0.8 &&
-                    G.clear(I().leader(e, q), c),
-                )),
-            side: shot.side,
-            from: copy(shot.from),
-            to: copy(shot.to),
-          }));
+          .filter((shot) => e.time - shot.time <= 2)
+          .map((shot) => shotObservation(e, q, shot))
+          .filter(Boolean);
         b.packets.push({
           callsign: q.callsign,
           observedAt: e.time,
@@ -1658,13 +1819,14 @@
       s.clock.paused = e.status !== "running" || e.paused;
     }
   }
-  function withdraw(s) {
+  function withdraw(s, authority = null) {
     const e = s.commandExercise;
     ok(e?.battle && e.status === "running", "모의 전장이 진행 중이 아닙니다.");
-    if (e.mission) return M().requestReturn(s);
+    if (e.mission) return M().requestReturn(s, { authority });
     e.battle.objective.returnRequested = true;
     for (const q of e.squads)
-      if (I().leader(e, q)?.capable) D().issue(s, q.callsign, "withdraw");
+      if (I().leader(e, q)?.capable)
+        D().issue(s, q.callsign, "withdraw", null, null, authority);
   }
   function project(s, f) {
     const e = s.commandExercise,
@@ -1793,7 +1955,8 @@
             [1, 2, 3].includes(w.severity) &&
             typeof w.treated === "boolean" &&
             typeof w.sourceEventId === "string" &&
-            n(w.time, 0, e.time),
+            n(w.time, 0, e.time) &&
+            (w.bleedRate === undefined || n(w.bleedRate, 0, 20)),
           "부상 이력이 잘못되었습니다.",
         );
       if (h.aid)
@@ -1838,6 +2001,11 @@
         "사격 시각이 잘못되었습니다.",
       );
       checkHealth(u.health);
+      ok(
+        !u.protection ||
+          (n(u.protection.helmet, 0, 100) && n(u.protection.plate, 0, 100)),
+        "방호 상태가 잘못되었습니다.",
+      );
       checkWeapon(u.weapon);
       checkWeapon(u.sidearm);
       ok(
@@ -1990,6 +2158,9 @@
     applyPayload,
     summarize,
     knownFriendEvidence,
+    ballisticImpact,
+    shotObservation,
+    underFire,
     observerDecision,
     validate,
     withdraw,

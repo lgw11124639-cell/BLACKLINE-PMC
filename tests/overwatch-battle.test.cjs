@@ -66,7 +66,10 @@ test("schema 3 field upgrade keeps funds, squad, archive and byte-exact pre-upgr
   assert.equal(up.schemaVersion, C.SCHEMA);
   assert.equal(up.headquarters.funds, old.headquarters.funds);
   assert.deepEqual(up.commandArchive, old.commandArchive);
-  assert.equal(JSON.parse(store.raw(S.KEYS.beforeMissionMigration)).primary, raw);
+  assert.equal(
+    JSON.parse(store.raw(S.KEYS.beforeMissionMigration)).primary,
+    raw,
+  );
   assert.equal(
     up.headquarters.ledger.filter((e) => e.kind === "startup-grant").length,
     1,
@@ -171,6 +174,8 @@ test("sniper rifle impact produces anatomical disabling trauma rather than an ab
   t.x = 330;
   t.y = 140;
   u.weapon.targetId = t.id;
+  u.weapon.aimAnchor = { x: t.x, y: t.y };
+  u.weapon.aimOrigin = { x: u.x, y: u.y };
   u.weapon.aimSince = 0;
   e.time = 20;
   s.clock.elapsedSeconds = 20;

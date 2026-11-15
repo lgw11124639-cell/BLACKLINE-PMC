@@ -20,7 +20,7 @@ with sync_playwright() as p:
  assert not q.locator('[data-field-command]').count();assert not q.locator('select[name=roe]').count();assert q.locator('[data-field-quick-team]').count()==1
  assert saved()['commandExercise']['battle']['observerAutonomy']
  q.locator('[data-field-quick="hold"]').click();assert saved()['commandExercise']['commands'][-1]['kind']=='hold'
- q.wait_for_selector('[data-field-unit-extra]');q.locator('[data-field-unit-extra] summary').first.click();q.wait_for_timeout(1200);assert q.locator('[data-field-unit-extra]').first.get_attribute('open') is not None
+ q.locator('button[data-inspector=roster]').click();q.wait_for_selector('[data-field-unit-extra]');q.locator('[data-field-unit-extra] summary').first.click();q.wait_for_timeout(1200);assert q.locator('[data-field-unit-extra]').first.get_attribute('open') is not None
  # HQ navigation must keep the same simulation running without a play button.
  before=saved()['commandExercise']['time'];q.locator('nav[aria-label="본부 메뉴"] [data-tab=headquarters]').click();q.wait_for_function('(t)=>OverwatchStorage.create({storage:localStorage}).load().state.commandExercise.time>t',arg=before);assert not saved()['commandExercise']['paused']
  before=saved()['commandExercise']['time'];q.locator('nav[aria-label="본부 메뉴"] [data-tab=equipment]').click();q.wait_for_function('(t)=>OverwatchStorage.create({storage:localStorage}).load().state.commandExercise.time>t',arg=before)

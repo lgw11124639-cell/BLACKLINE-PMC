@@ -346,12 +346,13 @@
         );
       }
       // No marker for an enemy without an actual delivered observation.
+      const labelBoxes = [];
       for (const u of [
         ...frame.contacts.filter((c) => !c.expired),
         ...frame.friends,
         ...(frame.supportActors || []),
       ]) {
-        if (u.boardedBy) continue;
+        if (u.boardedBy || u.home || u.waitingForDeployment) continue;
         const m = positions.get(u.id);
         if (!m) continue;
         const t = paused
@@ -392,7 +393,8 @@
             m.to,
             motion.mode === "walk",
           ),
-          height = 1.8 * v.scale,
+          entityScale = Math.max(v.scale, friendly ? 12 : 8),
+          height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
         const bob = motion.mode === "walk" ? Math.sin(now * 0.012) * 1.1 : 0;
@@ -417,7 +419,7 @@
         let rendered = false;
         if (im) {
           const [x1, y1, x2, y2] = chosen.art.bounds;
-          const width = chosen.widthM * v.scale,
+          const width = chosen.widthM * entityScale,
             h = (width * (y2 - y1)) / (x2 - x1);
           const facingLeft = Math.cos(facing) < 0;
           ctx.save();
@@ -488,18 +490,60 @@
         ctx.arc(q.x, q.y + 4, 2.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        if (friendly && (v.scale > 6 || focusId === u.id)) {
+        if (friendly) {
           ctx.font = "600 10px -apple-system,sans-serif";
           ctx.fillStyle = "#fff";
           ctx.shadowColor = "#16301a";
           ctx.shadowBlur = 4;
           ctx.textAlign = "center";
-          ctx.fillText(
-            u.callsign + " · " + (u.role === "sniper" ? "저격" : "관측"),
-            q.x,
-            q.y - height - 3,
-          );
+          const label =
+              (u.name || u.callsign || "지원요원") +
+              " · " +
+              (u.role === "sniper"
+                ? "저격수"
+                : u.role === "observer"
+                  ? "관측수"
+                  : "의무요원"),
+            labelWidth = ctx.measureText(label).width;
+          let labelY = Math.max(13, q.y - height - 3);
+          for (
+            let i = 0;
+            i < 6 &&
+            labelBoxes.some(
+              (b) =>
+                Math.abs(b.y - labelY) < 12 &&
+                Math.abs(b.x - q.x) < (b.width + labelWidth) / 2 + 4,
+            );
+            i++
+          )
+            labelY += 13;
+          labelBoxes.push({ x: q.x, y: labelY, width: labelWidth });
+          ctx.fillText(label, q.x, labelY);
           ctx.shadowBlur = 0;
+        }
+        if (now - (m.hitAt || -Infinity) < 650) {
+          ctx.strokeStyle = "#f06b59";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(q.x, q.y - 9, 12 + (now - m.hitAt) / 70, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = "#ffb8a9";
+          ctx.font = "700 11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("피격", q.x, q.y - 28);
+        }
+        if (
+          friendly &&
+          (u.health?.alive === false || u.health?.conscious === false)
+        ) {
+          ctx.fillStyle = u.health.alive === false ? "#ffc6c2" : "#ffe2a2";
+          ctx.font = "700 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            u.health.alive === false ? "전사" : "중상 · 의식소실",
+            q.x,
+            q.y + 19,
+          );
         }
         if (u.pose === "aid") {
           ctx.strokeStyle = "#9bdab7";
@@ -518,7 +562,19 @@
       }
       for (const shot of shots.values()) {
         const age = now - shot.at;
-        if (paused || age < 0 || age > 350) continue;
+        if (paused || age < 0 || age > 650) continue;
+        if (shot.fx.kind === "incoming") {
+          const p = screen(shot.fx.to, v);
+          ctx.save();
+          ctx.strokeStyle = shot.fx.hit ? "#ec6858" : "#e4c498";
+          ctx.globalAlpha = Math.max(0, 1 - age / 650);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y - 6, 5 + age / 45, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+          continue;
+        }
         const a = screen(shot.fx.from, v),
           b = screen(shot.fx.to, v),
           angle = Math.atan2(b.y - a.y, b.x - a.x);
@@ -587,6 +643,17 @@
           };
           positions.set(u.id, m);
         }
+        const wounds = u.health?.wounds?.length || 0;
+        if (
+          m.wounds != null &&
+          wounds > m.wounds &&
+          initialized &&
+          !next.paused
+        ) {
+          m.hitAt = now;
+          animate = Math.max(animate, 1200);
+        }
+        m.wounds = wounds;
         if (m.to.x !== u.x || m.to.y !== u.y) {
           m.from = { ...m.drawn };
           m.to = { x: u.x, y: u.y };
@@ -612,6 +679,11 @@
             ? now
             : -Infinity;
         shots.set(fx.eventId, { fx, at });
+        animate = Math.max(animate, 1200);
+        if (fx.hit && fx.targetId) {
+          const victim = positions.get(fx.targetId);
+          if (victim && at === now) victim.hitAt = now;
+        }
         const m = positions.get(fx.actorId);
         if (m && at === now) {
           m.shotAt = now;
@@ -622,7 +694,11 @@
       if (follow) {
         const visible = (
           focusId
-            ? [...next.friends, ...next.contacts.filter((c) => !c.expired)]
+            ? [
+                ...next.friends,
+                ...next.contacts.filter((c) => !c.expired),
+                ...(next.transports || []),
+              ]
             : next.friends
         ).filter(
           (u) =>
@@ -706,7 +782,10 @@
         invalidate();
       },
       follow() {
-        follow = !follow;
+        if (focusId) {
+          focusId = null;
+          follow = true;
+        } else follow = !follow;
         update(frame);
         return follow;
       },
@@ -719,10 +798,12 @@
       focus(id) {
         focusId = id;
         follow = true;
-        span = Math.min(frame.map.height, 28);
-        const u = [...frame.friends, ...frame.contacts].find(
-          (u) => u.id === id,
-        );
+        const u = [
+          ...frame.friends,
+          ...frame.contacts,
+          ...(frame.transports || []),
+        ].find((u) => u.id === id);
+        span = Math.min(frame.map.height, u?.type === "drone" ? 520 : 28);
         if (u) target = { x: u.x, y: u.y };
         update(frame);
       },
