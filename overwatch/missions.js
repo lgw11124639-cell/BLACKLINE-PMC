@@ -164,7 +164,7 @@
       G.activate(mapId);
       const insertion = G.project(
         map.width < 500
-          ? { x: map.base.x + 22, y: map.base.y - 22 }
+          ? { x: map.base.x + 48, y: map.base.y }
           : { x: 220, y: 550 },
       );
       G.activate(previous);
@@ -916,7 +916,9 @@
     const t = m.transports[0];
     t.dispatchAt = Math.max(t.dispatchAt, e.time + 30);
     if (
-      ["takeoff", "flying", "air-hold", "landing"].includes(t.state) &&
+      ["takeoff", "flying", "air-hold", "landing", "driving"].includes(
+        t.state,
+      ) &&
       t.manifest.length &&
       m.memberIds.every((id) => t.manifest.includes(id) || m.home.includes(id))
     ) {
@@ -1687,7 +1689,8 @@
         (success ? 50 : 0);
       p.proficiency.primary = Math.min(
         100,
-        p.proficiency.primary + (success ? 2 : 1),
+        p.proficiency.primary +
+          (m.fieldStartedAt === null ? 0 : success ? 2 : 1),
       );
       p.fatigue = Math.min(
         100,
