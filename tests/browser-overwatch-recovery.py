@@ -1,0 +1,16 @@
+"""A pre-fix stalled operation resumes, replans and actually recovers its lost squad."""
+import os
+from playwright.sync_api import sync_playwright
+BASE=os.environ.get('BLACKLINE_TEST_URL','http://127.0.0.1:8059')
+with sync_playwright() as p:
+ b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);q=b.new_page(viewport={'width':390,'height':844});errors=[];q.on('pageerror',lambda e:errors.append(str(e)));q.goto(BASE,wait_until='networkidle')
+ q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state;const o=OverwatchPersonnel.hire(s,s.market.candidates.find(c=>c.specialty==='observer').id,30),n=OverwatchPersonnel.hire(s,s.market.candidates.find(c=>c.specialty==='sniper').id,30);OverwatchPersonnel.assign(s,'ALPHA',o.id,n.id);OverwatchMissions.accept(s,s.contracts[0].id);OverwatchMissions.launch(s,s.contracts[0].id);const e=s.commandExercise;e.battle.continuous=true;for(const a of e.world.actors.filter(a=>a.side==='red'))a.health.conscious=false;const run=n=>{for(let i=0;i<n;i++){OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1)}};run(80);for(const[i,u]of e.world.units.entries())Object.assign(u,{x:480+i*12,y:550,path:[],goal:null});run(10);for(const[i,u]of e.world.units.entries()){Object.assign(u,{x:540+i*12,y:550,path:[],goal:null});OverwatchBattle.injure(s,e,u,{eventId:'old-phone-'+i,part:'head',severity:3});}run(60);const m=e.mission;m.returnRequested=true;m.abortRequested=true;m.phase='extracting';delete m.recoveryVersion;m.extractionPoint={x:220,y:550};m.transports[0].state='home';m.transports[0].manifest=[];s.ui.tab='field';OverwatchCore.validate(s);st.save(s,s.revision);}""")
+ q.reload(wait_until='networkidle');q.wait_for_function('OverwatchStorage.create({storage:localStorage}).load().state.commandExercise.mission.recoveryVersion===2')
+ assert not q.locator('[data-field-play]').count();assert q.locator('[data-live-transport-status]').inner_text();assert q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state.activeMission!==null')
+ q.screenshot(path='/tmp/overwatch-recovery-resuming.png',full_page=True)
+ q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state;for(let i=0;i<1200&&s.commandExercise.status==='running';i++){OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1);}OverwatchCore.validate(s);st.save(s,s.revision);}""");q.reload(wait_until='networkidle')
+ state=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');assert state['commandExercise']['status']=='ended';assert state['activeMission'] is None;assert len(state['commandExercise']['mission']['home'])==2;assert len(state['operations']['reports'])==1
+ assert '작전 종료' in q.locator('[data-live-phase]').inner_text();assert q.locator('.live-debrief').count()==1
+ assert all(not f['health']['alive'] for f in q.evaluate('OverwatchCommand.frame(OverwatchStorage.create({storage:localStorage}).load().state).friends'))
+ assert not errors,errors
+ b.close();print('PASS old waiting save automatically replans, dispatches for an unconfirmed wiped squad, physically recovers and returns bodies, settles once and shows final HQ facts/ended status')

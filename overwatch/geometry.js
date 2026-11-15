@@ -150,10 +150,10 @@
     }
     return true;
   }
-  function path(a, b) {
+  function path(a, b, resolution = MAP.grid) {
     if (blocked(a) || blocked(b)) return [];
     if (clear(a, b, true)) return [{ x: b.x, y: b.y }];
-    const g = MAP.grid,
+    const g = resolution,
       cols = MAP.width / g + 1,
       rows = MAP.height / g + 1;
     const cell = (p) => {
@@ -218,7 +218,23 @@
       at = seen[at];
     }
     out.push({ x: (start % cols) * g, y: Math.floor(start / cols) * g });
-    return out.reverse();
+    const result = out.reverse();
+    if (resolution >= MAP.grid) return result;
+    const compact = [];
+    for (const p of result) {
+      while (compact.length >= 2) {
+        const a = compact.at(-2),
+          b = compact.at(-1),
+          dx = b.x - a.x,
+          dy = b.y - a.y,
+          ex = p.x - b.x,
+          ey = p.y - b.y;
+        if (Math.abs(dx * ey - dy * ex) > 1e-8 || dx * ex + dy * ey <= 0) break;
+        compact.pop();
+      }
+      compact.push(p);
+    }
+    return compact;
   }
   const api = {
     get MAP() {

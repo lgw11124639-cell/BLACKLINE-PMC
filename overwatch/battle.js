@@ -188,6 +188,7 @@
       mobility: moveFactor(u) > 0,
       combatActive: !!u.combatActive,
       visionRange: u.visionRange || null,
+      identificationRange: u.identificationRange || null,
       visionHalfAngle: u.visionHalfAngle || null,
       activity: !u.health.alive
         ? "dead"
@@ -1616,7 +1617,7 @@
     );
   }
   function knownFriendEvidence(e, f) {
-    return !!e.battle?.delivered.some((p) =>
+    return !!e.mission?.log.some(ev=>ev.type==='transport-home'&&ev.friends?.some(x=>x.id===f.id&&x.observedAt===f.observedAt&&x.x===f.x&&x.y===f.y)) || !!e.battle?.delivered.some((p) =>
       p.friends.some(
         (x) =>
           x.id === f.id &&

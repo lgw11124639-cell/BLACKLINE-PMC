@@ -279,7 +279,7 @@
                 : "") +
               esc(u.weapon?.name || "장비 보고 대기") +
               (u.weapon?.range
-                ? " · 최대 사거리 " + u.weapon.range + "m"
+                ? " · 유효 사거리 " + u.weapon.range + "m"
                 : "") +
               (u.weapon
                 ? " · 장전 " +
@@ -292,7 +292,11 @@
                   u.weapon.magazines.reduce((a, b) => a + b, 0) +
                   "발"
                 : "") +
-              "</small><small>" +
+              "</small><small>탐지 시야 " +
+              Math.round(u.visionRange || 0) +
+              "m · 식별 " +
+              Math.round(u.identificationRange || 0) +
+              "m</small><small>" +
               (u.health
                 ? "혈액량 추정 " +
                   num(u.health.bloodMl) +
@@ -537,7 +541,7 @@
       "",
     );
     return html
-      .replace("연습 통제 종료", "작전 중단·철수")
+      .replace("연습 통제 종료", "작전 중단·철수").replace("연습 종료","실전 작전 종료")
       .replace("조 전체 복귀 명령", "철수·제공 수송 요청");
   }
   function refresh(rootNode, s, { playing = false } = {}) {

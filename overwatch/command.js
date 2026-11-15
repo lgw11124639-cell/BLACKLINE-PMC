@@ -1101,20 +1101,30 @@
       observerFactor = u.role === "observer" ? 1 : 0.65,
       radius = optics
         ? (u.role === "sniper"
-            ? Math.min(1100, 650 + v.observation * 5)
-            : 450 + v.observation * 4) +
-          G.elevation(u) * 4
+            ? 1800 + v.observation * 6
+            : 1600 + v.observation * 6) +
+          G.elevation(u) * 5
         : (140 +
             v.observation * 1.8 +
             G.elevation(u) * 4 +
             (m.secondarySpecialties.includes("reconnaissance") ? 35 : 0)) *
           observerFactor,
+      identification = optics
+        ? (u.role === "sniper"
+            ? 1000 + v.observation * 3
+            : 500 + v.observation * 3) +
+          G.elevation(u) * 2
+        : (75 + v.observation) * observerFactor,
       heading = Math.atan2(q.sector.y - u.y, q.sector.x - u.x);
     u.heading = heading;
     if (e.battle) {
       u.visionRange = radius * e.battle.weather.visibility;
-      u.visionHalfAngle =
-        u.role === "sniper" && !u.path.length ? Math.PI * 0.13 : Math.PI * 0.42;
+      u.identificationRange = identification * e.battle.weather.visibility;
+      u.visionHalfAngle = optics
+        ? u.role === "sniper"
+          ? Math.PI * 0.1
+          : Math.PI * 0.18
+        : Math.PI * 0.42;
     }
     for (const actor of e.world.actors) {
       if (e.mission && actor.side === "ally") continue;
@@ -1142,7 +1152,15 @@
       }
       if (seen.confidenceAt !== e.time) {
         seen.confidence = Math.min(
-          0.98,
+          e.battle &&
+            d > u.identificationRange &&
+            !(
+              actor.lastShotAt != null &&
+              e.time - actor.lastShotAt < 5 &&
+              d < u.identificationRange * 1.8
+            )
+            ? 0.65
+            : 0.98,
           (e.time - seen.lastSeen > 10 ? 0.1 : seen.confidence) +
             (e.battle ? 0.04 : 0.02) +
             v.observation / (e.battle ? 1000 : 2500),
@@ -1153,11 +1171,13 @@
       seen.y = actor.y;
       seen.lastSeen = e.time;
       seen.classification = e.battle
-        ? actor.side === "ally"
-          ? "friendly-person"
-          : actor.armed
-            ? "armed-person"
-            : "unarmed-person"
+        ? seen.confidence < 0.8
+          ? "unknown"
+          : actor.side === "ally"
+            ? "friendly-person"
+            : actor.armed
+              ? "armed-person"
+              : "unarmed-person"
         : actor.kind;
       if (e.battle) {
         seen.condition = Battle().snapshot(actor).pose;
@@ -1934,6 +1954,7 @@
         ok(
           num(c.reportedConfidence, 0, 1) &&
             [
+              "unknown",
               "training-target",
               "unarmed-target",
               "armed-person",

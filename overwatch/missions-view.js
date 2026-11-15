@@ -24,6 +24,7 @@
       expired: "기한 만료",
     },
     phases = {
+      settled:"작전 종료 · 정산 완료",
       boarding: "탑승 중",
       inserting: "작전지 수송 중",
       infiltration: "도보 투입 중",
@@ -295,7 +296,7 @@
       esc(m.issuer) +
       " · <strong data-live-phase>" +
       esc(phases[m.phase] || m.phase) +
-      "</strong></p><p data-live-objective></p><p>제공 수송 " +
+      "</strong></p><p data-live-objective></p><p data-live-transport-status></p><p>제공 수송 " +
       { foot: "도보", vehicle: "차량", helicopter: "헬기" }[m.transport] +
       " · 출격 소모품 예치 " +
       cash(m.escrow) +
@@ -343,6 +344,37 @@
     const f = D.frame(s),
       m = f?.mission;
     if (!m) return;
+    const names = {
+      home: "본부 대기",
+      settled:"작전 종료 · 정산 완료",
+      boarding: "탑승 중",
+      driving: "지상 이동",
+      flying: "비행",
+      takeoff: "이륙",
+      landing: "착륙",
+      loading: "회수 인원 확인·탑승",
+      "ground-hold": "위협으로 접근 보류",
+      "air-hold": "위협으로 착륙 보류",
+      "route-blocked": "이동 경로 없음",
+      "medical-work": "현장 회수",
+    };
+    const transportStatus = rootNode.querySelector(
+      "[data-live-transport-status]",
+    );
+    if (transportStatus)
+      transportStatus.textContent = (m.diagnosis || [])
+        .map(
+          (t) =>
+            (t.id === "primary" ? "주 수송" : t.id) +
+            " · " +
+            (names[t.state] || t.state) +
+            " · 남은 경로 " +
+            Math.round(t.remainingDistance || 0) +
+            "m · 탑승 " +
+            t.passengers +
+            "명",
+        )
+        .join(" / ");
     const phase = rootNode.querySelector("[data-live-phase]");
     if (phase) phase.textContent = phases[m.phase] || m.phase;
     const goal = rootNode.querySelector("[data-live-objective]");
@@ -354,6 +386,7 @@
           complete: "확인 완료 · 철수 필요",
           failed: "목표 실패 · 철수 판단 필요",
         }[m.objective];
+    if(m.phase==='settled'&&goal)goal.textContent='작전 종료 · '+(m.report?.success?'목표 달성':'목표 미달성·중단')+' · 정산 완료';
     const clock = rootNode.querySelector("[data-field-objective]");
     if (clock)
       clock.textContent =
