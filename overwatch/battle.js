@@ -1284,20 +1284,51 @@
       to: shot.to,
     });
     u.combatActive = true;
-    if (u.side !== "red")
+    if (
+      qOf(e, u.id) &&
+      e.time - (u.lastFireReportAt ?? -100) >= (u.role === "sniper" ? 4 : 15)
+    ) {
+      u.lastFireReportAt = e.time;
       causeReport(
         s,
         e,
         u,
         "combat",
-        (u.role === "sniper" ? "사수" : "관측수") +
-          " 사격. " +
-          stats.name +
-          " 장전 " +
-          w.loaded +
-          "발. 명중 결과 관측 대기.",
+        u.name +
+          (u.role === "sniper"
+            ? " 사수 격발. 탄착 관측 중."
+            : " 관측수 대응 사격. 엄호 유지."),
         ev,
       );
+    }
+    const noise = e.battle.noises[e.battle.noises.length - 1];
+    for (const q of e.squads) {
+      const observer = I().leader(e, q);
+      if (
+        !observer?.capable ||
+        qOf(e, u.id) ||
+        G.distance(observer, u) > noise.range ||
+        e.time - (q.lastGunfireReportAt ?? -100) < 30
+      )
+        continue;
+      // Acoustic evidence reveals neither an unseen source location nor its allegiance.
+      q.lastGunfireReportAt = e.time;
+      const identified = q.contacts.find(
+        (c) => c.id === u.id && c.confidence >= 0.8 && e.time - c.lastSeen <= 5,
+      );
+      I().report(
+        s,
+        e,
+        q,
+        "combat",
+        q.callsign +
+          ". " +
+          (identified
+            ? "관측 중인 인원의 사격 확인. 엄폐하며 위협 평가한다."
+            : "총성 청취. 발사원·소속 미확인. 엄폐하며 확인한다."),
+        ev,
+      );
+    }
     return shot;
   }
   function pointSegment(p, a, b) {

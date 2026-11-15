@@ -548,38 +548,38 @@
         onFallback("3D 그래픽 연결이 끊겨 2D 상황도로 전환했습니다.");
       });
       listen(renderer.domElement, "pointerdown", (e) => {
+        const p = root.OverwatchViewport.point(renderer.domElement, e);
         if (e.button !== 0) return;
         drag = {
-          x: e.clientX,
-          y: e.clientY,
-          startX: e.clientX,
-          startY: e.clientY,
+          x: p.x,
+          y: p.y,
+          startX: p.x,
+          startY: p.y,
           moved: false,
         };
         renderer.domElement.setPointerCapture(e.pointerId);
       });
       listen(renderer.domElement, "pointermove", (e) => {
+        const p = root.OverwatchViewport.point(renderer.domElement, e);
         if (!drag) return;
-        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 6)
+        if (Math.hypot(p.x - drag.startX, p.y - drag.startY) > 6)
           drag.moved = true;
         if (!drag.moved) return;
-        yaw += (e.clientX - drag.x) * 0.007;
-        pitch = Math.max(
-          0.35,
-          Math.min(1.4, pitch + (e.clientY - drag.y) * 0.005),
-        );
-        drag.x = e.clientX;
-        drag.y = e.clientY;
+        yaw += (p.x - drag.x) * 0.007;
+        pitch = Math.max(0.35, Math.min(1.4, pitch + (p.y - drag.y) * 0.005));
+        drag.x = p.x;
+        drag.y = p.y;
         invalidate();
       });
       listen(renderer.domElement, "pointerup", (e) => {
+        const p = root.OverwatchViewport.point(renderer.domElement, e);
         if (drag && !drag.moved) {
           const rect = renderer.domElement.getBoundingClientRect(),
             caster = new T.Raycaster();
           caster.setFromCamera(
             new T.Vector2(
-              ((e.clientX - rect.left) / rect.width) * 2 - 1,
-              (-(e.clientY - rect.top) / rect.height) * 2 + 1,
+              (p.x / renderer.domElement.clientWidth) * 2 - 1,
+              (-p.y / renderer.domElement.clientHeight) * 2 + 1,
             ),
             camera,
           );

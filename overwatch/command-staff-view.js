@@ -17,7 +17,7 @@
     const c = s.commandStaff || {},
       running = s.commandExercise?.status === "running";
     return (
-      '<section class="panel staff-panel"><div class="section-heading"><span class="eyebrow">COMMAND STAFF</span><h2>지휘 편성</h2></div><p class="muted">본부 승인 → 작전통제관 → 관측수 → 저격수. 본부 담당자는 현장 편성과 중복할 수 없습니다.</p><div class="staff-assignments">' +
+      '<section class="panel staff-panel"><div class="section-heading"><span class="eyebrow">COMMAND STAFF</span><h2>지휘 편성</h2></div><p class="muted">본부 승인 → 작전통제관 → 관측수 → 저격수. 지원 인력은 별도 시장에서 계약하며 전투대원 10명·출격 편제에 포함되지 않습니다.</p><div class="staff-assignments">' +
       [
         ["controller", "작전통제관", "정찰·조별 임무·철수와 지원 배분"],
         ["instructor", "훈련 교관", "모의 훈련의 과업·관측·복귀 통제"],
@@ -31,11 +31,12 @@
             '<select name="memberId"' +
             (!editable || (running && c[k + "Id"]) ? " disabled" : "") +
             '><option value="">미편성</option>' +
-            s.members
+            (c.members || [])
               .filter(
                 (m) =>
                   m.id === c[k + "Id"] ||
-                  (S().available(s, m) &&
+                  (m.duty === k &&
+                    S().available(s, m) &&
                     !S().reserved(s, m.id) &&
                     !s.squads.some((q) =>
                       [q.observerId, q.sniperId].includes(m.id),
@@ -52,7 +53,7 @@
                   " · 판단 " +
                   m.skills.judgment +
                   " · " +
-                  (m.specialty === "observer" ? "관측수" : "저격수") +
+                  (m.duty === "controller" ? "작전통제관" : "훈련 교관") +
                   "</option>",
               )
               .join("") +
@@ -69,7 +70,69 @@
       '>작전권 위임</label><label><input type="checkbox" data-staff-support' +
       (c.autoSupport ? " checked" : "") +
       (!editable ? " disabled" : "") +
-      '>통제관 지원 자동 배분</label></div><p class="muted">UAV·의료 회수·보급은 계약 제공분 안에서 운용합니다. 본부의 직접 요청은 계속 가능합니다.</p></section>'
+      '>통제관 지원 자동 배분</label></div><p class="muted">UAV·의료 회수·보급은 계약 제공분 안에서 운용합니다. 본부의 직접 요청은 계속 가능합니다.</p></section>' +
+      market(s, editable)
+    );
+  }
+  function market(s, editable) {
+    const c = s.commandStaff || {},
+      running = s.commandExercise?.status === "running";
+    const role = (m) => (m.duty === "controller" ? "작전통제관" : "훈련 교관");
+    return (
+      '<section class="panel staff-market"><span class="eyebrow">SUPPORT STAFF MARKET</span><h2>교관·통제관 별도 채용</h2><p class="muted">전투 편제와 별도 · 직책별 현역 계약 최대 2명 · 30일 급여 선지급</p><div class="staff-market-grid">' +
+      (c.market || [])
+        .map(
+          (m) =>
+            '<article class="staff-market-card"><h3>' +
+            esc(m.name) +
+            " · " +
+            role(m) +
+            "</h3><p>" +
+            m.age +
+            "세 · 경력 " +
+            m.years +
+            "년 · 판단 " +
+            m.skills.judgment +
+            "</p><p>일급 " +
+            m.dailySalary.toLocaleString() +
+            '원</p><button data-staff-hire="' +
+            esc(m.id) +
+            '"' +
+            (!editable || running ? " disabled" : "") +
+            ">30일 계약 · " +
+            (m.dailySalary * 30).toLocaleString() +
+            "원</button></article>",
+        )
+        .join("") +
+      "</div><h3>계약 중인 지원 인력</h3>" +
+      (c.members || [])
+        .map(
+          (m) =>
+            '<article class="staff-market-card"><b>' +
+            esc(m.name) +
+            " · " +
+            role(m) +
+            "</b><p>남은 계약 " +
+            Math.max(
+              0,
+              Math.ceil((m.contract.endsAt - s.clock.elapsedSeconds) / 86400),
+            ) +
+            "일 · " +
+            (S().reserved(s, m.id) ? "직책 배정 중" : "배정 대기") +
+            '</p><button data-staff-renew="' +
+            esc(m.id) +
+            '"' +
+            (!editable ? " disabled" : "") +
+            ">30일 연장 · " +
+            (m.dailySalary * 30).toLocaleString() +
+            "원</button></article>",
+        )
+        .join("") +
+      "<button data-staff-refresh" +
+      (!editable || running || s.clock.elapsedSeconds < (c.nextMarketAt || 0)
+        ? " disabled"
+        : "") +
+      ">지원 인력 후보 갱신 · 12시간 간격</button></section>"
     );
   }
   function field(s) {
@@ -121,6 +184,18 @@
         }[e?.control?.phase] || "명령·현장 보고 대기";
   }
   function bind(node, { state: s, editable, commit }) {
+    for (const b of node.querySelectorAll("[data-staff-refresh]"))
+      b.addEventListener("click", () => {
+        if (editable) commit((next) => S().refreshMarket(next));
+      });
+    for (const b of node.querySelectorAll("[data-staff-hire]"))
+      b.addEventListener("click", () => {
+        if (editable) commit((next) => S().hire(next, b.dataset.staffHire));
+      });
+    for (const b of node.querySelectorAll("[data-staff-renew]"))
+      b.addEventListener("click", () => {
+        if (editable) commit((next) => S().renew(next, b.dataset.staffRenew));
+      });
     for (const f of node.querySelectorAll("[data-staff-duty]"))
       f.addEventListener("submit", (event) => {
         event.preventDefault();
