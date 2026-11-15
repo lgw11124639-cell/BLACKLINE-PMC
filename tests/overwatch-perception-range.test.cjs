@@ -151,7 +151,7 @@ test("moving units face their route instead of turning toward the observation se
   assert.ok(checked > 5);
 });
 
-test("routine status telemetry stays fresh while visible radio updates are throttled", () => {
+test("routine status telemetry stays fresh while routine radio updates stay hidden", () => {
   const { s, e } = scenario(400, false);
   e.world.actors = [];
   for (let i = 0; i < 240; i++) {
@@ -164,7 +164,7 @@ test("routine status telemetry stays fresh while visible radio updates are throt
   const f = D.frame(s),
     visible = f.radio.filter((r) => r.kind === "position");
   assert.ok(raw.length >= 7);
-  assert.ok(visible.length <= 2);
+  assert.equal(visible.length, 0);
   assert.ok(f.friends.every((u) => u.age < 35));
   // Never suppress important messages while hiding redundant routine updates.
   for (const r of e.radio.filter(

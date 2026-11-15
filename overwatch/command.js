@@ -1669,10 +1669,6 @@
     });
     // Keep telemetry delivery and HQ knowledge current without flooding the
     // visible/voiced radio feed. Explicit status requests and urgent events stay.
-    let lastRoutineVisibleAt = -Infinity;
-    const routineEvents = new Set(
-      e.events.filter((a) => a.type === "position-report").map((a) => a.id),
-    );
     const projected = {
       id: e.id,
       time: e.time,
@@ -1701,13 +1697,7 @@
       })),
       radio: e.radio
         .filter((r) => r.hqVisibleAt !== null)
-        .filter((r) => {
-          if (r.kind !== "position" || !routineEvents.has(r.eventId))
-            return true;
-          if (r.hqVisibleAt - lastRoutineVisibleAt < 180) return false;
-          lastRoutineVisibleAt = r.hqVisibleAt;
-          return true;
-        })
+        .filter((r) => r.kind !== "position")
         .map((r) => ({
           id: r.id,
           from: copy(r.from),
