@@ -2,6 +2,16 @@
 (function (root) {
   "use strict";
   const data = {
+    "observer-down": {
+      src: "images/overwatch/observer-down.webp",
+      bounds: [66, 60, 1708, 845],
+      size: [1774, 887],
+    },
+    "sniper-down": {
+      src: "images/overwatch/sniper-down.webp",
+      bounds: [31, 59, 1744, 851],
+      size: [1774, 887],
+    },
     "sniper-move": {
       src: "images/overwatch/sniper-move.webp",
       bounds: [115, 21, 1200, 1241],
@@ -292,7 +302,7 @@
       key = "sniper-observe";
     }
     if (action === "down") {
-      art = data[role + "-dead"];
+      art = data[role + "-down"] || data[role + "-wounded"];
       key = role + "-down";
     }
     if (u.specialty === "sniper" && ["regular", "insurgent"].includes(role)) {
@@ -301,7 +311,7 @@
           ? "enemy-sniper"
           : "enemy-sniper-" +
             (action === "down"
-              ? "dead"
+              ? "wounded"
               : action === "move"
                 ? "standing"
                 : action);

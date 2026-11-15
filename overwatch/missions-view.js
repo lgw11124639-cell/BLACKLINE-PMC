@@ -24,7 +24,7 @@
       expired: "기한 만료",
     },
     phases = {
-      settled:"작전 종료 · 정산 완료",
+      settled: "작전 종료 · 정산 완료",
       boarding: "탑승 중",
       inserting: "작전지 수송 중",
       infiltration: "도보 투입 중",
@@ -346,7 +346,7 @@
     if (!m) return;
     const names = {
       home: "본부 대기",
-      settled:"작전 종료 · 정산 완료",
+      settled: "작전 종료 · 정산 완료",
       boarding: "탑승 중",
       driving: "지상 이동",
       flying: "비행",
@@ -386,7 +386,11 @@
           complete: "확인 완료 · 철수 필요",
           failed: "목표 실패 · 철수 판단 필요",
         }[m.objective];
-    if(m.phase==='settled'&&goal)goal.textContent='작전 종료 · '+(m.report?.success?'목표 달성':'목표 미달성·중단')+' · 정산 완료';
+    if (m.phase === "settled" && goal)
+      goal.textContent =
+        "작전 종료 · " +
+        (m.report?.success ? "목표 달성" : "목표 미달성·중단") +
+        " · 정산 완료";
     const clock = rootNode.querySelector("[data-field-objective]");
     if (clock)
       clock.textContent =
@@ -423,6 +427,7 @@
       commit((next) => M.cancel(next, b.dataset.liveCancel)),
     );
     each("[data-live-launch]", (b) => {
+      root.OverwatchAudio?.startOnGesture?.();
       if (
         confirm(
           "실전 계약 출격: 부상·전사·미회수는 영구 기록됩니다. 출격합니까?",

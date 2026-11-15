@@ -488,18 +488,48 @@
         ctx.arc(q.x, q.y + 4, 2.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        if (friendly && (v.scale > 6 || focusId === u.id)) {
+        if (friendly) {
           ctx.font = "600 10px -apple-system,sans-serif";
           ctx.fillStyle = "#fff";
           ctx.shadowColor = "#16301a";
           ctx.shadowBlur = 4;
           ctx.textAlign = "center";
           ctx.fillText(
-            u.callsign + " · " + (u.role === "sniper" ? "저격" : "관측"),
+            (u.name || u.callsign || "지원요원") +
+              " · " +
+              (u.role === "sniper"
+                ? "저격수"
+                : u.role === "observer"
+                  ? "관측수"
+                  : "의무요원"),
             q.x,
             q.y - height - 3,
           );
           ctx.shadowBlur = 0;
+        }
+        if (now - (m.hitAt || -Infinity) < 650) {
+          ctx.strokeStyle = "#f06b59";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(q.x, q.y - 9, 12 + (now - m.hitAt) / 70, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = "#ffb8a9";
+          ctx.font = "700 11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("피격", q.x, q.y - 28);
+        }
+        if (
+          friendly &&
+          (u.health?.alive === false || u.health?.conscious === false)
+        ) {
+          ctx.fillStyle = u.health.alive === false ? "#ffc6c2" : "#ffe2a2";
+          ctx.font = "700 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            u.health.alive === false ? "전사" : "중상 · 의식소실",
+            q.x,
+            q.y + 19,
+          );
         }
         if (u.pose === "aid") {
           ctx.strokeStyle = "#9bdab7";
@@ -518,7 +548,19 @@
       }
       for (const shot of shots.values()) {
         const age = now - shot.at;
-        if (paused || age < 0 || age > 350) continue;
+        if (paused || age < 0 || age > 650) continue;
+        if (shot.fx.kind === "incoming") {
+          const p = screen(shot.fx.to, v);
+          ctx.save();
+          ctx.strokeStyle = shot.fx.hit ? "#ec6858" : "#e4c498";
+          ctx.globalAlpha = Math.max(0, 1 - age / 650);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y - 6, 5 + age / 45, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+          continue;
+        }
         const a = screen(shot.fx.from, v),
           b = screen(shot.fx.to, v),
           angle = Math.atan2(b.y - a.y, b.x - a.x);
@@ -587,6 +629,17 @@
           };
           positions.set(u.id, m);
         }
+        const wounds = u.health?.wounds?.length || 0;
+        if (
+          m.wounds != null &&
+          wounds > m.wounds &&
+          initialized &&
+          !next.paused
+        ) {
+          m.hitAt = now;
+          animate = Math.max(animate, 1200);
+        }
+        m.wounds = wounds;
         if (m.to.x !== u.x || m.to.y !== u.y) {
           m.from = { ...m.drawn };
           m.to = { x: u.x, y: u.y };
@@ -612,6 +665,11 @@
             ? now
             : -Infinity;
         shots.set(fx.eventId, { fx, at });
+        animate = Math.max(animate, 1200);
+        if (fx.hit && fx.targetId) {
+          const victim = positions.get(fx.targetId);
+          if (victim && at === now) victim.hitAt = now;
+        }
         const m = positions.get(fx.actorId);
         if (m && at === now) {
           m.shotAt = now;

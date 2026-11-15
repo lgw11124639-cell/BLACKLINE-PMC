@@ -177,7 +177,7 @@
             esc(u.name) +
             " · " +
             u.age +
-            "초 전 보고</title></g>",
+            "초 전 보고</title><text x=\"" + u.x + "\" y=\"" + (u.y-14) + "\" text-anchor=\"middle\" fill=\"#eff7ef\" stroke=\"#17291e\" stroke-width=\"0.8\" paint-order=\"stroke\" font-size=\"" + (f.map.width<500?3.2:7) + "\">" + esc(u.name) + " · " + (u.role==="sniper"?"저격수":"관측수") + "</text></g>",
         )
         .join("") +
       (f.transports || [])
@@ -686,6 +686,7 @@
     for (const b of rootNode.querySelectorAll("[data-field-quick]"))
       b.addEventListener("click", () => {
         if (!editable) return;
+        root.OverwatchAudio?.startOnGesture?.();
         const kind = b.dataset.fieldQuick,
           team = quickTeam?.value || lastFrame?.squads[0]?.callsign;
         execute((next) => {
@@ -701,6 +702,7 @@
         });
       });
     on("[data-field-start]", () => {
+      if (editable) root.OverwatchAudio?.startOnGesture?.();
       if (editable)
         execute((next) =>
           B.begin(next, {

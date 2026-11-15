@@ -19,6 +19,7 @@
       AKM: "ak",
       SVD: "precision",
       G19: "pistol",
+      incoming: "rifle-a",
     };
   try {
     const n = Number(
@@ -208,6 +209,10 @@
   root.addEventListener("pagehide", stop);
   root.OverwatchAudio = {
     sync,
+    startOnGesture() {
+      if (!context && !loading) return toggle();
+      if (enabled && context?.state === "suspended") return context.resume();
+    },
     toggle,
     stop,
     setVolume,
