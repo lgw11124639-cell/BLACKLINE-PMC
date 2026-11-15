@@ -1,10 +1,12 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.14.03",
+  const VERSION = "2026.11.15.01",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
     CommandUI = OverwatchCommandUI,
+    FieldUI = OverwatchFieldUI,
+    Battle = OverwatchBattle,
     root = document.getElementById("overwatch-root");
   const esc = (x) =>
     String(x ?? "").replace(
@@ -22,10 +24,11 @@
     ["headquarters", "본부", "01"],
     ["personnel", "대원·저격조", "02"],
     ["command", "지휘 훈련", "03"],
-    ["contracts", "작전 의뢰", "04"],
-    ["equipment", "장비고", "05"],
-    ["records", "기록 보관함", "06"],
-    ["storage", "저장 관리", "07"],
+    ["field", "전장", "04"],
+    ["contracts", "작전 의뢰", "05"],
+    ["equipment", "장비고", "06"],
+    ["records", "기록 보관함", "07"],
+    ["storage", "저장 관리", "08"],
   ];
   const roles = { observer: "관측수", sniper: "저격수" },
     statuses = {
@@ -45,10 +48,114 @@
     error = "",
     stale = false,
     selectedPerson = null;
+  let lastSaved = null,
+    dirty = false;
+  function rollbackRuntime(errorValue) {
+    runtime.stop();
+    if (lastSaved) state = Core.clone(lastSaved);
+    if (
+      state?.commandExercise?.battle &&
+      state.commandExercise.status === "running"
+    )
+      Battle.setPaused(state, true);
+    dirty = false;
+    error =
+      "전장 저장·진행을 중단했습니다. 마지막 저장 상태로 되돌렸습니다. " +
+      errorValue.message;
+    render();
+  }
+  function saveRuntime() {
+    if (!dirty) return;
+    if (source !== "primary" || stale)
+      throw Error("최신 저장을 다시 불러오세요.");
+    state = store.save(state, state.revision);
+    lastSaved = Core.clone(state);
+    dirty = false;
+  }
+  const runtime = OverwatchRealtime.create({
+    tick() {
+      if (
+        tab !== "field" ||
+        source !== "primary" ||
+        stale ||
+        !state?.commandExercise?.battle ||
+        state.commandExercise.paused
+      )
+        return false;
+      OverwatchCommand.step(state, 1);
+      dirty = true;
+      if (state.commandExercise.status === "ended") setTimeout(render, 0);
+      FieldUI.refresh(root, state, { playing: true });
+      const liveClock = root.querySelector("[data-live-clock]");
+      if (liveClock)
+        liveClock.textContent =
+          "본부 " + PersonnelUI.timestamp(state.clock.elapsedSeconds);
+      return (
+        state.commandExercise.status === "running" &&
+        !state.commandExercise.paused
+      );
+    },
+    checkpoint: saveRuntime,
+    onError: rollbackRuntime,
+  });
+  function pauseField() {
+    runtime.stop();
+    if (state?.commandExercise?.paused && !dirty) return;
+    if (
+      state?.commandExercise?.battle &&
+      state.commandExercise.status === "running" &&
+      source === "primary" &&
+      !stale
+    ) {
+      Battle.setPaused(state, true);
+      dirty = true;
+      try {
+        saveRuntime();
+        FieldUI.refresh(root, state, { playing: false });
+      } catch (e) {
+        rollbackRuntime(e);
+      }
+    }
+  }
+  function toggleField() {
+    if (!state?.commandExercise?.battle) return;
+    if (runtime.isRunning()) {
+      pauseField();
+      return;
+    }
+    if (commit((next) => Battle.setPaused(next, false))) {
+      runtime.start(state.commandExercise.battle.speed);
+      FieldUI.refresh(root, state, { playing: true });
+    }
+  }
+  function fallbackField(message) {
+    setTimeout(() => {
+      notice = message;
+      if (
+        source === "primary" &&
+        !stale &&
+        state?.fieldPreferences?.view === "3d"
+      )
+        commit((next) => {
+          next.fieldPreferences.view = "2d";
+          if (
+            next.commandExercise?.battle &&
+            next.commandExercise.status === "running"
+          )
+            Battle.setPaused(next, true);
+        });
+      else {
+        const host = root.querySelector(".field-viewport");
+        if (host) host.innerHTML = FieldUI.map2D(OverwatchCommand.frame(state));
+      }
+    }, 0);
+  }
   const id = () =>
     globalThis.crypto?.randomUUID?.() ||
     "campaign-" + Date.now() + "-" + Math.random().toString(36).slice(2);
   function load() {
+    runtime.reset();
+    dirty = false;
     try {
       store = store || OverwatchStorage.create({ storage: localStorage });
       const loaded = store.load();
@@ -62,7 +169,7 @@
         try {
           state = store.migrate();
           notice =
-            "본부를 3단계 지휘 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
+            "본부를 4단계 전장 저장으로 전환했습니다. 이전 주 저장·백업 원본은 변환 전 보관함에 있습니다.";
         } catch (e) {
           source = "migration";
           error = e.message;
@@ -79,6 +186,24 @@
           error = e.message;
         }
       }
+      if (
+        state?.commandExercise?.battle &&
+        state.commandExercise.status === "running" &&
+        !state.commandExercise.paused &&
+        source === "primary"
+      ) {
+        const paused = Core.clone(state);
+        Battle.setPaused(paused, true);
+        paused.commandExercise.pauseReason =
+          "재접속 일시정지 · 오프라인 시간은 진행하지 않았습니다.";
+        try {
+          state = store.save(paused, state.revision);
+        } catch (e) {
+          state = paused;
+          error = e.message;
+        }
+      }
+      lastSaved = state ? Core.clone(state) : null;
       tab = state?.ui.tab || "storage";
     } catch (e) {
       error = "저장소에 접근할 수 없습니다. " + e.message;
@@ -97,11 +222,31 @@
     const next = Core.clone(state);
     try {
       change(next);
+      if (
+        next.commandExercise?.battle &&
+        next.commandExercise.status === "running" &&
+        next.ui.tab !== "field"
+      )
+        Battle.setPaused(next, true);
       state = store.save(next, state.revision);
       error = "";
+      dirty = false;
+      lastSaved = Core.clone(state);
+      if (state.commandExercise?.battle) {
+        runtime.setSpeed(state.commandExercise.battle.speed);
+        if (
+          state.commandExercise.paused ||
+          state.commandExercise.status !== "running"
+        )
+          runtime.stop();
+      }
       render();
       return true;
     } catch (e) {
+      if (dirty) {
+        rollbackRuntime(e);
+        return false;
+      }
       error = e.message;
       render();
       return false;
@@ -125,14 +270,14 @@
       title +
       "</h2><p>" +
       body +
-      '</p><span class="phase-note">현재 릴리스는 인원·편제·본부 활동과 관측수 지휘 훈련까지 연결되어 있습니다.</span></section>'
+      '</p><span class="phase-note">현재 릴리스는 본부·지휘 훈련과 실시간 모의 전장까지 연결되어 있습니다.</span></section>'
     );
   }
   function headquarters() {
     const members = state?.members || [],
       ready = members.filter((m) => m.status === "standby").length;
     return (
-      '<section class="hq-hero"><div><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>관측하고, 판단하고,<br>명령한다.</h1><p>본부의 명령은 관측수를 통해 저격수에게 전달됩니다.<br>현장에서 확인된 정보가 판단의 기준입니다.</p><span class="build-tag">3단계 · 관측수 지휘 훈련</span></div><div class="terrain-preview" role="img" aria-label="기존 프로젝트에서 보존한 산악 전장 이미지"><span>보존된 전장 자산 / 실시간 전장 연결 전</span></div></section><section class="metrics" aria-label="본부 현황">' +
+      '<section class="hq-hero"><div><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>관측하고, 판단하고,<br>명령한다.</h1><p>본부의 명령은 관측수를 통해 저격수에게 전달됩니다.<br>현장에서 확인된 정보가 판단의 기준입니다.</p><span class="build-tag">4단계 · 실시간 모의 전장</span></div><div class="terrain-preview" role="img" aria-label="기존 프로젝트에서 보존한 산악 전장 이미지"><span>보존된 전장 자산 / 실시간 전장 연결 전</span></div></section><section class="metrics" aria-label="본부 현황">' +
       [
         [
           "본부 대원",
@@ -164,7 +309,7 @@
             "</span></article>",
         )
         .join("") +
-      '</section><div class="two-column"><section class="panel"><div class="section-heading"><span class="eyebrow">CHAIN OF COMMAND</span><h2>저격조 지휘 구조</h2></div><ol class="command-chain"><li><b>본부 · 플레이어</b><span>임무·지역·관측·교전·철수 명령</span></li><li><b>관측수 · 현장 지휘관</b><span>명령 수신·판단·저격수 지휘·상황 보고</span></li><li><b>저격수</b><span>세부 지시 수행·사격 준비·생존 행동</span></li></ol><p class="muted">지휘 훈련에서 관측수의 명령 수신·판단·보고를 확인할 수 있습니다.</p></section><section class="panel"><span class="eyebrow">DEVELOPMENT STATUS</span><h2>현재 가능한 작업</h2><ul class="plain-list"><li>대원 모집·기간 계약·2인조 편성</li><li>훈련·휴식·진료·재활·공동 훈련</li><li>자금·활동·경력 저장과 이전 기록 보존</li><li>조 단위 명령·무전·제한 정보 지휘 훈련</li></ul><button data-tab="storage">저장 관리 열기 <span aria-hidden="true">↗</span></button><p class="muted">실제 계약 출격·실탄 교전·3D 전장은 후속 단계에서 연결합니다.</p></section></div>'
+      '</section><div class="two-column"><section class="panel"><div class="section-heading"><span class="eyebrow">CHAIN OF COMMAND</span><h2>저격조 지휘 구조</h2></div><ol class="command-chain"><li><b>본부 · 플레이어</b><span>임무·지역·관측·교전·철수 명령</span></li><li><b>관측수 · 현장 지휘관</b><span>명령 수신·판단·저격수 지휘·상황 보고</span></li><li><b>저격수</b><span>세부 지시 수행·사격 준비·생존 행동</span></li></ol><p class="muted">지휘 훈련에서 관측수의 명령 수신·판단·보고를 확인할 수 있습니다.</p></section><section class="panel"><span class="eyebrow">DEVELOPMENT STATUS</span><h2>현재 가능한 작업</h2><ul class="plain-list"><li>대원 모집·기간 계약·2인조 편성</li><li>훈련·휴식·진료·재활·공동 훈련</li><li>자금·활동·경력 저장과 이전 기록 보존</li><li>조 단위 명령·무전·제한 정보 지휘 훈련</li><li>실시간 2D/3D 모의 전장·사격·부상·처치</li></ul><button data-tab="storage">저장 관리 열기 <span aria-hidden="true">↗</span></button><p class="muted">실전 계약·수송·본부 재고 정산은 후속 단계에서 연결합니다.</p></section></div>'
     );
   }
   function personnel() {
@@ -296,6 +441,7 @@
         store?.keys.beforeReset,
         store?.keys.beforeMigration,
         store?.keys.beforeCommandMigration,
+        store?.keys.beforeFieldMigration,
       ]
         .filter(Boolean)
         .map((k) => {
@@ -314,6 +460,7 @@
                   [store.keys.beforeReset]: "새 본부 개설 전 보관본",
                   [store.keys.beforeMigration]: "2단계 전환 전 원본",
                   [store.keys.beforeCommandMigration]: "3단계 전환 전 원본",
+                  [store.keys.beforeFieldMigration]: "4단계 전환 전 원본",
                 }[k] +
                 " 내려받기</button>"
             : "";
@@ -323,12 +470,19 @@
       (state?.settings.reducedMotion ? "checked" : "") +
       " " +
       (!enabled || source !== "primary" || stale ? "disabled" : "") +
-      '> 화면 효과 줄이기</label><p class="muted">본부 활동을 진행하면 모든 활동과 계약 시간이 함께 흐릅니다. 재접속만으로 시간이 흐르지 않습니다. 실시간 전장 속도는 후속 단계에서 연결합니다.</p></section><section class="panel caution"><h2>새 본부 기록 개설</h2><p>현재 OVERWATCH 기록은 개설 전 보관본으로 남깁니다. 기존 PMC 주 저장과 백업은 변경하지 않습니다.</p><button id="new-campaign" ' +
+      '> 화면 효과 줄이기</label><p class="muted">본부 활동을 진행하면 모든 활동과 계약 시간이 함께 흐릅니다. 재접속만으로 시간이 흐르지 않습니다. 모의 전장은 1·2·4배속을 지원하며 재접속·백그라운드 전환 시 정지합니다.</p></section><section class="panel caution"><h2>새 본부 기록 개설</h2><p>현재 OVERWATCH 기록은 개설 전 보관본으로 남깁니다. 기존 PMC 주 저장과 백업은 변경하지 않습니다.</p><button id="new-campaign" ' +
       (!store ? "disabled" : "") +
       ">새 본부 기록 개설</button></section>"
     );
   }
   function render() {
+    const oldFieldForm = root.querySelector("[data-field-command]"),
+      oldFieldFocus = oldFieldForm?.contains(document.activeElement)
+        ? document.activeElement
+        : null,
+      oldFieldScroll = scrollY;
+    const retainedViewport = root.querySelector(".field-viewport"),
+      wasFullscreen = !!root.querySelector(".field-fullscreen");
     const radioScroll =
         root.querySelector(".command-radio-list")?.scrollTop || 0,
       showInternal = !!root.querySelector("[data-range-internal]")?.checked;
@@ -343,9 +497,9 @@
       state?.settings.reducedMotion || false,
     );
     root.innerHTML =
-      '<header class="topbar"><a class="brand" href="#" data-tab="headquarters"><span class="brand-emblem" aria-hidden="true">B</span><span>BLACKLINE<small>OVERWATCH</small></span></a><div class="topbar-status"><span class="status-dot"></span><span>본부 ' +
+      '<header class="topbar"><a class="brand" href="#" data-tab="headquarters"><span class="brand-emblem" aria-hidden="true">B</span><span>BLACKLINE<small>OVERWATCH</small></span></a><div class="topbar-status"><span class="status-dot"></span><span data-live-clock>본부 ' +
       PersonnelUI.timestamp(state?.clock.elapsedSeconds || 0) +
-      ' / 전장 연결 전</span><button id="version-check" class="quiet">' +
+      ' / 본부</span><button id="version-check" class="quiet">' +
       VERSION +
       '</button></div></header><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
       tabs
@@ -362,7 +516,7 @@
             "</button>",
         )
         .join("") +
-      '</nav><div class="sidebar-foot">HQ → OBSERVER → SNIPER<br>PHASE 03 / COMMAND</div></aside><main id="main" tabindex="-1"><div class="breadcrumb">BLACKLINE / ' +
+      '</nav><div class="sidebar-foot">HQ → OBSERVER → SNIPER<br>PHASE 04 / FIELD</div></aside><main id="main" tabindex="-1"><div class="breadcrumb">BLACKLINE / ' +
       tabs.find((t) => t[0] === tab)?.[1] +
       "</div>" +
       (error
@@ -383,6 +537,11 @@
               editable: source === "primary" && !stale,
             }),
           records,
+          field: () =>
+            FieldUI.render(state, {
+              editable: source === "primary" && !stale,
+              playing: runtime.isRunning(),
+            }),
           storage: storagePage,
           contracts: () =>
             phase(
@@ -394,11 +553,11 @@
             phase(
               "PHASE 02 / 06",
               "장비고 연결 대기",
-              "개별 무기·탄창·의료품·통신기와 본부 재고를 연결할 예정입니다. 이전 장비 재고는 PMC 원본에 남아 있습니다.",
+              "모의 전장 지급 무기·탄창·의료품은 계산합니다. 본부 장비 구매·재고·수리·정산은 후속 단계이며 이전 장비 재고는 PMC 원본에 남아 있습니다.",
             ),
         }[tab] || storagePage
       )() +
-      "<footer>BLACKLINE: OVERWATCH · 3단계 관측수 지휘 훈련 · 실제 계약·전투·3D는 후속 단계입니다.</footer></main></div>" +
+      "<footer>BLACKLINE: OVERWATCH · 4단계 실시간 모의 전장·3D · 실전 계약·수송·본부 정산은 후속 단계입니다.</footer></main></div>" +
       PersonnelUI.dossier(state, selectedPerson, {
         editable:
           source === "primary" &&
@@ -420,6 +579,45 @@
         .querySelectorAll('[data-channel="internal"]')
         .forEach((row) => (row.hidden = false));
     }
+    const nextViewport = root.querySelector(".field-viewport");
+    if (
+      retainedViewport &&
+      nextViewport &&
+      retainedViewport.dataset.fieldId === nextViewport.dataset.fieldId
+    ) {
+      nextViewport.replaceWith(retainedViewport);
+      const newForm = root.querySelector("[data-field-command]");
+      if (
+        oldFieldForm &&
+        newForm &&
+        oldFieldForm.dataset.fieldEditable ===
+          String(source === "primary" && !stale)
+      ) {
+        oldFieldForm.querySelector("button[type=submit]").disabled =
+          newForm.querySelector("button[type=submit]").disabled;
+        newForm.replaceWith(oldFieldForm);
+        if (oldFieldFocus) {
+          oldFieldFocus.focus({ preventScroll: true });
+          window.scrollTo(0, oldFieldScroll);
+        }
+      }
+      if (wasFullscreen) {
+        root.querySelector(".field-stage")?.classList.add("field-fullscreen");
+        const button = root.querySelector("[data-field-fullscreen]");
+        if (button) button.textContent = "전체화면 닫기";
+      }
+    }
+    FieldUI.mount(root, state, {
+      playing: runtime.isRunning(),
+      onFallback: fallbackField,
+    });
+    FieldUI.bind(root, {
+      state,
+      editable: source === "primary" && !stale,
+      commit,
+      play: toggleField,
+      onFallback: fallbackField,
+    });
     CommandUI.bind(root, {
       state,
       editable: source === "primary" && !stale,
@@ -487,6 +685,9 @@
         return;
       try {
         state = store.recoverBackup();
+        lastSaved = Core.clone(state);
+        dirty = false;
+        runtime.reset();
         source = "primary";
         stale = false;
         notice =
@@ -507,6 +708,9 @@
         return;
       try {
         state = store.reset(Core.createCampaign({ id: id() }));
+        lastSaved = Core.clone(state);
+        dirty = false;
+        runtime.reset();
         selectedPerson = null;
         source = "primary";
         tab = "headquarters";
@@ -538,6 +742,9 @@
           )
             return;
           state = store.importSave(text);
+          lastSaved = Core.clone(state);
+          dirty = false;
+          runtime.reset();
           selectedPerson = null;
           source = "primary";
           stale = false;
@@ -615,9 +822,33 @@
       ) ||
       e.key === null
     ) {
+      try {
+        const latest = store?.load();
+        if (
+          latest?.source === "primary" &&
+          lastSaved &&
+          JSON.stringify(latest.state) === JSON.stringify(lastSaved)
+        )
+          return;
+      } catch {}
       stale = true;
+      runtime.stop();
       render();
     }
+  });
+  setInterval(
+    () => runtime.pump(!document.hidden && tab === "field" && !stale),
+    100,
+  );
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseField();
+  });
+  window.addEventListener("pagehide", pauseField);
+  window.addEventListener("beforeunload", () => {
+    if (dirty)
+      try {
+        saveRuntime();
+      } catch {}
   });
   load();
 })();

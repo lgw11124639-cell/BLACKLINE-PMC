@@ -2,7 +2,7 @@
 (function (root) {
   "use strict";
   const GAME = "BLACKLINE_OVERWATCH",
-    SCHEMA = 3;
+    SCHEMA = 4;
   const LIMITS = Object.freeze({
     headquarters: 10,
     deploymentMinimum: 2,
@@ -236,14 +236,25 @@
       ],
     });
     requireThat(
-      [1, 2, 3].includes(schemaVersion),
+      [1, 2, 3, 4].includes(schemaVersion),
       "지원하지 않는 저장 버전입니다.",
     );
     return schemaVersion === 1
       ? legacy
       : schemaVersion === 2
         ? validate(personnel().initialize(legacy))
-        : upgrade(legacy);
+        : schemaVersion === 3
+          ? (() => {
+              const v = personnel().initialize(legacy),
+                Command =
+                  root.OverwatchCommand ||
+                  (typeof require === "function"
+                    ? require("./command.js")
+                    : null);
+              Command.initialize(v);
+              return validate(v);
+            })()
+          : upgrade(legacy);
   }
   const personnel = () =>
     root.OverwatchPersonnel ||
@@ -251,7 +262,7 @@
   function validate(s) {
     if (s?.schemaVersion === 1) return validateLegacy(s);
     requireThat(
-      [2, SCHEMA].includes(s?.schemaVersion),
+      [2, 3, SCHEMA].includes(s?.schemaVersion),
       "현재 단계에서 지원하지 않는 저장 버전입니다. 원본은 변경하지 않았습니다.",
     );
     return personnel().validateState(s);
@@ -267,6 +278,13 @@
         (typeof require === "function" ? require("./command.js") : null);
       requireThat(Command, "지휘 저장 전환기를 불러오지 못했습니다.");
       Command.initialize(next);
+    }
+    if (next.schemaVersion === 3) {
+      const Battle =
+        root.OverwatchBattle ||
+        (typeof require === "function" ? require("./battle.js") : null);
+      requireThat(Battle, "전장 저장 전환기를 불러오지 못했습니다.");
+      Battle.initialize(next);
     }
     return validate(next);
   }

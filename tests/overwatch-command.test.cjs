@@ -76,11 +76,11 @@ test("schema 2 upgrades without another grant and preserves raw source on migrat
   assert.throws(() => store.migrate());
   assert.equal(store.raw(S.KEYS.primary), raw);
   const s = store.migrate();
-  assert.equal(s.schemaVersion, 3);
+  assert.equal(s.schemaVersion, C.SCHEMA);
   assert.equal(s.commandExercise, null);
   assert.equal(s.headquarters.funds, cash);
   assert.equal(
-    JSON.parse(store.raw(S.KEYS.beforeCommandMigration)).primary,
+    JSON.parse(store.raw(S.KEYS.beforeFieldMigration)).primary,
     raw,
   );
   assert.equal(

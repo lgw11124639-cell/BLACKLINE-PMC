@@ -409,7 +409,7 @@ test("storage migrates once with byte-exact phase-one originals and persists new
   const before = store.raw(S.KEYS.primary),
     next = store.migrate();
   assert.equal(next.schemaVersion, C.SCHEMA);
-  assert.equal(JSON.parse(store.raw(S.KEYS.beforeCommandMigration)).primary, before);
+  assert.equal(JSON.parse(store.raw(S.KEYS.beforeFieldMigration)).primary, before);
   const money = next.headquarters.funds;
   assert.equal(store.migrate().headquarters.funds, money);
   const m = recruit(next, "observer");

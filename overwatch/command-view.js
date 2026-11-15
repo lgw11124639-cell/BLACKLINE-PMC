@@ -255,8 +255,14 @@
     );
   }
   function render(s, { editable = true } = {}) {
-    if (s?.schemaVersion !== 3)
+    if (![3, 4].includes(s?.schemaVersion))
       return '<section class="panel">본부 저장 복구 후 지휘 훈련을 열 수 있습니다.</section>';
+    if (s.commandExercise?.battle)
+      return (
+        '<section class="panel"><h2>모의 전장 기록</h2><p>실시간 모의 전장과 3D 관찰은 전장 메뉴에서 확인하세요. 지휘 훈련은 모의 전장 종료 후 다시 시작할 수 있습니다.</p><button data-range-start' +
+        (s.commandExercise.status === "running" ? " disabled" : "") +
+        ">새 지휘 훈련 시작</button></section>"
+      );
     const f = D.frame(s),
       active = f?.status === "running";
     return (

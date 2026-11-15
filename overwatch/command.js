@@ -12,6 +12,9 @@
     ok = (v, m) => {
       if (!v) throw Error(m);
     };
+  const Battle = () =>
+    root.OverwatchBattle ||
+    (typeof require === "function" ? require("./battle.js") : null);
   const ORDERS = {
     move: "지역 이동",
     observe: "구역 관측",
@@ -130,7 +133,7 @@
   }
   function begin(s) {
     ok(
-      s.schemaVersion === 3 &&
+      [3, 4].includes(s.schemaVersion) &&
         !s.activeMission &&
         s.commandExercise?.status !== "running",
       "현재 상태에서는 지휘 훈련을 시작할 수 없습니다.",
@@ -339,6 +342,7 @@
         capable: u.capable,
         observedAt: e.time,
         elevation: G.elevation(u),
+        ...(e.battle ? Battle().snapshot(u) : {}),
       };
     });
   }
@@ -348,29 +352,35 @@
   function receive(s, e, q, c) {
     if (c.status !== "queued") return;
     const old = e.commands.find((a) => a.id === q.commandId);
-    if (old && old.ordinal > c.ordinal) {
+    const auxiliary = ["roe", "report"].includes(c.kind);
+    if (!auxiliary && old && old.ordinal > c.ordinal) {
       c.status = "superseded";
       return;
     }
-    if (old && ["received", "thinking", "executing"].includes(old.status))
+    if (
+      !auxiliary &&
+      old &&
+      ["received", "thinking", "executing"].includes(old.status)
+    )
       old.status = "superseded";
-    q.commandId = c.id;
+    if (!auxiliary) q.commandId = c.id;
     c.receivedAt = e.time;
     c.status = "thinking";
     const m = member(s, q.leaderId),
       v = P.effectiveSkills(m),
       bias = { cautious: 3, assertive: -1, seasoned: 0 }[m.personality];
-    q.thinkAt =
+    c.thinkAt =
       e.time +
       Math.max(
         2,
         Math.round(14 - v.judgment * 0.1 - m.career.years * 0.25 + bias),
       );
+    if (!auxiliary) q.thinkAt = c.thinkAt;
     const a = event(e, "order-received", {
       commandId: c.id,
       callsign: q.callsign,
       leaderId: q.leaderId,
-      thinkAt: q.thinkAt,
+      thinkAt: c.thinkAt,
     });
     report(
       s,
@@ -437,7 +447,7 @@
     });
   }
   function decide(s, e, q, c) {
-    q.thinkAt = null;
+    if (q.commandId === c.id) q.thinkAt = null;
     c.status = "executing";
     const a = event(e, "observer-decision", {
       commandId: c.id,
@@ -452,7 +462,9 @@
         e,
         q,
         c,
-        "교전 규칙 변경 확인. 훈련장에서는 실탄 사격하지 않는다.",
+        e.battle
+          ? "모의 전장 교전 규칙 변경 확인. 식별 정보와 사격선에 따라 대응한다."
+          : "교전 규칙 변경 확인. 훈련장에서는 실탄 사격하지 않는다.",
       );
       return;
     }
@@ -559,6 +571,7 @@
         observerId: q.leaderId,
         callsign: q.callsign,
         uncertainty,
+        ...(e.battle ? { pose: seen.condition, heading: seen.heading } : {}),
       };
     const a = event(e, "contact-observed", {
       callsign: q.callsign,
@@ -574,9 +587,11 @@
         ". " +
         (known.classification === "unknown"
           ? "미확인 인원"
-          : known.classification === "unarmed-target"
+          : ["unarmed-target", "unarmed-person"].includes(known.classification)
             ? "비무장 훈련 인원"
-            : "훈련 표적 인원") +
+            : known.classification === "armed-person"
+              ? "무장 인원"
+              : "훈련 표적 인원") +
         " 관측. 좌표 약 " +
         Math.round(known.x) +
         ", " +
@@ -591,6 +606,7 @@
     seen.reportedConfidence = seen.confidence;
   }
   function applyKnowledge(e, r) {
+    if (e.battle) Battle().applyPayload(e, r);
     if (r.payload?.friends)
       for (const f of r.payload.friends) {
         const old = e.knowledge.friends[f.id];
@@ -780,7 +796,12 @@
         delta = Math.abs(
           Math.atan2(Math.sin(angle - heading), Math.cos(angle - heading)),
         );
-      if (d > radius || delta > Math.PI * 0.42 || !G.clear(u, actor)) continue;
+      if (
+        d > radius * (e.battle ? e.battle.weather.visibility : 1) ||
+        delta > Math.PI * 0.42 ||
+        !G.clear(u, actor)
+      )
+        continue;
       let seen = q.contacts.find((c) => c.id === actor.id);
       if (!seen) {
         seen = {
@@ -801,7 +822,15 @@
       seen.x = actor.x;
       seen.y = actor.y;
       seen.lastSeen = e.time;
-      seen.classification = actor.kind;
+      seen.classification = e.battle
+        ? actor.armed
+          ? "armed-person"
+          : "unarmed-person"
+        : actor.kind;
+      if (e.battle) {
+        seen.condition = Battle().snapshot(actor).pose;
+        seen.heading = actor.heading;
+      }
       if (
         e.time - seen.reportedAt >= 20 ||
         (seen.reportedConfidence < 0.8 && seen.confidence >= 0.8)
@@ -828,17 +857,21 @@
   }
   function tick(s, e) {
     e.time++;
-    for (const actor of e.world.actors) {
-      const p = actor.route[actor.waypoint];
-      if (G.distance(actor, p) < 1) {
-        actor.waypoint = (actor.waypoint + 1) % actor.route.length;
-        continue;
+    if (e.battle) {
+      Battle().beforeTick(s, e);
+      Battle().actorTick(s, e);
+    } else
+      for (const actor of e.world.actors) {
+        const p = actor.route[actor.waypoint];
+        if (G.distance(actor, p) < 1) {
+          actor.waypoint = (actor.waypoint + 1) % actor.route.length;
+          continue;
+        }
+        const d = G.distance(actor, p),
+          step = Math.min(d, actor.speed);
+        actor.x += ((p.x - actor.x) * step) / d;
+        actor.y += ((p.y - actor.y) * step) / d;
       }
-      const d = G.distance(actor, p),
-        step = Math.min(d, actor.speed);
-      actor.x += ((p.x - actor.x) * step) / d;
-      actor.y += ((p.y - actor.y) * step) / d;
-    }
     for (const q of e.squads) {
       if (!leader(e, q)?.capable) {
         const replacement = [q.observerId, q.sniperId]
@@ -864,6 +897,14 @@
           );
         } else continue;
       }
+      for (const auxiliary of e.commands.filter(
+        (c) =>
+          c.callsign === q.callsign &&
+          ["roe", "report"].includes(c.kind) &&
+          c.status === "thinking" &&
+          c.thinkAt <= e.time,
+      ))
+        decide(s, e, q, auxiliary);
       const c = e.commands.find((c) => c.id === q.commandId);
       if (c?.status === "thinking" && e.time >= q.thinkAt) decide(s, e, q, c);
       for (const id of [q.observerId, q.sniperId]) {
@@ -875,7 +916,12 @@
             G.distance(u, other) < 70 ||
             G.distance(u, u.goal || u) > G.distance(other, other.goal || other))
         )
-          moveUnit(e, u, 0.8 + P.effectiveSkills(member(s, id)).fitness / 150);
+          moveUnit(
+            e,
+            u,
+            (0.8 + P.effectiveSkills(member(s, id)).fitness / 150) *
+              (e.battle ? Battle().moveFactor(u) : 1),
+          );
       }
       if (
         c?.status === "executing" &&
@@ -884,7 +930,11 @@
           .map((id) => unit(e, id))
           .filter((u) => u.capable)
           .every(
-            (u) => u.goal && G.distance(u, u.goal) < 1 && u.path.length === 0,
+            (u) =>
+              u.goal &&
+              G.distance(u, u.goal) < 1 &&
+              u.path.length === 0 &&
+              (!e.battle || Battle().commandReady(u)),
           )
       )
         complete(
@@ -928,7 +978,7 @@
         );
       }
       if (e.time % 2 === 0) observe(s, e, q);
-      if (e.time - q.lastHeartbeat >= 15) {
+      if (e.time - q.lastHeartbeat >= (e.battle ? 30 : 15)) {
         q.lastHeartbeat = e.time;
         const a = event(e, "position-report", { callsign: q.callsign });
         report(s, e, q, "position", q.callsign + ". 조 위치·상태 갱신.", a, {
@@ -936,7 +986,9 @@
         });
       }
     }
+    if (e.battle) Battle().tick(s, e);
     processRadio(s, e);
+    if (e.battle) Battle().afterTick(s, e);
   }
   function step(s, seconds) {
     const e = running(s);
@@ -963,7 +1015,7 @@
       P.elapse(s, 1);
       tick(s, e);
       advanced++;
-      if (e.paused) break;
+      if (e.paused || e.status !== "running") break;
     }
     return advanced;
   }
@@ -976,12 +1028,14 @@
   function end(s, reason = "hq") {
     const e = running(s);
     e.status = "ended";
+    s.clock.paused = true;
     e.endedAt = s.clock.elapsedSeconds;
     e.endReason = reason;
     for (const c of e.commands)
       if (["queued", "thinking", "executing", "received"].includes(c.status))
         c.status = "cancelled";
     for (const r of e.radio) if (r.status === "queued") r.status = "cancelled";
+    const battleSummary = e.battle ? Battle().summarize(e) : null;
     s.commandArchive = s.commandArchive || [];
     s.commandArchive.push({
       id: e.id,
@@ -994,14 +1048,15 @@
       s,
       e,
       "command-exercise-ended",
-      "지휘 훈련 종료. " +
-        Math.floor(e.time / 60) +
-        "분 경과·명령 " +
-        e.commands.length +
-        "건·수신 보고 " +
-        e.radio.filter((r) => r.route === "up" && r.status === "delivered")
-          .length +
-        "건. 실제 계약 보상·사격·부상은 발생하지 않았습니다.",
+      battleSummary ||
+        "지휘 훈련 종료. " +
+          Math.floor(e.time / 60) +
+          "분 경과·명령 " +
+          e.commands.length +
+          "건·수신 보고 " +
+          e.radio.filter((r) => r.route === "up" && r.status === "delivered")
+            .length +
+          "건. 실제 계약 보상·사격·부상은 발생하지 않았습니다.",
     );
     return e;
   }
@@ -1044,7 +1099,7 @@
         reports.set(id, v);
       }
     for (const c of e.commands)
-      if (reports.get(c.id)?.ack)
+      if (reports.get(c.id)?.ack && !["roe", "report"].includes(c.kind))
         latestAck.set(
           c.callsign,
           Math.max(latestAck.get(c.callsign) || 0, c.ordinal),
@@ -1059,6 +1114,7 @@
             ? "acknowledged"
             : "queued";
       if (
+        !["roe", "report"].includes(c.kind) &&
         !r.complete &&
         !r.request &&
         (latestAck.get(c.callsign) || 0) > c.ordinal
@@ -1080,7 +1136,7 @@
     });
   }
   function frame(s) {
-    const e = s.commandExercise;
+    const e = s?.commandExercise;
     if (!e) return null;
     const commands = knownCommands(e),
       knownEvents = new Set(
@@ -1101,7 +1157,7 @@
         classification: confidence >= 0.65 ? c.classification : "unknown",
       };
     });
-    return {
+    const projected = {
       id: e.id,
       time: e.time,
       status: e.status,
@@ -1163,6 +1219,7 @@
         .filter((a) => knownEvents.has(a.id))
         .map((a) => ({ id: a.id, time: a.time, type: a.type })),
     };
+    return e.battle ? Battle().project(s, projected) : projected;
   }
   function validate(e, s) {
     ok(
@@ -1394,9 +1451,13 @@
       num(c.observedAt, 0, e.time) &&
       num(c.confidence, 0, 1) &&
       num(c.uncertainty, 0, 100) &&
-      ["unknown", "training-target", "unarmed-target"].includes(
-        c.classification,
-      );
+      [
+        "unknown",
+        "training-target",
+        "unarmed-target",
+        "armed-person",
+        "unarmed-person",
+      ].includes(c.classification);
     for (const q of e.squads) {
       ok(
         q.thinkAt === null || num(q.thinkAt, 0, e.time + 60),
@@ -1410,7 +1471,12 @@
       for (const c of q.contacts)
         ok(
           num(c.reportedConfidence, 0, 1) &&
-            ["training-target", "unarmed-target"].includes(c.classification),
+            [
+              "training-target",
+              "unarmed-target",
+              "armed-person",
+              "unarmed-person",
+            ].includes(c.classification),
           "관측 신뢰도 정보가 잘못되었습니다.",
         );
     }
@@ -1479,18 +1545,19 @@
     for (const f of Object.values(e.knowledge.friends))
       ok(
         snapshotFriend(f) &&
-          e.radio.some(
-            (r) =>
-              r.route === "up" &&
-              r.status === "delivered" &&
-              r.payload?.friends?.some(
-                (x) =>
-                  x.id === f.id &&
-                  x.observedAt === f.observedAt &&
-                  x.x === f.x &&
-                  x.y === f.y,
-              ),
-          ),
+          ((e.battle && Battle().knownFriendEvidence(e, f)) ||
+            e.radio.some(
+              (r) =>
+                r.route === "up" &&
+                r.status === "delivered" &&
+                r.payload?.friends?.some(
+                  (x) =>
+                    x.id === f.id &&
+                    x.observedAt === f.observedAt &&
+                    x.x === f.x &&
+                    x.y === f.y,
+                ),
+            )),
         "수신되지 않은 아군 정보가 본부에 있습니다.",
       );
     for (const c of Object.values(e.knowledge.contacts))
@@ -1552,6 +1619,14 @@
     return s;
   }
   const api = {
+    internals: {
+      event,
+      report,
+      friendSnapshots,
+      leader,
+      linked,
+      applyKnowledge,
+    },
     ORDERS,
     initialize,
     begin,

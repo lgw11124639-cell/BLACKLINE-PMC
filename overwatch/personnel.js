@@ -78,7 +78,7 @@
       return m;
     },
     current = (s, allowExercise = false) => {
-      ok([2, 3].includes(s.schemaVersion), "본부 저장을 변환해야 합니다.");
+      ok([2, 3, 4].includes(s.schemaVersion), "본부 저장을 변환해야 합니다.");
       ok(!s.activeMission, "현장 작전 중에는 본부 활동을 시작할 수 없습니다.");
       ok(
         allowExercise || s.commandExercise?.status !== "running",
@@ -985,7 +985,9 @@
   }
   function validateState(s) {
     ok(
-      s && s.game === "BLACKLINE_OVERWATCH" && [2, 3].includes(s.schemaVersion),
+      s &&
+        s.game === "BLACKLINE_OVERWATCH" &&
+        [2, 3, 4].includes(s.schemaVersion),
       "2단계 저장 형식이 아닙니다.",
     );
     ok(
@@ -998,7 +1000,12 @@
     ok(
       s.clock &&
         num(s.clock.elapsedSeconds, 0, 100 * 365 * DAY) &&
-        s.clock.paused === true &&
+        s.clock.paused ===
+          (s.schemaVersion === 4 &&
+          s.commandExercise?.battle &&
+          s.commandExercise.status === "running"
+            ? s.commandExercise.paused
+            : true) &&
         [1, 2, 4].includes(s.clock.speed) &&
         typeof s.clock.emergencyPause === "boolean",
       "본부 활동 시계가 잘못되었습니다.",
@@ -1301,6 +1308,7 @@
           "headquarters",
           "personnel",
           "command",
+          "field",
           "contracts",
           "equipment",
           "records",
@@ -1310,7 +1318,7 @@
       "본부 설정이 잘못되었습니다.",
     );
     ok(
-      s.ui.tab !== "command" || s.schemaVersion === 3,
+      s.ui.tab !== "command" || [3, 4].includes(s.schemaVersion),
       "지휘 화면에는 저장 전환이 필요합니다.",
     );
     if (s.commandExercise !== undefined && s.commandExercise !== null) {
@@ -1318,15 +1326,30 @@
         root.OverwatchCommand ||
         (typeof require === "function" ? require("./command.js") : null);
       ok(Command, "지휘 저장 검증기를 불러오지 못했습니다.");
-      ok(s.schemaVersion === 3, "지휘 훈련에는 3단계 저장이 필요합니다.");
+      ok(
+        [3, 4].includes(s.schemaVersion),
+        "지휘 훈련에는 3단계 저장이 필요합니다.",
+      );
       Command.validate(s.commandExercise, s);
     }
-    if (s.schemaVersion === 3) {
+    if ([3, 4].includes(s.schemaVersion)) {
       const Command =
         root.OverwatchCommand ||
         (typeof require === "function" ? require("./command.js") : null);
       ok(Command, "지휘 보관함 검증기를 불러오지 못했습니다.");
       Command.validateCampaign(s);
+    }
+    if (s.schemaVersion === 4) {
+      ok(
+        s.fieldPreferences && ["2d", "3d"].includes(s.fieldPreferences.view),
+        "전장 표시 설정이 잘못되었습니다.",
+      );
+      if (s.commandExercise?.battle) {
+        const Battle =
+          root.OverwatchBattle ||
+          (typeof require === "function" ? require("./battle.js") : null);
+        Battle.validate(s.commandExercise);
+      }
     }
     return s;
   }

@@ -43,8 +43,8 @@ with sync_playwright() as p:
  # Existing phase-two campaigns receive one safe schema upgrade and keep the exact old raw saves.
  other=b.new_context();r=other.new_page();r.goto(BASE)
  old=r.evaluate("""()=>{const s=OverwatchCore.createCampaign({id:'V2-MIGRATION',schemaVersion:2});const o=OverwatchPersonnel.hire(s,s.market.candidates[0].id,30),n=OverwatchPersonnel.hire(s,s.market.candidates[0].id,30);OverwatchPersonnel.assign(s,'ALPHA',o.id,n.id);const raw=JSON.stringify(s);localStorage.setItem('blackline_overwatch_v1',raw);localStorage.setItem('blackline_overwatch_v1_backup',raw);localStorage.setItem('blackline_pmc_v1','PMC-untouched');return raw;}""")
- r.reload(wait_until='networkidle');migrated=r.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');assert migrated['schemaVersion']==3 and migrated['squads']==json.loads(old)['squads'] and migrated['headquarters']['funds']==json.loads(old)['headquarters']['funds']
- archive=json.loads(r.evaluate("localStorage.getItem('blackline_overwatch_v1_before_migration_v3')"));assert archive['primary']==old and archive['backup']==old
+ r.reload(wait_until='networkidle');migrated=r.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');assert migrated['schemaVersion']==4 and migrated['squads']==json.loads(old)['squads'] and migrated['headquarters']['funds']==json.loads(old)['headquarters']['funds']
+ archive=json.loads(r.evaluate("localStorage.getItem('blackline_overwatch_v1_before_migration_v4')"));assert archive['primary']==old and archive['backup']==old
  assert r.evaluate("blacklineSaveCodec.rawGet('blackline_pmc_v1')")=='PMC-untouched'
  assert not errors,errors
  other.close();ctx.close();b.close();print('PASS command UI: real recruitment/pair, order/observer/movement/report, delivered-only map, restore/no offline ticks, quota rollback, stale tabs, desktop/mobile and schema 2 migration')
