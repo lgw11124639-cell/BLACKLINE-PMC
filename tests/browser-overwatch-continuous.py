@@ -16,7 +16,9 @@ with sync_playwright() as p:
  assert q.evaluate("""()=>{const e=new Event('touchmove',{cancelable:true});Object.defineProperty(e,'touches',{value:[{},{}]});document.dispatchEvent(e);return e.defaultPrevented}""")
  assert not q.evaluate("""()=>{const e=new Event('touchmove',{cancelable:true});Object.defineProperty(e,'touches',{value:[{}]});document.dispatchEvent(e);return e.defaultPrevented}""")
  span=q.evaluate('OverwatchIllustratedRenderer.get().stats().viewSpan');q.locator('[data-field-zoom=".65"]').click();assert q.evaluate('OverwatchIllustratedRenderer.get().stats().viewSpan')<span
- # Intent orders are directly below the map.
+ # One command surface below the map, with observer-controlled engagement.
+ assert not q.locator('[data-field-command]').count();assert not q.locator('select[name=roe]').count();assert q.locator('[data-field-quick-team]').count()==1
+ assert saved()['commandExercise']['battle']['observerAutonomy']
  q.locator('[data-field-quick="hold"]').click();assert saved()['commandExercise']['commands'][-1]['kind']=='hold'
  q.wait_for_selector('[data-field-unit-extra]');q.locator('[data-field-unit-extra] summary').first.click();q.wait_for_timeout(1200);assert q.locator('[data-field-unit-extra]').first.get_attribute('open') is not None
  # HQ navigation must keep the same simulation running without a play button.
