@@ -442,6 +442,7 @@
       };
     }
     setupTask(e);
+    setupForces(e);
     for (const q of e.squads) q.roe = "selfDefense";
     primary.state = c.transport === "foot" ? "unused" : "boarding";
     primary.trip = "insertion";
@@ -485,13 +486,80 @@
     }
     return e;
   }
+  function setupForces(e) {
+    const m = e.mission,
+      city = G.MAP.width < 500,
+      seed = e.world.actors.find((a) => a.side === "red");
+    const wanted = city ? 10 : 8;
+    for (let i = 4; i < wanted; i++) {
+      const angle = i * 2.399963 + (e.battle.rng % 31) / 31,
+        r = (city ? 38 : 180) + (i % 3) * (city ? 8 : 35);
+      const p = G.project({
+        x: Math.max(
+          12,
+          Math.min(G.MAP.width - 12, G.MAP.sector?.x || G.MAP.width * 0.6) +
+            Math.cos(angle) * r,
+        ),
+        y: Math.max(
+          12,
+          Math.min(
+            G.MAP.height - 12,
+            (G.MAP.sector?.y || G.MAP.height * 0.4) + Math.sin(angle) * r,
+          ),
+        ),
+      });
+      if (G.distance(p, m.contract.insertion) < (city ? 35 : 100)) continue;
+      const a = copy(seed);
+      Object.assign(a, {
+        id: "opposition-" + i,
+        ...p,
+        health: B().health(),
+        weapon: B().weapon(i === 7 ? "SVD" : "AKM", 3),
+        sidearm: B().weapon("G19", 1),
+        specialty: i === 7 ? "sniper" : "rifleman",
+        role: i === 7 ? "enemy-sniper" : "infantry",
+        skill: 48 + (i % 4) * 3,
+        path: [],
+        goal: null,
+        memory: [],
+        waypoint: 0,
+        route: [p, G.project({ x: p.x + 5, y: p.y + 4 })],
+      });
+      e.world.actors.push(a);
+    }
+    if (m.contract.task !== "recon")
+      for (let i = 0; i < 3; i++) {
+        const p = G.project({
+          x: m.contract.insertion.x + 5 + i * 3,
+          y: m.contract.insertion.y - 5,
+        });
+        const a = taskPerson(
+          e,
+          "agency-infantry-" + i,
+          "기관 보병 " + (i + 1),
+          p,
+          true,
+        );
+        a.taskDuty = "security";
+        a.faction = "allied";
+        a.role = "infantry";
+        a.roleLabel = "기관 보병";
+        e.world.actors.push(a);
+      }
+    m.forcePackage = {
+      version: 1,
+      opposition: e.world.actors.filter((a) => a.side === "red").length,
+      agency: e.world.actors.filter((a) => a.side === "ally" && a.armed).length,
+    };
+  }
   function taskPerson(e, id, role, p, armed) {
     const base = copy(e.world.actors.find((a) => a.side === "civilian"));
     Object.assign(base, {
       id,
       name: role,
       callsign: role === "연락관" ? "VIP" : "지원조",
-      role: "support",
+      role: armed ? "infantry" : "civilian",
+      faction: armed ? "allied" : "civilian",
       roleLabel: role,
       x: p.x,
       y: p.y,
@@ -575,10 +643,30 @@
     p.y += ((goal.y - p.y) * a) / d;
     return a === d;
   }
-  function moveGround(u, goal, speed) {
+  function moveGround(u, goal, speed, e) {
     if (!u.path?.length) u.path = G.path(u, goal);
     if (!u.path.length) return G.distance(u, goal) < 2;
-    const done = stepToward(u, u.path[0], speed);
+    const next = u.path[0];
+    if (next.roofTransition) {
+      if (!e) return false;
+      const roof = G.roofs().find(
+        (r) => r.id === (next.roofId || next.roofFrom),
+      );
+      if (!roof) {
+        u.path = [];
+        return false;
+      }
+      u.roofTransit ??= { dueAt: e.time + Math.max(12, roof.height * 2) };
+      u.state = "climbing";
+      if (e.time < u.roofTransit.dueAt) return false;
+      Object.assign(u, { x: next.x, y: next.y });
+      if (next.roofId) u.roofId = next.roofId;
+      else delete u.roofId;
+      delete u.roofTransit;
+      u.path.shift();
+      return false;
+    }
+    const done = stepToward(u, next, speed);
     if (done) u.path.shift();
     return !u.path.length && G.distance(u, goal) < 2;
   }
@@ -697,13 +785,29 @@
         );
     if (!pending.length) return true;
     if (t.manifest.length >= t.capacity) return false;
+    if (
+      t.boarding &&
+      (!pending.some((u) => u.id === t.boarding.id) ||
+        m.transports.some((v) => v.crew?.patientId === t.boarding.id))
+    )
+      t.boarding = null;
     const u =
-      pending.find((u) => u.id === t.boarding?.id) ||
-      pending.sort((a, b) => G.distance(a, t) - G.distance(b, t))[0];
+      pending.find(
+        (u) =>
+          u.id === t.boarding?.id &&
+          !m.transports.some((v) => v.crew?.patientId === u.id),
+      ) ||
+      pending
+        .filter((u) => !m.transports.some((v) => v.crew?.patientId === u.id))
+        .sort((a, b) => G.distance(a, t) - G.distance(b, t))[0];
+    if (!u) {
+      t.boarding = null;
+      return false;
+    }
     if (G.distance(u, t) > (t.trip === "insertion" ? 120 : 50)) return false;
     if (B().moveFactor(u) > 0 && !u.health.aid) {
       const door = G.project({ x: t.x, y: t.y });
-      if (G.distance(u, t) > 10) {
+      if (G.distance(u, t) > 10 || u.roofId || u.roofTransit) {
         if (!u.path.length || !u.goal || G.distance(u.goal, door) > 0.1) {
           u.path = G.path(u, door);
           u.goal = door;
@@ -723,6 +827,8 @@
       u.carriedBy = null;
     }
     t.manifest.push(u.id);
+    delete u.roofId;
+    delete u.roofTransit;
     u.boardedBy = t.id;
     u.path = [];
     u.goal = null;
@@ -1197,7 +1303,12 @@
         );
         ok(lost, "보고된 부상자나 45초 이상 통신 두절 인원이 없습니다.");
         p = p || { x: lost.x, y: lost.y };
-      } else p = p || { x: known.x, y: known.y };
+      } else
+        p = p ||
+          G.roofs().find((r) => r.id === known.roofId)?.access || {
+            x: known.x,
+            y: known.y,
+          };
     }
     p =
       p ||
@@ -1449,13 +1560,31 @@
       c = t.crew;
     if (c.patientId) {
       const u = blue(e, c.patientId);
-      moveGround(c, G.project({ x: t.x, y: t.y }), 0.8);
+      if (
+        !u ||
+        u.home ||
+        u.boardedBy ||
+        (u.carriedBy && u.carriedBy !== c.id) ||
+        t.manifest.length >= t.capacity
+      ) {
+        if (u?.carriedBy === c.id) u.carriedBy = null;
+        c.patientId = null;
+        c.targetId = null;
+        c.dueAt = null;
+        c.state = "search";
+        return;
+      }
+      moveGround(c, G.project({ x: t.x, y: t.y }), 0.8, e);
       u.x = c.x;
       u.y = c.y;
+      if (c.roofId) u.roofId = c.roofId;
+      else delete u.roofId;
       u.carriedBy = c.id;
       u.state = "carried";
-      if (G.distance(c, t) < 10) {
+      if (G.distance(c, t) < 10 && !c.roofId && !c.roofTransit) {
         u.carriedBy = null;
+        delete u.roofId;
+        delete u.roofTransit;
         u.boardedBy = t.id;
         t.manifest.push(u.id);
         c.patientId = null;
@@ -1467,12 +1596,13 @@
     }
     if (c.targetId) {
       const u = blue(e, c.targetId);
-      if (u.home || u.boardedBy) {
+      if (u.home || u.boardedBy || (u.carriedBy && u.carriedBy !== c.id)) {
+        c.dueAt = null;
         c.targetId = null;
         return;
       }
-      if (G.distance(c, u) > 1.8) {
-        moveGround(c, u, 1);
+      if (G.distance(c, u) > 1.8 || (c.roofId || null) !== (u.roofId || null)) {
+        moveGround(c, u, 1, e);
         c.state = "approaching";
         return;
       }
@@ -1527,7 +1657,10 @@
           !u.boardedBy &&
           !u.carriedBy &&
           G.distance(c, u) < 150 &&
-          G.clear(c, u) &&
+          (G.clear(c, u) ||
+            (u.roofId &&
+              e.knowledge.friends[u.id]?.health?.wounds?.length &&
+              e.time - e.knowledge.friends[u.id].observedAt < 180)) &&
           (u.health.wounds.length || !u.health.alive),
       )
       .sort(
@@ -1619,7 +1752,8 @@
         a.health.alive &&
         a.health.conscious &&
         G.distance(u, a) < 200 &&
-        G.clear(u, a),
+        G.clear(u, a) &&
+        B().visualAcquire(e, u, a, 200),
     );
     if (u.armed && enemies.length) {
       const v = enemies.sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
@@ -1646,6 +1780,23 @@
       guide = e.world.actors.find((a) =>
         ["agency-rescuer", "agency-guide"].includes(a.id),
       );
+    if (u.taskDuty === "security") {
+      const anchor = guide?.health.alive ? guide : protectedUnit;
+      if (anchor) {
+        const i = Number(u.id.split("-").at(-1)) || 0;
+        moveGround(
+          u,
+          G.project({
+            x: anchor.x + Math.cos(i * 2.1) * 6,
+            y: anchor.y + Math.sin(i * 2.1) * 6,
+          }),
+          0.75,
+          e,
+        );
+      }
+      u.state = "securing";
+      return;
+    }
     if (m.contract.task === "rescue") {
       if (u.id === "agency-rescuer") {
         if (!m.taskLinked) {
@@ -1662,7 +1813,7 @@
               "기관 구출조가 억류 의료인과 실제 합류했다. 집결지까지 이동·엄호가 필요하다.",
               ev,
             );
-          } else moveGround(u, protectedUnit, 0.9);
+          } else moveGround(u, protectedUnit, 0.9, e);
         } else if (protectedUnit.health.alive) {
           if (
             protectedUnit.health.wounds.some((w) => !w.treated) &&
@@ -1672,19 +1823,20 @@
             return;
           }
           if (u.carrying === protectedUnit.id) {
-            moveGround(u, m.taskGoal, 0.6);
+            moveGround(u, m.taskGoal, 0.6, e);
             protectedUnit.x = u.x;
             protectedUnit.y = u.y + 0.5;
           } else if (G.distance(u, protectedUnit) < 18)
-            moveGround(u, m.taskGoal, 0.7);
+            moveGround(u, m.taskGoal, 0.7, e);
         }
         u.state = "escorting";
-      } else if (m.taskLinked && !u.carriedBy) moveGround(u, m.taskGoal, 0.65);
+      } else if (m.taskLinked && !u.carriedBy)
+        moveGround(u, m.taskGoal, 0.65, e);
     } else {
       if (u.id === "agency-guide") {
         if (protectedUnit.health.alive && G.distance(u, protectedUnit) < 24)
-          moveGround(u, m.taskGoal, 0.8);
-      } else if (guide?.health.alive) moveGround(u, m.taskGoal, 0.75);
+          moveGround(u, m.taskGoal, 0.8, e);
+      } else if (guide?.health.alive) moveGround(u, m.taskGoal, 0.75, e);
       u.state = "escorting";
     }
   }
@@ -1805,6 +1957,8 @@
           y: t.crew.y,
           pose: t.crew.state === "treating" ? "aid" : "standing",
           state: t.crew.state,
+          roofId: t.crew.roofId || null,
+          elevation: G.elevation(t.crew),
           heading: t.crew.heading || 0,
           targetId: t.crew.targetId,
           patientId: t.crew.patientId,
@@ -1826,7 +1980,14 @@
         .map((a) => ({
           id: a.id,
           name: a.name,
-          role: a.armed ? "observer" : "civilian",
+          role: a.armed ? "infantry" : "civilian",
+          roleLabel: a.armed
+            ? a.id === "agency-rescuer"
+              ? "기관 구출 보병"
+              : a.id === "agency-guide"
+                ? "기관 경호 보병"
+                : "기관 보병"
+            : a.name,
           faction: a.armed ? "allied" : "civilian",
           armed: a.armed,
           x: a.x,
@@ -2197,7 +2358,24 @@
             ),
         ),
       ),
-      supportActors: [...copy(m.knowledge.actors), ...copy(m.knowledge.crew)],
+      supportActors: [
+        ...copy(m.knowledge.actors).map((a) =>
+          a.armed
+            ? {
+                ...a,
+                role: "infantry",
+                roleLabel:
+                  a.roleLabel ||
+                  (a.id === "agency-rescuer"
+                    ? "기관 구출 보병"
+                    : a.id === "agency-guide"
+                      ? "기관 경호 보병"
+                      : "기관 보병"),
+              }
+            : a,
+        ),
+        ...copy(m.knowledge.crew),
+      ],
     };
   }
   function agencyId(e, id) {

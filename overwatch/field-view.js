@@ -161,32 +161,37 @@
             '"/>',
         )
         .join("") +
-      f.friends
+      [...f.friends, ...(f.supportActors || [])]
         .filter((u) => !u.boardedBy && !u.home && !u.waitingForDeployment)
         .map(
           (u) =>
             '<g opacity="' +
             (u.stale ? 0.4 : 1) +
             '"><path d="M' +
-            (u.x - 7) +
+            (u.x - 0.75) +
             " " +
-            (u.y - 10) +
-            'h14v20h-14z" fill="' +
+            (u.y - 1.2) +
+            'h1.5v2.4h-1.5z" fill="' +
             (u.role === "observer" ? "#52765c" : "#547a9c") +
-            '" stroke="white" stroke-width="2"/><title>' +
+            '" stroke="white" stroke-width=".3"/><title>' +
             esc(u.name) +
             " · " +
             u.age +
             '초 전 보고</title><text x="' +
             u.x +
             '" y="' +
-            (u.y - 14) +
+            (u.y - 3.5) +
             '" text-anchor="middle" fill="#eff7ef" stroke="#17291e" stroke-width="0.8" paint-order="stroke" font-size="' +
             (f.map.width < 500 ? 3.2 : 7) +
             '">' +
             esc(u.name) +
             " · " +
-            (u.role === "sniper" ? "저격수" : "관측수") +
+            (u.role === "sniper"
+              ? "저격수"
+              : u.role === "observer"
+                ? "관측수"
+                : u.roleLabel ||
+                  (u.role === "medic" ? "의무요원" : "기관 보병")) +
             "</text></g>",
         )
         .join("") +
@@ -262,6 +267,7 @@
                       : {
                           holding: "위치 유지",
                           moving: "이동",
+                          climbing: "옥상 계단 이동",
                           covering: "경계·사격 준비",
                           spacing: "간격 조정",
                           "first-aid": "응급처치",
@@ -272,6 +278,7 @@
                           observing: "관측",
                         }[u.state] || u.state,
               ) +
+              (u.roofId ? " · 옥상 진지" : "") +
               "</p><p>" +
               ((u.health?.wounds || [])
                 .map(

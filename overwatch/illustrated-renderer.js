@@ -364,6 +364,8 @@
         };
         m.drawn = p;
         const q = screen(p, v);
+        // The illustrated district is oblique: project actual roof elevation above its ground footprint.
+        if (u.roofId) q.y -= (u.elevation || 0) * v.scale * 1.4;
         if (q.x < -70 || q.x > v.w + 70 || q.y < -80 || q.y > v.h + 80)
           continue;
         const friendly = u.role !== undefined,
@@ -509,7 +511,10 @@
                     ? "저격수"
                     : u.role === "observer"
                       ? "관측수"
-                      : "의무요원")),
+                      : u.role === "medic"
+                        ? "의무요원"
+                        : u.roleLabel ||
+                          (u.role === "civilian" ? "민간인" : "기관 보병"))),
             labelWidth = ctx.measureText(label).width;
           let labelY = Math.max(13, q.y - height - 3);
           for (

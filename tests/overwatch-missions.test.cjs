@@ -388,3 +388,118 @@ test("a UAV physically returns home after its station time and never restarts de
   assert.equal(e.mission.supports.drone, 1);
   C.validate(s);
 });
+
+test("agency assault/rescue personnel use infantry roles and allied sprites rather than observer identities", () => {
+  const s = launch("rescue-cover", 2),
+    e = s.commandExercise;
+  assert.ok(e.world.actors.filter((a) => a.side === "red").length >= 8);
+  assert.ok(
+    e.world.actors.filter((a) => a.side === "ally" && a.armed).length >= 4,
+  );
+  for (const a of e.world.actors.filter((a) => a.side === "red"))
+    a.health.conscious = false;
+  advance(s, 120);
+  const support = D.frame(s).supportActors.filter(
+    (a) => a.role !== "medic" && a.armed,
+  );
+  assert.ok(support.length >= 4);
+  assert.ok(support.every((a) => a.role === "infantry"));
+  const sprites = require("../overwatch/sprites");
+  assert.ok(support.every((a) => sprites.select(a).role === "allied"));
+  C.validate(s);
+});
+test("an extraction vehicle cannot take a casualty already carried by an actual medical transport crew", () => {
+  const s = launch("aid-cover"),
+    e = s.commandExercise,
+    m = e.mission;
+  for (const a of e.world.actors.filter((a) => a.side === "red"))
+    a.health.conscious = false;
+  advance(s, 100);
+  const u = e.world.units[0];
+  B.injure(s, e, u, {
+    eventId: "contested-casualty",
+    part: "leftLeg",
+    severity: 3,
+  });
+  advance(s, 8);
+  M.requestSupport(s, "medical");
+  const medical = m.transports.at(-1),
+    primary = m.transports[0];
+  const p = G.project({ x: u.x, y: u.y });
+  Object.assign(primary, {
+    ...p,
+    state: "loading",
+    trip: "extraction",
+    manifest: [],
+    boarding: { id: u.id, until: e.time - 1 },
+    crew: null,
+  });
+  m.returnRequested = true;
+  m.recoveryVersion = 2;
+  Object.assign(medical, {
+    ...p,
+    state: "medical-work",
+    altitude: 0,
+    manifest: [],
+    crew: {
+      id: medical.id + "-medic",
+      name: "기관 의무요원",
+      ...p,
+      state: "carrying",
+      targetId: u.id,
+      patientId: u.id,
+      path: [],
+      dueAt: null,
+    },
+  });
+  u.carriedBy = medical.crew.id;
+  u.boardedBy = null;
+  u.path = [];
+  M.beforeTick(s, e);
+  assert.equal(u.boardedBy, medical.id);
+  assert.equal(primary.manifest.includes(u.id), false);
+  assert.equal(m.transports.filter((t) => t.manifest.includes(u.id)).length, 1);
+  C.validate(s);
+  // A legacy in-progress handoff must never overwrite a completed board in another vehicle.
+  medical.crew.patientId = u.id;
+  medical.crew.targetId = u.id;
+  M.beforeTick(s, e);
+  assert.equal(m.transports.filter((t) => t.manifest.includes(u.id)).length, 1);
+  C.validate(s);
+});
+
+test("medical recovery reaches an actually injured rooftop member through stairs before boarding", () => {
+  const s = launch("aid-cover"),
+    e = s.commandExercise;
+  for (const a of e.world.actors.filter((a) => a.side === "red"))
+    a.health.conscious = false;
+  advance(s, 160);
+  const u = e.world.units[0],
+    roof = G.roofs().find((r) => G.path(u, r.point).length);
+  assert.ok(roof);
+  u.path = G.path(u, roof.point);
+  u.goal = { ...roof.point };
+  for (let i = 0; i < 1500 && u.path.length; i++) {
+    e.time++;
+    s.clock.elapsedSeconds++;
+    D.internals.moveUnit(e, u, 0.8);
+    C.validate(s);
+  }
+  assert.ok(u.roofId);
+  B.injure(s, e, u, {
+    eventId: "rooftop-casualty",
+    part: "leftLeg",
+    severity: 3,
+  });
+  advance(s, 12);
+  M.requestSupport(s, "medical");
+  advance(s, 1800);
+  assert.equal(e.mission.home.includes(u.id), true);
+  assert.equal(u.roofId, undefined);
+  assert.ok(
+    e.mission.log.some(
+      (ev) => ev.type === "medical-boarded" && ev.memberId === u.id,
+    ),
+  );
+  C.validate(s);
+});

@@ -429,6 +429,7 @@
         capable: u.capable,
         observedAt: e.time,
         elevation: G.elevation(u),
+        roofId: u.roofId || null,
         ...(e.battle ? Battle().snapshot(u, e.time) : {}),
       };
     });
@@ -496,6 +497,26 @@
     );
   }
   function planPosition(e, q, target, role, assembly = false) {
+    if (target.roofId) {
+      const b = G.roofBuilding(target);
+      if (!b) return null;
+      const p = {
+          ...target,
+          x: Math.max(
+            b[0] + 0.8,
+            Math.min(b[2] - 0.8, target.x + (role === "sniper" ? 1 : -1)),
+          ),
+          y: Math.max(
+            b[1] + 0.8,
+            Math.min(b[3] - 0.8, target.y + (role === "sniper" ? 1.2 : -1.2)),
+          ),
+        },
+        route = G.path(
+          unit(e, role === "sniper" ? q.sniperId : q.observerId),
+          p,
+        );
+      return route.length ? { p, route, score: 200 } : null;
+    }
     const other = e.world.units.filter(
       (u) =>
         u.capable &&
@@ -602,6 +623,12 @@
           }
         : copy(q.sector);
     const points = [copy(own)];
+    for (const roof of G.roofs()) {
+      const b = G.roofBuilding(roof.point);
+      for (const x of [b[0] + 0.8, b[2] - 0.8])
+        for (const y of [b[1] + 0.8, b[3] - 0.8])
+          points.push({ x, y, roofId: roof.id });
+    }
     for (const h of G.MAP.heights)
       for (const scale of [0, 0.25, 0.5])
         for (let i = 0; i < (scale ? 8 : 1); i++)
@@ -628,6 +655,15 @@
           });
     const assessed = [];
     for (const p of points) {
+      if (
+        p.roofId &&
+        e.squads.some(
+          (v) =>
+            v.callsign !== q.callsign &&
+            v.tactical?.position?.roofId === p.roofId,
+        )
+      )
+        continue;
       if (
         !point(p) ||
         G.blocked(p) ||
@@ -663,12 +699,16 @@
         Math.abs(G.distance(p, sector) - 280) * 0.12 -
         G.distance(own, p) * 0.055;
       assessed.push({
-        position: { x: p.x, y: p.y },
+        position: { x: p.x, y: p.y, ...(p.roofId ? { roofId: p.roofId } : {}) },
         sector,
         protectedPoint,
         score,
         reason:
-          (height > 12 ? "고지의 관측 우위" : "접근로의 관측선") +
+          (p.roofId
+            ? "출입 가능한 건물 옥상의 관측 우위"
+            : height > 12
+              ? "고지의 관측 우위"
+              : "접근로의 관측선") +
           (protectedPoint
             ? "와 지원 대상 아군 시야"
             : "과 확인된 위협의 이격 거리") +
@@ -1049,6 +1089,7 @@
   }
   function obstructs(u, v) {
     return (
+      (u.roofId || null) === (v.roofId || null) &&
       !v.boardedBy &&
       !v.home &&
       v.id !== u.id &&
@@ -1124,6 +1165,40 @@
     while (left > 0 && u.path.length) {
       const next = u.path[0],
         d = G.distance(u, next);
+      if (next.roofTransition) {
+        const roof = G.roofs().find(
+          (r) => r.id === (next.roofId || next.roofFrom),
+        );
+        if (!roof) {
+          u.path = [];
+          u.state = "blocked";
+          return;
+        }
+        if (!u.roofTransit) {
+          u.roofTransit = {
+            dueAt: e.time + Math.max(12, roof.height * 2),
+            direction: next.roofTransition,
+          };
+          event(e, "roof-access-started", {
+            actorId: u.id,
+            roofId: roof.id,
+            direction: next.roofTransition,
+          });
+        }
+        u.state = "climbing";
+        if (e.time < u.roofTransit.dueAt) return;
+        Object.assign(u, { x: next.x, y: next.y });
+        if (next.roofId) u.roofId = next.roofId;
+        else delete u.roofId;
+        delete u.roofTransit;
+        u.path.shift();
+        event(e, "roof-access-completed", {
+          actorId: u.id,
+          roofId: u.roofId || null,
+        });
+        return;
+      }
+      delete u.roofTransit;
       if (d < 0.01) {
         u.path.shift();
         continue;
@@ -1132,6 +1207,7 @@
         p = {
           x: u.x + ((next.x - u.x) * step) / d,
           y: u.y + ((next.y - u.y) * step) / d,
+          ...(u.roofId ? { roofId: u.roofId } : {}),
         };
       if (
         e.world.units.some(
@@ -1957,7 +2033,7 @@
         e.world.units.length >= 2 &&
         e.world.units.length <= 6 &&
         Array.isArray(e.world.actors) &&
-        e.world.actors.length <= 12,
+        e.world.actors.length <= 32,
       "훈련 시간·개체 수가 잘못되었습니다.",
     );
     const ids = new Set();
@@ -1967,6 +2043,10 @@
           !ids.has(u.id) &&
           member(s, u.id) &&
           point(u) &&
+          (!u.roofId || !!G.roofBuilding(u)) &&
+          (!u.roofTransit ||
+            (num(u.roofTransit.dueAt, 0, e.time + 200) &&
+              ["up", "down"].includes(u.roofTransit.direction))) &&
           (!G.blocked(u) || (e.mission && u.boardedBy && u.altitude > 40)) &&
           ["observer", "sniper"].includes(u.role) &&
           typeof u.capable === "boolean" &&

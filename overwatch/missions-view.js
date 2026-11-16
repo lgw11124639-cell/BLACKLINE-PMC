@@ -292,7 +292,7 @@
     return (
       '<section class="panel live-field-panel"><span class="eyebrow">LIVE CONTRACT / AGENCY SUPPORT</span><h2>' +
       esc(m.title) +
-      "</h2><p>" +
+      "</h2><p>BLACKLINE 저격조: 원거리 관측·정밀 엄호 / 기관 보병·구출조: 현장 접근·구출·호송</p><p>" +
       esc(m.issuer) +
       " · <strong data-live-phase>" +
       esc(phases[m.phase] || m.phase) +
