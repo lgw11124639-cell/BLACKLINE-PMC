@@ -15,6 +15,7 @@
           })[c],
       ),
     money = (n) => Math.round(n).toLocaleString("ko-KR") + "원";
+  const automatic = (s) => !!root.OverwatchStaff?.trainingEnabled(s);
   const roles = { observer: "관측수", sniper: "저격수" },
     tiers = {
       rookie: "신입",
@@ -122,10 +123,19 @@
       '<section class="panel hq-activities"><div class="personnel-section-title"><div><span class="eyebrow">HEADQUARTERS ACTIVITIES</span><h2>본부 활동 · ' +
       timestamp(s.clock.elapsedSeconds) +
       "</h2></div><button data-advance" +
+      (automatic(s) ? " hidden" : "") +
       disabled(!editable || !active.length) +
       ">다음 활동 완료까지 " +
       duration(next) +
-      " 진행</button></div><p>진행 중인 모든 활동과 계약 시간이 함께 흐릅니다. 재접속이나 현실 시간 경과만으로 진행하지 않습니다.</p>" +
+      " 진행</button></div>" +
+      (automatic(s)
+        ? "<p>훈련 교관이 부족 역량·조별 협동·피로를 보고 자동 편성합니다. 저격조를 해제할 필요가 없습니다.</p><p data-instructor-status>" +
+          esc(
+            s.commandStaff.trainingPlan?.status ||
+              "교관이 대원 상태를 검토합니다.",
+          ) +
+          "</p>"
+        : "<p>진행 중인 모든 활동과 계약 시간이 함께 흐릅니다. 재접속이나 현실 시간 경과만으로 진행하지 않습니다.</p>") +
       (active.length
         ? '<div class="activity-list">' +
           active
@@ -281,7 +291,7 @@
             '"' +
             disabled(
               !editable ||
-                s.members.length >= 10 ||
+                s.members.length >= P.MAX_MEMBERS ||
                 s.headquarters.funds < c.dailySalary * 30,
             ) +
             ">계약·영입</button></div></article>",
@@ -297,7 +307,13 @@
         .map((callsign) => {
           const q = s.squads.find((q) => q.callsign === callsign),
             job = s.activities.find(
-              (a) => a.status === "running" && a.callsign === callsign,
+              (a) =>
+                a.status === "running" &&
+                (a.callsign === callsign ||
+                  (q &&
+                    a.memberIds.some((id) =>
+                      [q.observerId, q.sniperId].includes(id),
+                    ))),
             ),
             used = new Set(
               s.squads
@@ -393,7 +409,7 @@
             .join("") +
           "</ul>"
         : "<p>등록된 전사·퇴사·은퇴 기록이 없습니다.</p>") +
-      '<p class="muted">전사자는 영구 손실입니다. 보관 인원은 현직 정원 10명에 포함하지 않습니다.</p></section>'
+      '<p class="muted">전사자는 영구 손실입니다. 보관 인원은 현직 정원 20명에 포함하지 않습니다.</p></section>'
     );
   }
   function render(s, { editable = true } = {}) {
@@ -403,7 +419,7 @@
     return (
       '<section class="page-title"><span class="eyebrow">PERSONNEL & PAIRS</span><h1>대원과 저격조</h1><p>현직 ' +
       s.members.length +
-      "/10명 · 편성 " +
+      "/20명 · 편성 " +
       s.squads.length +
       "/3개 조 · 운영자금 " +
       money(s.headquarters.funds) +
@@ -572,7 +588,12 @@
           (q
             ? "<p>" +
               q.callsign +
-              " 배속 중입니다. 개인 활동 전 조 편성을 해제하거나 조 단위 공동 훈련을 선택하세요.</p>"
+              (automatic(s)
+                ? " 배속 유지 · 교관이 훈련과 휴식을 자동 배정합니다.</p>"
+                : " 배속 중입니다. 개인 활동 전 조 편성을 해제하거나 조 단위 공동 훈련을 선택하세요.</p>")
+            : "") +
+          (automatic(s)
+            ? '<details class="manual-hq-training"><summary>수동 훈련·휴식 설정</summary>'
             : "") +
           '<form data-training="' +
           esc(m.id) +
@@ -604,7 +625,9 @@
           ) +
           '</select></label><button type="submit"' +
           disabled(!editable || busy || !!q || P.injured(m)) +
-          '>휴식 배정</button></form><div class="inline-actions"><button data-treatment="' +
+          ">휴식 배정</button></form>" +
+          (automatic(s) ? "</details>" : "") +
+          '<div class="inline-actions"><button data-treatment="' +
           esc(m.id) +
           '"' +
           disabled(!editable || busy || !!q || !plan) +
@@ -697,7 +720,9 @@
           card = el.closest("[data-candidate]");
         card.querySelector("[data-quote]").textContent = money(cost);
         card.querySelector("[data-hire]").disabled =
-          !editable || s.members.length >= 10 || s.headquarters.funds < cost;
+          !editable ||
+          s.members.length >= P.MAX_MEMBERS ||
+          s.headquarters.funds < cost;
       }),
     );
     each("[data-advance]", () => commit((next) => P.advance(next)));

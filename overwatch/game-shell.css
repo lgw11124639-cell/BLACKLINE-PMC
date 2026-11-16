@@ -1866,3 +1866,57 @@ body[data-screen="headquarters"] .inline-actions button {
   width: 18px;
   height: 18px;
 }
+@media (min-width: 1366px) and (min-height: 650px) and (orientation: landscape) {
+  .workspace
+    > main:not(.battle-screen)
+    .field-layout[data-battle-state="ended"] {
+    height: auto;
+    min-height: 0;
+    align-items: start;
+  }
+  .field-layout[data-battle-state="ended"] > section {
+    height: auto;
+    overflow: visible;
+  }
+  .field-layout[data-battle-state="ended"] .field-stage {
+    flex: none;
+    height: 400px;
+  }
+  .field-layout[data-battle-state="ended"] [data-field-result],
+  .field-layout[data-battle-state="ended"] .live-debrief {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .field-layout[data-battle-state="ended"] > aside {
+    max-height: none;
+    overflow: visible;
+  }
+  .field-layout[data-battle-state="ended"] > aside > [data-inspector-panel] {
+    flex: none;
+    max-height: none;
+    overflow: visible;
+  }
+  .field-layout[data-battle-state="ended"] .field-radio {
+    max-height: none;
+    overflow: visible;
+  }
+}
+.field-range-summary {
+  color: #d9f4ff;
+  background: #10252d;
+  border-left: 3px solid #55ddff;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.field-viewport svg [data-range-overlay] > * {
+  vector-effect: non-scaling-stroke;
+}
+[data-field-range][aria-pressed="true"] {
+  background: #315b63;
+  border: 2px solid #55ddff;
+}
+.field-range-tools:not([hidden]) { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.field-range-tools[hidden] { display: none; }
+.field-range-tools button { font-size: 11px; padding: 5px; white-space: nowrap; }
+.field-range-tools .field-range-summary { flex: 1; padding: 3px 6px; font-size: 11px; }

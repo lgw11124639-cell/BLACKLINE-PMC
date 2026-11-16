@@ -32,9 +32,81 @@
       String(t % 60).padStart(2, "0");
   let follow2D = false,
     lastFrame = null,
-    selection = null;
+    selection = null,
+    rangeIds = new Set(),
+    rangeExercise = null;
   const currentRenderer = () =>
     R.get() || root.OverwatchIllustratedRenderer?.get();
+  function syncRanges(node) {
+    currentRenderer()?.setRange?.([...rangeIds]);
+    for (const button of node.querySelectorAll("[data-field-range]")) {
+      const active = rangeIds.has(button.dataset.fieldRange);
+      button.setAttribute("aria-pressed", String(active));
+      button.textContent = active ? "범위 표시 중" : "시야·사거리";
+    }
+    const tools = node.querySelector(".field-range-tools");
+    if (tools) tools.hidden = rangeIds.size === 0;
+    const summary = node.querySelector("[data-range-summary]");
+    if (summary)
+      summary.textContent = rangeIds.size
+        ? "선택 " +
+          rangeIds.size +
+          "명 · 점선: 사거리 / 부채꼴: 탐지 시야 / 가는 점선: 식별 · 건물·지형에 따라 실제 시야 제한"
+        : "시야·사거리: 대원 패널에서 여러 명 선택 가능";
+  }
+  function rangeMarkup(f) {
+    return f.friends
+      .filter((u) => rangeIds.has(u.id))
+      .map((u, i) => {
+        const color = [
+            "#55ddff",
+            "#ffd166",
+            "#a4f28b",
+            "#e6a6ff",
+            "#ff91a4",
+            "#a6cbff",
+          ][i % 6],
+          r = u.visionRange || 200,
+          a = (u.heading || 0) - (u.visionHalfAngle || 0.5),
+          b = (u.heading || 0) + (u.visionHalfAngle || 0.5);
+        return (
+          '<g data-range-overlay fill="none" stroke="' +
+          color +
+          '" stroke-width="3" vector-effect="non-scaling-stroke"><circle cx="' +
+          u.x +
+          '" cy="' +
+          u.y +
+          '" r="' +
+          (u.weapon?.range || 0) +
+          '" stroke-dasharray="8 5"/><path d="M' +
+          u.x +
+          " " +
+          u.y +
+          " L" +
+          (u.x + Math.cos(a) * r) +
+          " " +
+          (u.y + Math.sin(a) * r) +
+          " A" +
+          r +
+          " " +
+          r +
+          " 0 0 1 " +
+          (u.x + Math.cos(b) * r) +
+          " " +
+          (u.y + Math.sin(b) * r) +
+          ' Z" fill="' +
+          color +
+          '18"/><circle cx="' +
+          u.x +
+          '" cy="' +
+          u.y +
+          '" r="' +
+          (u.identificationRange || 0) +
+          '" stroke-dasharray="2 5"/></g>'
+        );
+      })
+      .join("");
+  }
   function paintSelection(rootNode) {
     const form = rootNode.querySelector("[data-field-command]");
     const caption = rootNode.querySelector("[data-field-target]");
@@ -211,6 +283,7 @@
             "명</title></g>",
         )
         .join("") +
+      rangeMarkup(f) +
       "</svg>"
     );
   }
@@ -463,7 +536,7 @@
           stamp(f.time) +
           '</span><div><select data-field-view-select aria-label="지도 표현"><option value="illustrated">입체 지도</option><option value="2d">전술도</option><option value="3d">3D 보기</option></select><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button data-field-overview>전체 지역</button><button data-field-fullscreen>지도 전체화면</button></div></div><div class="field-viewport" data-field-id="' +
           esc(s.campaignId + ":" + f.id) +
-          '"></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단</div>' +
+          '"></div><div class="field-range-tools"><span class="field-range-summary" data-range-summary></span><button data-field-range-clear>범위 해제</button></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단</div>' +
           (active
             ? '<div class="field-quick-orders"><select data-field-quick-team aria-label="저격조 선택">' +
               f.squads
@@ -563,6 +636,8 @@
         'class="field-layout"',
         'class="field-layout" data-inspector="' +
           (s.ui.fieldInspector || "radio") +
+          '" data-battle-state="' +
+          e.status +
           '"',
       )
       .replace(
@@ -604,6 +679,10 @@
   function refresh(rootNode, s, { playing = false } = {}) {
     const f = D.frame(s);
     if (!f?.battle) return;
+    if (rangeExercise !== f.id) {
+      rangeExercise = f.id;
+      rangeIds.clear();
+    }
     if (f.mission) root.OverwatchMissionUI.refresh(rootNode, s);
     lastFrame = f;
     const set = (selector, text) => {
@@ -672,6 +751,7 @@
     }
     const res = rootNode.querySelector("[data-field-result]");
     if (res && f.status === "ended") res.innerHTML = result(f);
+    syncRanges(rootNode);
     const viewport = rootNode.querySelector(".field-viewport");
     if (viewport) {
       if (s.fieldPreferences.view !== "2d") currentRenderer()?.update(f);
@@ -716,6 +796,7 @@
       host.innerHTML = map2D(f);
     }
     refresh(rootNode, s, { playing });
+    syncRanges(rootNode);
   }
   function bind(
     rootNode,
@@ -740,7 +821,15 @@
           return;
         if (button.hasAttribute("data-field-focus"))
           currentRenderer()?.focus?.(id);
-        else currentRenderer()?.setRange?.(id);
+        else {
+          if (rangeIds.has(id)) rangeIds.delete(id);
+          else rangeIds.add(id);
+          syncRanges(rootNode);
+          if (!currentRenderer()) {
+            const host = rootNode.querySelector(".field-viewport");
+            if (host) host.innerHTML = map2D(lastFrame);
+          }
+        }
       });
     }
     on("[data-field-clear-contract]", () => {
@@ -875,6 +964,14 @@
         pick(p);
       });
     }
+    on("[data-field-range-clear]", () => {
+      rangeIds.clear();
+      syncRanges(rootNode);
+      if (!currentRenderer()) {
+        const host = rootNode.querySelector(".field-viewport");
+        if (host) host.innerHTML = map2D(lastFrame);
+      }
+    });
     on("[data-field-clear-target]", () => {
       selection = null;
       paintSelection(rootNode);

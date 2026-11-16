@@ -297,6 +297,7 @@
     );
     const c = s.contracts.find((c) => c.id === id);
     ok(c?.status === "offered", "유효한 제안이 아닙니다.");
+    P.interruptManaged(s);
     c.status = "accepted";
     c.acceptedAt = s.clock.elapsedSeconds;
     c.launchBy = s.clock.elapsedSeconds + P.DAY;
@@ -726,7 +727,19 @@
     base.health.kit = role === "기관 구출요원" ? 2 : 1;
     return base;
   }
+  function escortExits(e) {
+    const points = [
+      [0.9, 0.97],
+      [0.75, 0.97],
+      [0.97, 0.97],
+    ].map(([x, y]) => G.project({ x: G.MAP.width * x, y: G.MAP.height * y }));
+    const offset =
+      [...e.mission.contract.id].reduce((n, ch) => n + ch.charCodeAt(0), 0) %
+      points.length;
+    return [...points.slice(offset), ...points.slice(0, offset)];
+  }
   function setupTask(e) {
+    G.activate(e.mapId || "command-range");
     const m = e.mission,
       t = m.contract.task;
     const city = G.MAP.urban || G.MAP.width < 500,
@@ -770,10 +783,13 @@
           ),
           false,
         );
-      m.taskGoal = at(
-        { x: 1080, y: 650 },
-        { x: G.MAP.width - 25, y: G.MAP.height - 25 },
-      );
+      m.escortExits = escortExits(e);
+      m.taskGoal = city
+        ? copy(m.escortExits[0])
+        : at(
+            { x: 1080, y: 650 },
+            { x: G.MAP.width - 25, y: G.MAP.height - 25 },
+          );
       e.world.actors.push(a, v);
     }
   }
@@ -1951,10 +1967,80 @@
           (m.contract.task === "rescue" ? "agency-rescuer" : "agency-guide")),
     );
     const anchor = anchors[0] || m.contract.insertion;
-    const objective =
+    let objective =
       m.contract.task === "rescue" && !m.taskLinked
         ? m.contract.interest || G.MAP.sector || e.squads[0].sector
         : m.taskGoal;
+    if (
+      ["vip", "aid"].includes(m.contract.task) &&
+      !m.objective &&
+      e.time - (m.lastExitReviewAt ?? -1000) > 90
+    ) {
+      m.lastExitReviewAt = e.time;
+      m.escortExits ||= [copy(m.taskGoal), ...escortExits(e)];
+      const known = frame.contacts.filter(
+        (t) =>
+          t.current &&
+          t.classification === "armed-person" &&
+          !["dead", "down"].includes(t.medicalCondition),
+      );
+      const assess = (goal) => {
+        const path = G.path(anchor, goal);
+        let previous = anchor,
+          length = 0;
+        const segments = path.map((p) => {
+          const pair = [previous, p];
+          length += G.distance(previous, p);
+          previous = p;
+          return pair;
+        });
+        const risk = known.filter((t) =>
+          segments.some(([a, b]) => {
+            const dx = b.x - a.x,
+              dy = b.y - a.y,
+              f = Math.max(
+                0,
+                Math.min(
+                  1,
+                  ((t.x - a.x) * dx + (t.y - a.y) * dy) /
+                    (dx * dx + dy * dy || 1),
+                ),
+              ),
+              p = { x: a.x + dx * f, y: a.y + dy * f };
+            return G.distance(t, p) < 75 && G.clear(t, p);
+          }),
+        ).length;
+        return { goal, risk, length, valid: path.length > 0 };
+      };
+      const current = assess(m.taskGoal),
+        best = m.escortExits
+          .map(assess)
+          .filter((x) => x.valid)
+          .sort((a, b) => a.risk - b.risk || a.length - b.length)[0];
+      if (
+        best &&
+        current.risk > 0 &&
+        best.risk < current.risk &&
+        G.distance(best.goal, m.taskGoal) > 20
+      ) {
+        const old = copy(m.taskGoal);
+        m.taskGoal = copy(best.goal);
+        objective = m.taskGoal;
+        if (e.control) e.control.progressWatch = null;
+        const ev = log(e, "escort-exit-changed", {
+          from: old,
+          to: best.goal,
+          reportedThreatIds: known.map((t) => t.id),
+        });
+        say(
+          s,
+          e,
+          "decision",
+          "기존 민간인·VIP 호송로의 관측된 위협 확인. 위험이 더 적은 대체 탈출 지점과 접근로로 변경한다.",
+          ev,
+        );
+      }
+    }
     const route = G.path(anchor, objective);
     let length = 0,
       prev = anchor,
@@ -2211,6 +2297,50 @@
       u.health.aid
     )
       return;
+    const enemies = e.world.actors.filter(
+      (a) =>
+        a.side === "red" &&
+        a.health.alive &&
+        a.health.conscious &&
+        G.distance(u, a) < 200 &&
+        G.clear(u, a) &&
+        B().visualAcquire(e, u, a, 200),
+    );
+    if (B().underFire(e, u) && e.time - (m.lastSupportAlertAt ?? -100) >= 20) {
+      const seen = enemies[0],
+        ev = log(e, "agency-under-fire", {
+          actorId: u.id,
+          attackerId: seen?.id || null,
+        });
+      m.lastSupportAlertAt = e.time;
+      say(
+        s,
+        e,
+        "combat",
+        "기관 인력이 피격 중이다. 저격조 긴급 엄호 요청.",
+        ev,
+        {
+          supportAlert: {
+            eventId: ev.id,
+            actorId: u.id,
+            position: { x: u.x, y: u.y },
+            observedAt: e.time,
+            contact: seen
+              ? {
+                  id: seen.id,
+                  x: seen.x,
+                  y: seen.y,
+                  lastSeen: e.time,
+                  classification: "armed-person",
+                  confidence: 0.9,
+                  condition: B().snapshot(seen).pose,
+                  reportedAt: e.time,
+                }
+              : null,
+          },
+        },
+      );
+    }
     if (u.health.wounds.some((w) => !w.treated)) {
       if (!B().underFire(e, u)) {
         const medic =
@@ -2246,15 +2376,6 @@
       }
       return;
     }
-    const enemies = e.world.actors.filter(
-      (a) =>
-        a.side === "red" &&
-        a.health.alive &&
-        a.health.conscious &&
-        G.distance(u, a) < 200 &&
-        G.clear(u, a) &&
-        B().visualAcquire(e, u, a, 200),
-    );
     if (u.armed && enemies.length) {
       const v = enemies.sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
       u.memory = u.memory || [];
@@ -2602,6 +2723,11 @@
     }
   }
   function applyPayload(e, r) {
+    if (r.payload?.supportAlert)
+      e.mission.knowledge.supportAlert = {
+        ...copy(r.payload.supportAlert),
+        receivedAt: e.time,
+      };
     if (r.payload?.missionObjective) {
       e.mission.knowledge.objective = r.payload.missionObjective;
       e.battle.knowledge.objective = r.payload.missionObjective === "complete";

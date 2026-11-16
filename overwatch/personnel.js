@@ -8,6 +8,7 @@
   const HOUR = 3600,
     DAY = 24 * HOUR,
     INITIAL_FUNDS = 100000000,
+    MAX_MEMBERS = 20,
     TERMS = [30, 90],
     SKILLS = [
       "shooting",
@@ -188,7 +189,12 @@
       legacy: !w?.sourceEventId,
     };
   }
-  const injured = (m) => m.injuries.some((w) => !w.healed),
+  const managedActivity = (s, m) =>
+      s.activities.find(
+        (a) =>
+          a.id === m.activityId && a.status === "running" && a.instructorId,
+      ),
+    injured = (m) => m.injuries.some((w) => !w.healed),
     available = (s, m) =>
       m.status === "standby" &&
       !injured(m) &&
@@ -499,7 +505,7 @@
   function hire(s, id, days) {
     current(s);
     ok(TERMS.includes(days), "계약 기간은 30일 또는 90일입니다.");
-    ok(s.members.length < 10, "본부 정원은 10명입니다.");
+    ok(s.members.length < MAX_MEMBERS, "본부 정원은 20명입니다.");
     const candidate = s.market.candidates.find((m) => m.id === id);
     ok(candidate, "이미 계약했거나 현재 시장에 없는 후보입니다.");
     ok(
@@ -609,7 +615,10 @@
     ok(q, "편성되지 않은 저격조입니다.");
     ok(
       !s.activities.some(
-        (a) => a.status === "running" && a.callsign === callsign,
+        (a) =>
+          a.status === "running" &&
+          (a.callsign === callsign ||
+            a.memberIds.some((id) => [q.observerId, q.sniperId].includes(id))),
       ),
       "공동 훈련을 마치거나 중단한 뒤 해제하세요.",
     );
@@ -618,7 +627,14 @@
   }
   function start(
     s,
-    { kind, memberIds, course = null, hours, callsign = null },
+    {
+      kind,
+      memberIds,
+      course = null,
+      hours,
+      callsign = null,
+      instructorId = null,
+    },
   ) {
     current(s);
     ok(
@@ -628,9 +644,23 @@
     ok(
       Array.isArray(memberIds) &&
         new Set(memberIds).size === memberIds.length &&
-        memberIds.length === (kind === "pair" ? 2 : 1),
+        (instructorId && kind === "training"
+          ? memberIds.length >= 2 && memberIds.length <= 4
+          : memberIds.length === (kind === "pair" ? 2 : 1)),
       "활동 인원 구성이 잘못되었습니다.",
     );
+    if (instructorId)
+      ok(
+        s.commandStaff?.instructorId === instructorId &&
+          s.commandStaff.members.some(
+            (m) =>
+              m.id === instructorId &&
+              m.duty === "instructor" &&
+              m.contract.endsAt > time(s),
+          ) &&
+          ["training", "pair", "rest"].includes(kind),
+        "배정된 훈련 교관만 자동 훈련·휴식을 지휘할 수 있습니다.",
+      );
     const members = memberIds.map((id) => live(s, id));
     for (const m of members) {
       ok(
@@ -645,7 +675,7 @@
           !!s.activeMission?.memberIds.includes(m.id),
         "계약이 만료된 인원입니다.",
       );
-      if (kind !== "pair")
+      if (kind !== "pair" && !instructorId)
         ok(!paired(s, m.id), "개인 활동 전 저격조 편성을 해제하세요.");
     }
     let duration,
@@ -669,7 +699,7 @@
         );
       }
       duration = hours * HOUR;
-      cost = hours * 25000;
+      cost = hours * 25000 * (instructorId ? Math.ceil(members.length / 2) : 1);
     }
     if (kind === "rest") {
       ok([2, 6, 12].includes(hours), "휴식은 2/6/12시간입니다.");
@@ -713,6 +743,7 @@
       a = {
         id,
         kind,
+        ...(instructorId ? { instructorId } : {}),
         memberIds: memberIds.slice(),
         course,
         callsign,
@@ -775,6 +806,15 @@
       reason + " · 착수 비용은 환급하지 않습니다.",
       { activityId: id, memberIds: a.memberIds },
     );
+  }
+  function interruptManaged(s, ids = null) {
+    for (const a of s.activities.filter(
+      (a) =>
+        a.status === "running" &&
+        a.instructorId &&
+        (!ids || a.memberIds.some((id) => ids.includes(id))),
+    ))
+      cancel(s, a.id, "출격·편성 지시로 교관 훈련 중단");
   }
   function relationship(s, q) {
     const ids = [q.observerId, q.sniperId].sort();
@@ -1181,7 +1221,7 @@
     );
     ok(
       Array.isArray(s.members) &&
-        s.members.length <= 10 &&
+        s.members.length <= MAX_MEMBERS &&
         s.archive &&
         Array.isArray(s.archive.members) &&
         s.market &&
@@ -1309,13 +1349,22 @@
     const activityIds = new Set(),
       busy = new Set();
     for (const a of s.activities) {
+      if (a.instructorId)
+        ok(
+          s.commandStaff?.members?.some(
+            (m) => m.id === a.instructorId && m.duty === "instructor",
+          ),
+          "자동 훈련의 교관 기록이 잘못되었습니다.",
+        );
       ok(
         text(a.id) &&
           !activityIds.has(a.id) &&
           ["training", "rest", "treatment", "rehab", "pair"].includes(a.kind) &&
           ["running", "completed", "cancelled"].includes(a.status) &&
           Array.isArray(a.memberIds) &&
-          a.memberIds.length === (a.kind === "pair" ? 2 : 1) &&
+          (a.instructorId && a.kind === "training"
+            ? a.memberIds.length >= 2 && a.memberIds.length <= 4
+            : a.memberIds.length === (a.kind === "pair" ? 2 : 1)) &&
           new Set(a.memberIds).size === a.memberIds.length &&
           num(a.startedAt, 0, time(s)) &&
           num(a.dueAt, a.startedAt) &&
@@ -1401,7 +1450,7 @@
             m.specialty === role &&
             !assigned.has(m.id) &&
             !injured(m) &&
-            (m.status === "standby" || pairJob),
+            (m.status === "standby" || pairJob || managedActivity(s, m)),
           "저격조 인원·역할·상태가 잘못되었습니다.",
         );
         assigned.add(m.id);
@@ -1516,6 +1565,7 @@
     HOUR,
     DAY,
     INITIAL_FUNDS,
+    MAX_MEMBERS,
     TERMS,
     newName,
     diversifyMarket,
@@ -1542,6 +1592,8 @@
     clearSquad,
     start,
     cancel,
+    interruptManaged,
+    managedActivity,
     advance,
     elapse,
     refreshMarket,

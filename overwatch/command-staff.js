@@ -544,6 +544,106 @@
     }
     return false;
   }
+  function trainingEnabled(s) {
+    return (
+      s.commandStaff?.autoTraining !== false &&
+      available(s, staff(s, "instructor"))
+    );
+  }
+  function manageTraining(s, seconds = 0) {
+    const c = s.commandStaff;
+    if (
+      !c ||
+      !trainingEnabled(s) ||
+      s.activeMission ||
+      s.commandExercise?.status === "running" ||
+      s.contracts.some((x) => x.status === "accepted") ||
+      s.ui.tab === "command"
+    )
+      return false;
+    const instructor = staff(s, "instructor");
+    let changed = false;
+    if (seconds > 0 && s.activities.some((a) => a.status === "running")) {
+      P().elapse(s, seconds);
+      changed = true;
+    }
+    if (!trainingEnabled(s)) return changed;
+    const day = Math.floor(s.clock.elapsedSeconds / 86400);
+    const plan = (c.trainingPlan ||= {
+      day,
+      spent: 0,
+      reviewed: {},
+      status: "대원 상태 검토",
+      lastAt: s.clock.elapsedSeconds,
+    });
+    if (plan.day !== day) {
+      plan.day = day;
+      plan.spent = 0;
+    }
+    if (s.activities.some((a) => a.status === "running" && a.instructorId))
+      return changed;
+    const pool = s.members
+      .filter(
+        (m) =>
+          !m.activityId &&
+          m.contract.endsAt > s.clock.elapsedSeconds + 6 * 3600 &&
+          !P().injured(m) &&
+          ![c.controllerId, c.instructorId].includes(m.id),
+      )
+      .sort(
+        (a, b) => (plan.reviewed[a.id] ?? -1) - (plan.reviewed[b.id] ?? -1),
+      );
+    if (!pool.length) {
+      plan.status = "가용 대원 대기 · 부상자는 진료 필요";
+      return changed;
+    }
+    const tired = pool
+      .filter((m) => m.fatigue >= 25 || m.stress >= 30)
+      .sort((a, b) => b.fatigue + b.stress - a.fatigue - a.stress)[0];
+    let request;
+    if (tired) request = { kind: "rest", memberIds: [tired.id], hours: 6 };
+    else if (pool.length < 2) {
+      plan.status = "훈련 가능한 대원 2명 이상 대기";
+      return changed;
+    } else {
+      const count =
+          plan.spent + 200000 <= 500000 && s.headquarters.funds >= 200000
+            ? Math.min(4, pool.length)
+            : 2,
+        cohort = pool.slice(0, count),
+        cost = 100000 * Math.ceil(count / 2),
+        course = [...P().SKILLS].sort(
+          (a, b) =>
+            cohort.reduce((n, m) => n + m.skills[a], 0) -
+            cohort.reduce((n, m) => n + m.skills[b], 0),
+        )[0];
+      if (plan.spent + cost <= 500000 && s.headquarters.funds >= cost)
+        request = {
+          kind: "training",
+          memberIds: cohort.map((m) => m.id),
+          course,
+          hours: 4,
+        };
+      else request = { kind: "rest", memberIds: [pool[0].id], hours: 6 };
+    }
+    const activity = P().start(s, { ...request, instructorId: instructor.id });
+    plan.spent += activity.cost;
+    plan.lastAt = s.clock.elapsedSeconds;
+    activity.memberIds.forEach(
+      (id) => (plan.reviewed[id] = s.clock.elapsedSeconds),
+    );
+    plan.status =
+      activity.memberIds
+        .map((id) => s.members.find((m) => m.id === id).name)
+        .join("·") +
+      " · " +
+      (activity.kind === "pair"
+        ? "조 단위 협동 훈련"
+        : activity.kind === "rest"
+          ? "피로 회복·휴식"
+          : P().LABELS[activity.course] + " 보완 훈련");
+    return true;
+  }
   function tick(s, e) {
     if (!s.commandStaff?.delegated || !e.battle || e.status !== "running")
       return;
@@ -709,6 +809,63 @@
     }
     if (e.mission?.returnRequested || e.battle.objective.returnRequested)
       return;
+    const alert = e.mission?.knowledge.supportAlert;
+    if (
+      alert &&
+      e.time - alert.receivedAt < 30 &&
+      c.handledSupportAlert !== alert.eventId
+    ) {
+      c.handledSupportAlert = alert.eventId;
+      const candidates = e.squads
+        .filter(
+          (q) =>
+            !q.urgentSupportUntil &&
+            !q.displacement &&
+            !(q.emergencyRepositionUntil > e.time),
+        )
+        .map((q) => ({
+          q,
+          sniper: frame.friends.find(
+            (f) =>
+              f.id === q.sniperId &&
+              f.health?.alive &&
+              f.health.conscious &&
+              f.age < 30,
+          ),
+        }))
+        .filter((x) => x.sniper)
+        .sort(
+          (x, y) =>
+            G().distance(x.sniper, alert.position) -
+            G().distance(y.sniper, alert.position),
+        );
+      const choice = candidates[0];
+      if (choice) {
+        const target = G().project(alert.contact || alert.position),
+          canShoot =
+            G().clear(choice.sniper, target) &&
+            G().distance(choice.sniper, target) <
+              (choice.sniper.weapon?.range || 1100),
+          command = order(s, e, a, choice.q, "cover", target);
+        command.reposition = !canShoot;
+        if (alert.contact) command.supportContact = copy(alert.contact);
+        choice.q.urgentSupportUntil = e.time + 45;
+        note(
+          s,
+          e,
+          a,
+          "controller-urgent-cover",
+          canShoot
+            ? "기관 피격 보고 수신. 저격조는 식별된 위협에 즉시 엄호 사격한다."
+            : "기관 피격 보고 수신. 사각·사거리 문제를 확인해 저격조를 대체 엄호 진지로 이동시킨다.",
+          {
+            callsign: choice.q.callsign,
+            reportEventId: alert.eventId,
+            reposition: command.reposition,
+          },
+        );
+      }
+    }
     if (missionProgress(s, e, a, c, frame)) return;
     const sectors = regions(e),
       reconTask = e.mission
@@ -745,6 +902,22 @@
       );
     }
     for (const [i, q] of e.squads.entries()) {
+      if (q.displacement || q.emergencyRepositionUntil > e.time) continue;
+      if (q.urgentSupportUntil) {
+        const support = e.commands.find(
+          (command) => command.id === q.commandId,
+        );
+        if (
+          q.urgentSupportUntil > e.time ||
+          ["queued", "received", "thinking", "executing"].includes(
+            support?.status,
+          )
+        )
+          continue;
+        q.urgentSupportUntil = null;
+        order(s, e, a, q, "cover", sectors[i]);
+        continue;
+      }
       if (!D().internals.leader(e, q)?.capable) continue;
       const staged = e.mission?.agencyControl && !reconTask;
       const alreadyRecon = e.commands.some(
@@ -821,7 +994,11 @@
         if (command?.reposition) issued.reposition = true;
       }
     }
-    if (e.mission) M().updateAgencyControl(s, e);
+    if (e.mission) {
+      if (e.squads.some((q) => q.urgentSupportUntil))
+        e.mission.agencyControl.authorized = false;
+      else M().updateAgencyControl(s, e);
+    }
     if (
       reconTask &&
       e.squads.every(
@@ -1026,6 +1203,8 @@
     ready,
     authority,
     tick,
+    trainingEnabled,
+    manageTraining,
     missionProgress,
     validate,
     release,

@@ -17,7 +17,7 @@
       follow = !desktop,
       target = { x: initial.map.width / 2, y: initial.map.height / 2 },
       pick = () => {},
-      rangeId = null,
+      rangeIds = new Set(),
       focusId = null,
       selected = null,
       drag = null,
@@ -183,17 +183,25 @@
         );
         ctx.fill();
       }
-      const rangeUnit = frame.friends.find((u) => u.id === rangeId);
-      if (rangeUnit) {
+      let rangeRow = 0;
+      for (const rangeUnit of frame.friends.filter((u) => rangeIds.has(u.id))) {
+        const color = [
+          "#55ddff",
+          "#ffd166",
+          "#a4f28b",
+          "#e6a6ff",
+          "#ff91a4",
+          "#a6cbff",
+        ][rangeRow % 6];
         const p = screen(rangeUnit, v),
           r = (rangeUnit.weapon?.range || 0) * v.scale,
           vision = (rangeUnit.visionRange || 200) * v.scale,
           half = rangeUnit.visionHalfAngle || Math.PI * 0.42;
         ctx.save();
-        ctx.strokeStyle = "#9cd7e6aa";
+        ctx.strokeStyle = color;
         ctx.fillStyle = "#93cdd810";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 5]);
         ctx.beginPath();
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
         ctx.stroke();
@@ -210,13 +218,33 @@
         );
         ctx.closePath();
         ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = color;
+        ctx.stroke();
+        ctx.setLineDash([2, 5]);
+        ctx.beginPath();
+        ctx.arc(
+          p.x,
+          p.y,
+          (rangeUnit.identificationRange || 0) * v.scale,
+          0,
+          Math.PI * 2,
+        );
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
         ctx.restore();
-        ctx.font = "11px sans-serif";
+        ctx.font = "600 12px sans-serif";
         ctx.fillStyle = "#fff";
         ctx.shadowColor = "#273626";
         ctx.shadowBlur = 4;
         ctx.fillText(
-          "사거리 " +
+          (rangeUnit.name || rangeUnit.callsign) +
+            " · 사거리 " +
             rangeUnit.weapon.range +
             "m · 탐지 " +
             Math.round(rangeUnit.visionRange || 0) +
@@ -224,9 +252,10 @@
             Math.round(rangeUnit.identificationRange || 0) +
             "m",
           12,
-          v.h - 14,
+          v.h - 14 - rangeRow * 19,
         );
         ctx.shadowBlur = 0;
+        rangeRow++;
       }
       for (const cover of frame.map.covers || []) {
         const p = screen(cover, v);
@@ -260,8 +289,24 @@
         m.drawn = p;
         const q = screen(p, v),
           size =
-            (t.type === "helicopter" ? 14 : t.type === "drone" ? 2.5 : 5) *
-            v.scale;
+            t.type === "drone"
+              ? Math.max(7, 2.5 * v.scale)
+              : Math.max(
+                  (t.type === "helicopter" ? 14 : 5) * v.scale,
+                  Math.min(
+                    ((t.type === "helicopter"
+                      ? desktop
+                        ? 72
+                        : 48
+                      : desktop
+                        ? 40
+                        : 28) *
+                      frame.map.height) /
+                      span,
+                    host.clientHeight * (t.type === "helicopter" ? 0.25 : 0.18),
+                  ),
+                );
+        m.displaySize = size;
         ctx.save();
         ctx.translate(q.x, q.y);
         ctx.fillStyle = "#142b3440";
@@ -375,7 +420,7 @@
         const friendly = u.role !== undefined,
           knownArmed = u.classification === "armed-person",
           uncertain =
-            !friendly &&
+            !friendly && u.pose !== "dead" && u.medicalCondition !== "dead" &&
             (u.classification === "unknown" || u.faction === "unknown");
         const motion = root.OverwatchMotion.sample(u, {
           now,
@@ -437,6 +482,8 @@
           const [x1, y1, x2, y2] = chosen.art.bounds;
           const width = chosen.widthM * entityScale,
             h = (width * (y2 - y1)) / (x2 - x1);
+          m.renderedWidth = width;
+          m.renderedHeight = h;
           const facingLeft = Math.cos(facing) < 0;
           ctx.save();
           ctx.translate(q.x, q.y + bob);
@@ -857,7 +904,9 @@
         update(frame);
       },
       setRange(id) {
-        rangeId = rangeId === id ? null : id;
+        const nextIds = new Set(Array.isArray(id) ? id : id ? [id] : []);
+        if ([...nextIds].join("|") === [...rangeIds].join("|")) return;
+        rangeIds = nextIds;
         invalidate();
       },
       setPickHandler(fn) {
@@ -872,10 +921,16 @@
       resize: size,
       stats() {
         return {
+          rangeIds: [...rangeIds],
           viewSpan: span,
           pixelsPerMetre: host.clientHeight / span,
           worldExtent: { width: frame.map.width, height: frame.map.height },
           knownIds: [...positions.keys()],
+          transportSizes: (frame.transports || []).map((t) => ({
+            id: t.id,
+            type: t.type,
+            pixels: positions.get(t.id)?.displaySize || 0,
+          })),
           framesPending: raf === null ? 0 : 1,
           motions: [...positions].map(([id, m]) => ({
             id,
@@ -884,6 +939,8 @@
             sprite: m.sprite,
             entityScale: m.entityScale,
             spriteFallback: m.spriteFallback,
+            renderedWidth: m.renderedWidth,
+            renderedHeight: m.renderedHeight,
           })),
           assetsReady:
             images.every((im) => im.complete && im.naturalWidth > 0) &&

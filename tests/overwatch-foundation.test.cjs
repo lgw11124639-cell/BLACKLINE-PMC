@@ -63,7 +63,7 @@ test("foundation opens an empty paused HQ without fabricated missions, personnel
   assert.equal(s.records[0].type, "hq-established");
   assert.equal(s.clock.paused, true);
 });
-test("ten-person cap, pair roles, duplicate personnel and secondary specialty constraints reject invalid states", () => {
+test("headquarters capacity, pair roles, duplicate personnel and secondary specialty constraints reject invalid states", () => {
   const s = fresh();
   s.members = [member("O", "observer"), member("S", "sniper")];
   s.squads = [{ callsign: "ALPHA", observerId: "O", sniperId: "S" }];
@@ -75,7 +75,7 @@ test("ten-person cap, pair roles, duplicate personnel and secondary specialty co
   repeated.squads.push({ callsign: "BRAVO", observerId: "O", sniperId: "S" });
   assert.throws(() => Core.validate(repeated));
   const oversized = fresh();
-  oversized.members = Array.from({ length: 11 }, (_, i) =>
+  oversized.members = Array.from({ length: Core.LIMITS.headquarters + 1 }, (_, i) =>
     member("m" + i, "sniper"),
   );
   assert.throws(() => Core.validate(oversized));
