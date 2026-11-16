@@ -1141,18 +1141,98 @@
     }
     if (e.mission?.returnRequested || e.battle.objective.returnRequested)
       return;
+    for (const [i, q] of e.squads.entries()) {
+      if (!q.urgentSupportUntil) continue;
+      const command = e.commands.find((cmd) => cmd.id === q.commandId),
+        id = command?.supportContact?.id,
+        contact = id && known.find((x) => x.id === id);
+      if (contact && ["dead", "down"].includes(contact.medicalCondition)) {
+        q.urgentSupportUntil = null;
+        q.friendlySupportTarget = null;
+        order(
+          s,
+          e,
+          a,
+          q,
+          e.mission?.contract.task === "recon" ? "recon" : "cover",
+          regions(e)[i],
+        );
+        note(
+          s,
+          e,
+          a,
+          "controller-support-complete",
+          "엄호 대상 위협 해제 보고 확인. 담당 수색·경계 구역 임무로 복귀한다.",
+          { callsign: q.callsign, contactId: id },
+        );
+      }
+    }
     friendlyCover(s, e, a, c, frame);
-    const alert = e.mission?.knowledge.supportAlert;
+    const reportedAlert = e.mission?.knowledge.supportAlert;
+    const agencyThreat = known
+      .filter(
+        (x) =>
+          x.source === "agency" &&
+          x.age <= 20 &&
+          x.confidence >= 0.7 &&
+          x.classification === "armed-person" &&
+          ["regular", "insurgent"].includes(x.faction) &&
+          !["dead", "down"].includes(x.medicalCondition),
+      )
+      .map((contact) => ({
+        contact,
+        near: (frame.supportActors || [])
+          .filter((a) => a.armed && a.health?.alive)
+          .sort(
+            (a, b) =>
+              Number(!!b.underFire) - Number(!!a.underFire) ||
+              G().distance(a, contact) - G().distance(b, contact),
+          )[0],
+      }))
+      .filter(
+        (x) =>
+          x.near &&
+          !(
+            e.mission?.contract.task === "recon" &&
+            e.squads.length === 1 &&
+            !x.near.underFire
+          ),
+      )
+      .sort(
+        (a, b) =>
+          Number(!!b.near.underFire) - Number(!!a.near.underFire) ||
+          G().distance(a.near, a.contact) - G().distance(b.near, b.contact),
+      )[0];
+    const alert =
+      reportedAlert && e.time - reportedAlert.receivedAt < 30
+        ? reportedAlert
+        : agencyThreat
+          ? {
+              eventId:
+                "agency-contact:" +
+                agencyThreat.contact.id +
+                ":" +
+                Math.floor(agencyThreat.contact.observedAt / 30),
+              receivedAt: agencyThreat.contact.receivedAt,
+              position: agencyThreat.near,
+              contact: {
+                ...copy(agencyThreat.contact),
+                lastSeen: agencyThreat.contact.observedAt,
+                condition: agencyThreat.contact.pose,
+              },
+              proactive: true,
+            }
+          : null;
     if (
       alert &&
       e.time - alert.receivedAt < 30 &&
       c.handledSupportAlert !== alert.eventId
     ) {
-      c.handledSupportAlert = alert.eventId;
+      const threatPoint = G().project(alert.contact || alert.position);
       const candidates = e.squads
         .filter(
           (q) =>
-            !q.urgentSupportUntil &&
+            !(q.urgentSupportUntil > e.time) &&
             !q.displacement &&
             !(q.emergencyRepositionUntil > e.time),
         )
@@ -1166,31 +1246,67 @@
               f.age < 30,
           ),
         }))
-        .filter((x) => x.sniper)
+        .filter(
+          (x) =>
+            x.sniper &&
+            frame.friends.filter(
+              (f) =>
+                f.callsign === x.q.callsign &&
+                f.age < 30 &&
+                f.health?.alive &&
+                f.health.conscious &&
+                !f.health.aid &&
+                !f.health.wounds.some((w) => !w.treated && w.severity === 3),
+            ).length === 2,
+        )
+        .map((x) => ({
+          ...x,
+          canShoot:
+            G().clear(x.sniper, threatPoint) &&
+            G().distance(x.sniper, threatPoint) <
+              (x.sniper.weapon?.range || 1100),
+        }))
         .sort(
           (x, y) =>
-            G().distance(x.sniper, alert.position) -
-            G().distance(y.sniper, alert.position),
+            Number(y.canShoot) - Number(x.canShoot) ||
+            G().distance(x.sniper, threatPoint) -
+              G().distance(y.sniper, threatPoint),
         );
       const choice = candidates[0];
       if (choice) {
-        const target = G().project(alert.contact || alert.position),
-          canShoot =
-            G().clear(choice.sniper, target) &&
-            G().distance(choice.sniper, target) <
-              (choice.sniper.weapon?.range || 1100),
-          command = order(s, e, a, choice.q, "cover", target);
-        command.reposition = !canShoot;
-        if (alert.contact) command.supportContact = copy(alert.contact);
+        c.handledSupportAlert = alert.eventId;
+        const target = threatPoint,
+          canShoot = choice.canShoot,
+          existing = e.commands.find((cmd) => cmd.id === choice.q.commandId),
+          reuse =
+            existing?.kind === "cover" &&
+            existing.supportContact?.id === alert.contact?.id &&
+            !["failed", "cancelled", "superseded"].includes(existing.status) &&
+            G().distance(existing.target, target) < 25 &&
+            (canShoot ||
+              ["queued", "received", "thinking", "executing"].includes(
+                existing.status,
+              )),
+          command = reuse
+            ? existing
+            : order(s, e, a, choice.q, "cover", target);
+        if (!reuse) {
+          command.reposition = !canShoot;
+          if (alert.contact) command.supportContact = copy(alert.contact);
+        }
         choice.q.urgentSupportUntil = e.time + 45;
         note(
           s,
           e,
           a,
-          "controller-urgent-cover",
-          canShoot
-            ? "기관 피격 보고 수신. 저격조는 식별된 위협에 즉시 엄호 사격한다."
-            : "기관 피격 보고 수신. 사각·사거리 문제를 확인해 저격조를 대체 엄호 진지로 이동시킨다.",
+          alert.proactive
+            ? "controller-agency-contact-cover"
+            : "controller-urgent-cover",
+          alert.proactive
+            ? "기관의 무장 위협 식별 보고 수신. 사격선과 사거리가 확보된 저격조를 우선 배정해 엄호한다."
+            : canShoot
+              ? "기관 피격 보고 수신. 저격조는 식별된 위협에 즉시 엄호 사격한다."
+              : "기관 피격 보고 수신. 사각·사거리 문제를 확인해 저격조를 대체 엄호 진지로 이동시킨다.",
           {
             callsign: choice.q.callsign,
             reportEventId: alert.eventId,

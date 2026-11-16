@@ -2153,6 +2153,54 @@
       impactVisible: G.clear(I().leader(e, q), shot.to),
     };
   }
+  function agencyShotObservation(e, shot) {
+    const actors = e.world.actors,
+      shooter = actors.find((a) => a.id === shot.actorId),
+      observers = actors.filter(
+        (a) =>
+          a.side === "ally" &&
+          a.armed &&
+          !a.waitingForDeployment &&
+          a.health.alive &&
+          a.health.conscious,
+      ),
+      own =
+        shooter?.side === "ally" &&
+        shooter.armed &&
+        !shooter.waitingForDeployment;
+    const sees = (u, id) => {
+      const c = u.agencyReports?.[id];
+      const actor = all(e).find((a) => a.id === id);
+      return (
+        c &&
+        actor &&
+        e.time - c.at <= 6 &&
+        G.distance(u, actor) < 200 &&
+        G.clear(u, actor)
+      );
+    };
+    const witness = own
+      ? shooter
+      : observers.find((u) => sees(u, shot.actorId));
+    if (!witness) return null;
+    const target = all(e).find((a) => a.id === shot.targetId),
+      targetKnown = target?.side === "ally" || sees(witness, shot.targetId);
+    return {
+      eventId: shot.id,
+      time: shot.time,
+      kind: "shot",
+      sourceKnown: true,
+      actorId: shot.actorId,
+      targetId: targetKnown ? shot.targetId : null,
+      model: shot.model,
+      side: shot.side,
+      from: copy(shot.from),
+      to: copy(shot.to),
+      hit: shot.hit && !!targetKnown,
+      impactVisible: G.clear(witness, shot.to),
+      source: "agency",
+    };
+  }
   function telemetry(s, e) {
     const b = e.battle;
     if (e.time - b.lastPacket >= 2) {
@@ -2171,12 +2219,26 @@
           effects,
         });
       }
+      if (e.mission) {
+        const effects = b.shots
+          .filter((shot) => e.time - shot.time <= 2)
+          .map((shot) => agencyShotObservation(e, shot))
+          .filter(Boolean);
+        if (effects.length)
+          b.packets.push({
+            callsign: "AGENCY",
+            observedAt: e.time,
+            dueAt: e.time + 2,
+            friends: [],
+            effects,
+          });
+      }
     }
     for (const p of b.packets.slice()) {
       const q = e.squads.find((q) => q.callsign === p.callsign);
       if (e.time < p.dueAt) continue;
       b.packets.splice(b.packets.indexOf(p), 1);
-      if (!I().linked(e, q)) continue;
+      if (p.callsign === "AGENCY" ? !e.mission : !I().linked(e, q)) continue;
       I().applyKnowledge(e, { payload: { friends: p.friends } });
       b.delivered.push({ ...p, receivedAt: e.time });
       for (const f of p.effects) {
@@ -2606,11 +2668,12 @@
     );
     for (const p of [...b.packets, ...b.delivered])
       ok(
-        e.squads.some((q) => q.callsign === p.callsign) &&
+        (e.squads.some((q) => q.callsign === p.callsign) ||
+          (e.mission && p.callsign === "AGENCY")) &&
           n(p.observedAt, 0, e.time) &&
           n(p.dueAt, p.observedAt, e.time + 2) &&
           Array.isArray(p.friends) &&
-          p.friends.length === 2 &&
+          p.friends.length === (p.callsign === "AGENCY" ? 0 : 2) &&
           Array.isArray(p.effects),
         "텔레메트리 저장이 잘못되었습니다.",
       );

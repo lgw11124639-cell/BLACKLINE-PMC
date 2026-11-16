@@ -458,6 +458,7 @@
                 civilian: "민간인",
               }[c.faction] || "소속 확인 중",
             ) +
+            (c.source === "agency" ? " · 기관 식별" : "") +
             " · 신뢰 " +
             Math.round(c.confidence * 100) +
             "% · " +
