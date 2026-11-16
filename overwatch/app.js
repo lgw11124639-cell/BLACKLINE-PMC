@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.06",
+  const VERSION = "2026.11.16.07",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -55,6 +55,7 @@
   function rollbackRuntime(errorValue) {
     runtime.stop();
     OverwatchAudio.stop();
+    root.querySelector(".field-fullscreen")?.classList.remove("field-fullscreen");
     if (lastSaved) state = Core.clone(lastSaved);
     if (
       state?.commandExercise?.battle &&

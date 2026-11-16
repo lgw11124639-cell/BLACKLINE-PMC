@@ -213,3 +213,14 @@ test('injured agency infantry transmit actual incoming-fire evidence before trea
   assert.ok(e.events.some(ev=>ev.type==='controller-urgent-cover'));
   C.validate(s);
 });
+
+test('identified agency contact relayed by urgent cover retains a valid confidence record before any local sighting', () => {
+  const s=make(2),c=s.contracts.find(c=>c.key==='aid-cover');M.accept(s,c.id);M.launch(s,c.id);const e=s.commandExercise;
+  for(const enemy of e.world.actors.filter(a=>a.side==='red'))enemy.health.conscious=false;
+  for(let i=0;i<150;i++){B.setPaused(s,false);D.step(s,1);}
+  const authority=S.authority(s,e),cmd=D.issue(s,'ALPHA','cover',{x:554,y:580},null,authority);
+  cmd.supportContact={id:'agency-identified-target',x:554,y:580,lastSeen:e.time,classification:'armed-person',confidence:.9,condition:'standing',reportedAt:e.time};
+  for(let i=0;i<25;i++){B.setPaused(s,false);D.step(s,1);C.validate(s);}
+  const contact=e.squads[0].contacts.find(c=>c.id==='agency-identified-target');
+  assert.ok(contact);assert.equal(contact.reportedConfidence,0);
+});
