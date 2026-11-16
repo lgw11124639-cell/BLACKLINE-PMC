@@ -40,7 +40,7 @@ for (const key of [
       M.accept(s, contract.id);
       M.launch(s, contract.id);
       const e = s.commandExercise;
-      for (let i = 0; i < 4000 && e.status === "running"; i++) {
+      for (let i = 0; i < 9000 && e.status === "running"; i++) {
         for (const a of e.world.actors.filter((a) => a.side === "red"))
           a.weapon.nextFireAt = e.time + 20;
         B.setPaused(s, false);

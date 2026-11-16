@@ -296,7 +296,7 @@
       esc(m.issuer) +
       " · <strong data-live-phase>" +
       esc(phases[m.phase] || m.phase) +
-      "</strong></p><p data-live-objective></p><p data-live-transport-status></p><p>제공 수송 " +
+      "</strong></p><p data-agency-control>기관 보병: 저격조 진지·관측 보고 대기</p><p data-live-objective></p><p data-live-transport-status></p><p>제공 수송 " +
       { foot: "도보", vehicle: "차량", helicopter: "헬기" }[m.transport] +
       " · 출격 소모품 예치 " +
       cash(m.escrow) +
@@ -383,6 +383,13 @@
         .join(" / ");
     const phase = rootNode.querySelector("[data-live-phase]");
     if (phase) phase.textContent = phases[m.phase] || m.phase;
+    const agency = rootNode.querySelector("[data-agency-control]");
+    if (agency && m.agencyControl)
+      agency.textContent =
+        "기관 보병: " +
+        m.agencyControl.reason +
+        " · 엄호 준비 " +
+        (m.agencyControl.readyTeams.join(" / ") || "대기");
     const goal = rootNode.querySelector("[data-live-objective]");
     if (goal)
       goal.textContent =

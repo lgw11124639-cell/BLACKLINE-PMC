@@ -620,6 +620,24 @@
         ctx.roundRect(p.x - 5, p.y - 5, 10, 10, 2);
         ctx.stroke();
       }
+      const raw = 80 / v.scale,
+        power = 10 ** Math.floor(Math.log10(raw)),
+        metres = [1, 2, 5, 10].map((n) => n * power).find((n) => n >= raw),
+        pixels = metres * v.scale;
+      ctx.save();
+      ctx.fillStyle = "#0c181dcc";
+      ctx.fillRect(v.w - pixels - 24, v.h - 38, pixels + 18, 32);
+      ctx.strokeStyle = "#e0eadc";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(v.w - pixels - 16, v.h - 12);
+      ctx.lineTo(v.w - 16, v.h - 12);
+      ctx.stroke();
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#e0eadc";
+      ctx.fillText(metres + " m", v.w - 16, v.h - 20);
+      ctx.restore();
       if (now < until && !paused) raf = requestAnimationFrame(draw);
     }
     function invalidate() {
@@ -838,6 +856,8 @@
       stats() {
         return {
           viewSpan: span,
+          pixelsPerMetre: host.clientHeight / span,
+          worldExtent: { width: frame.map.width, height: frame.map.height },
           knownIds: [...positions.keys()],
           framesPending: raf === null ? 0 : 1,
           motions: [...positions].map(([id, m]) => ({

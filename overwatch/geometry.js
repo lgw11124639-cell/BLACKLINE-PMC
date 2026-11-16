@@ -108,7 +108,7 @@
     return b && inside(p, b, -0.6) ? b : null;
   }
   function roofs() {
-    return MAP.width < 500
+    return MAP.urban || MAP.width < 500
       ? MAP.buildings
           .map((b, i) => ({
             id: "roof-" + i,
@@ -165,6 +165,43 @@
         (MAP.covers || []).some((c) => intersects(coverBounds(c), 0.4))
       )
         return false;
+    }
+    if (!ground && !MAP.heights.length) {
+      const eye = (p) =>
+        Number.isFinite(p.eyeHeight)
+          ? p.eyeHeight
+          : (p.stance || p.pose || p.condition) === "prone" || p.prone
+            ? 0.45
+            : (p.stance || p.pose || p.condition) === "kneeling"
+              ? 1.15
+              : 1.7;
+      const z0 = elevation(a) + (a.altitude || 0) + eye(a),
+        z1 = elevation(b) + (b.altitude || 0) + eye(b);
+      const hits = (box, height, pad = 0) => {
+        let lo = 0,
+          hi = 1;
+        for (const [start, delta, min, max] of [
+          [a.x, b.x - a.x, box[0] - pad + 1e-7, box[2] + pad - 1e-7],
+          [a.y, b.y - a.y, box[1] - pad + 1e-7, box[3] + pad - 1e-7],
+        ]) {
+          if (Math.abs(delta) < 1e-10) {
+            if (start <= min || start >= max) return false;
+          } else {
+            const p = (min - start) / delta,
+              q = (max - start) / delta;
+            lo = Math.max(lo, Math.min(p, q));
+            hi = Math.min(hi, Math.max(p, q));
+            if (lo > hi) return false;
+          }
+        }
+        return (
+          Math.min(z0 + (z1 - z0) * lo, z0 + (z1 - z0) * hi) < height - 1e-7
+        );
+      };
+      return (
+        !MAP.buildings.some((r) => hits(r, r[4])) &&
+        !(MAP.covers || []).some((c) => hits(coverBounds(c), c.height))
+      );
     }
     const n = Math.max(
       2,

@@ -248,6 +248,29 @@
   function regions(e) {
     const g = G().MAP,
       center = e.mission?.contract.interest || g.sector || e.squads[0].sector;
+    if (e.mission?.agencyControl && e.mission.contract.task !== "recon") {
+      const start = e.mission.contract.insertion,
+        d = Math.max(1, G().distance(start, center));
+      return e.squads.map((q, i) => {
+        if (q.assignment?.kind === "counter-sniper") return G().project(center);
+        const focus =
+          q.assignment?.kind === "corridor-cover" &&
+          e.mission.contract.task !== "rescue"
+            ? e.mission.taskGoal
+            : center;
+        const distance = Math.max(1, G().distance(start, focus)),
+          step = q.assignment?.kind === "flank-security" ? 80 : 60 + i * 65;
+        const p = {
+          x: start.x + ((focus.x - start.x) / distance) * step,
+          y: start.y + ((focus.y - start.y) / distance) * step,
+        };
+        if (q.assignment?.kind === "flank-security") p.x -= 45;
+        return G().project({
+          x: Math.max(12, Math.min(g.width - 12, p.x)),
+          y: Math.max(12, Math.min(g.height - 12, p.y)),
+        });
+      });
+    }
     return e.squads.map((q, i) =>
       G().project({
         x: Math.max(
@@ -416,6 +439,34 @@
         decisions: [],
       };
     const c = e.control;
+    if (e.mission)
+      for (const [i, q] of e.squads.entries())
+        if (!q.assignment) {
+          const roles =
+            e.squads.length === 1
+              ? [["overwatch", "지역 관측·저격 엄호"]]
+              : [
+                  ["counter-sniper", "외곽 고정 관측·대저격"],
+                  ["corridor-cover", "기관 보병 진출로·구출 엄호"],
+                  ["flank-security", "측후방·철수로 경계"],
+                ];
+          q.assignment = {
+            kind: roles[i][0],
+            label: roles[i][1],
+            assignedAt: e.time,
+          };
+          note(
+            s,
+            e,
+            a,
+            "controller-team-assigned",
+            q.callsign +
+              " · " +
+              q.assignment.label +
+              " 임무를 부여한다. 관측수가 조 내부 이동·사격을 지휘한다.",
+            { callsign: q.callsign, assignment: q.assignment.kind },
+          );
+        }
     if (c.staffId !== a.id) {
       const previousId = c.staffId;
       c.staffId = a.id;
@@ -532,13 +583,12 @@
           !["dead", "down"].includes(x.medicalCondition),
       ),
       reconDone =
-        identified.length > 0 ||
         c.phase === "overwatch" ||
         (!reconTask &&
           e.squads.every((q) =>
             e.commands.some(
               (command) =>
-                command.id === c.orders[q.callsign]?.id &&
+                command.callsign === q.callsign &&
                 command.kind === "recon" &&
                 command.status === "completed",
             ),
@@ -559,9 +609,31 @@
     }
     for (const [i, q] of e.squads.entries()) {
       if (!D().internals.leader(e, q)?.capable) continue;
+      const staged = e.mission?.agencyControl && !reconTask;
+      const alreadyRecon = e.commands.some(
+        (x) =>
+          x.callsign === q.callsign &&
+          x.kind === "recon" &&
+          x.status === "completed",
+      );
+      if (
+        staged &&
+        !alreadyRecon &&
+        i > 0 &&
+        !frame.commands.some(
+          (x) =>
+            x.callsign === e.squads[i - 1].callsign &&
+            x.kind === "cover" &&
+            x.status === "completed",
+        )
+      )
+        continue;
       const old = c.orders[q.callsign],
         command = old && e.commands.find((x) => x.id === old.id),
-        kind = nextPhase === "overwatch" ? "cover" : "recon";
+        kind =
+          nextPhase === "overwatch" || (staged && alreadyRecon)
+            ? "cover"
+            : "recon";
       if (
         !command ||
         command.status === "failed" ||
@@ -608,9 +680,11 @@
             ),
             y: Math.max(12, Math.min(G().MAP.height - 12, target.y + 20)),
           });
-        order(s, e, a, q, kind, target);
+        const issued = order(s, e, a, q, kind, target);
+        if (command?.reposition) issued.reposition = true;
       }
     }
+    if (e.mission) M().updateAgencyControl(s, e);
     if (
       reconTask &&
       e.squads.every(

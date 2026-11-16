@@ -120,6 +120,43 @@
           (b) => c.x > b[0] && c.x < b[2] && c.y > b[1] && c.y < b[3],
         ),
     );
+  // Separate operation districts preserve coordinates of all existing exercises/saves.
+  for (const source of [...maps]) {
+    const scale = 5,
+      point = (p) => ({ x: p.x * scale, y: p.y * scale });
+    maps.push({
+      ...source,
+      id: source.id + "-operation",
+      name: source.name + " · 광역 작전구역",
+      urban: true,
+      districtScale: scale,
+      originalMapId: source.id,
+      width: source.width * scale,
+      height: source.height * scale,
+      grid: source.grid * scale,
+      base: point(source.base),
+      sector: point(source.sector),
+      buildings: source.buildings.map((b) => [
+        b[0] * scale,
+        b[1] * scale,
+        b[2] * scale,
+        b[3] * scale,
+        b[4],
+      ]),
+      covers: source.covers.map((c) => ({
+        ...c,
+        x: c.x * scale,
+        y: c.y * scale,
+      })),
+      spawnPoints: source.spawnPoints.map(point),
+      shadows: source.shadows.map((b) => b.map((v) => v * scale)),
+      heights: source.heights.map((h) => ({
+        ...h,
+        ...point(h),
+        r: h.r * scale,
+      })),
+    });
+  }
   const api = { maps: Object.fromEntries(maps.map((v) => [v.id, v])) };
   root.OverwatchMaps = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

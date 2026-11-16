@@ -362,7 +362,7 @@
       carrying: null,
       carriedBy: null,
     });
-    if (G.MAP.width < 500)
+    if (G.MAP.urban || G.MAP.width < 500)
       for (const a of e.world.actors) {
         const p = G.project(a);
         a.x = p.x;
@@ -782,7 +782,7 @@
       (0.055 + (observer.skill || 55) / 1600) *
       Math.max(0.15, 1 - (0.8 * d) / range) *
       conceal *
-      (moving ? 2.8 : 1) *
+      (moving ? (prone ? 1.3 : 2.8) : 1) *
       (shadow ? 0.5 : 1) *
       (cover ? 0.55 : 1) *
       (target.roofId && prone ? 0.75 : 1);
@@ -813,30 +813,38 @@
                     v.id === "agency-protected")),
             ),
           ];
+    const sightRange = (v) => {
+      const delta = Math.abs(
+        Math.atan2(
+          Math.sin(Math.atan2(v.y - u.y, v.x - u.x) - u.heading),
+          Math.cos(Math.atan2(v.y - u.y, v.x - u.x) - u.heading),
+        ),
+      );
+      if (delta >= Math.PI * 0.42) return 0;
+      const scoped = u.weapon.model === "SVD" && delta < Math.PI * 0.1;
+      return (
+        ((scoped
+          ? 750
+          : u.weapon.model === "SVD"
+            ? 140
+            : u.side === "ally"
+              ? 350
+              : 240) +
+          G.elevation(u) * 3) *
+        e.battle.weather.visibility
+      );
+    };
     const visible = targets.filter(
       (v) =>
         v.health.alive &&
         !v.waitingForDeployment &&
         !v.boardedBy &&
         !v.extracted &&
-        G.distance(u, v) <
-          ((u.weapon.model === "SVD" ? 750 : u.side === "ally" ? 350 : 240) +
-            G.elevation(u) * 3) *
-            e.battle.weather.visibility &&
-        G.clear(u, v) &&
-        Math.abs(
-          Math.atan2(
-            Math.sin(Math.atan2(v.y - u.y, v.x - u.x) - u.heading),
-            Math.cos(Math.atan2(v.y - u.y, v.x - u.x) - u.heading),
-          ),
-        ) <
-          Math.PI * 0.42,
+        G.distance(u, v) < sightRange(v) &&
+        G.clear(u, v),
     );
     for (const v of visible) {
-      const range =
-        ((u.weapon.model === "SVD" ? 750 : u.side === "ally" ? 350 : 240) +
-          G.elevation(u) * 3) *
-        e.battle.weather.visibility;
+      const range = sightRange(v);
       if (!visualAcquire(e, u, v, range)) continue;
       let m = u.memory.find((m) => m.id === v.id);
       if (m && e.time - m.lastSeen > 8) m.firstSeen = e.time;
@@ -1017,6 +1025,7 @@
           .find(
             (n) =>
               n.actorId !== u.id &&
+              all(e).find((a) => a.id === n.actorId)?.side !== u.side &&
               e.time - n.time < 15 &&
               G.distance(u, n) < n.range,
           );
@@ -1040,9 +1049,15 @@
               ),
             ),
           };
-          u.path = G.path(u, p);
-          u.goal = p;
-          u.state = "investigating";
+          if (u.weapon.model === "SVD") {
+            u.heading = Math.atan2(p.y - u.y, p.x - u.x);
+            u.state = "searching";
+            u.path = [];
+          } else {
+            u.path = G.path(u, p);
+            u.goal = p;
+            u.state = "investigating";
+          }
         }
         if (u.path.length) {
           const p = u.path[0];
@@ -1151,8 +1166,11 @@
     u.prone = desired === "prone";
     return desired;
   }
-  function fire(s, e, u, known) {
-    if (u.roofTransit) return null;
+  function fire(s, e, u, known, options = {}) {
+    if (u.roofTransit) {
+      u.fireBlockReason = "stairs";
+      return null;
+    }
     G.activate(e.mapId || "command-range");
     if (
       u.weapon.loaded === 0 &&
@@ -1179,8 +1197,11 @@
     )
       return;
     const d = G.distance(u, known);
-    chooseStance(e, u, known);
-    if (d > stats.range || !G.clear(u, known)) return;
+    if (!options.keepStance) chooseStance(e, u, known);
+    if (d > stats.range || !G.clear(u, known)) {
+      u.fireBlockReason = d > stats.range ? "range" : "line-of-sight";
+      return;
+    }
     if (!w.loaded) {
       reload(e, u);
       return;
@@ -1202,6 +1223,7 @@
       w.aimOrigin = { x: u.x, y: u.y };
       w.aimAnchorAt = e.time;
       w.trackingSpeed = 0;
+      u.fireBlockReason = "acquiring";
       return;
     }
     w.trackingSpeed = trackingDisplacement / trackingSeconds;
@@ -1210,7 +1232,10 @@
     // Aim at the observed position, never at the hidden truth position.
     u.heading = Math.atan2(known.y - u.y, known.x - u.x);
     const aimSeconds = u.role === "sniper" || w.model === "SVD" ? 7 : 3;
-    if (e.time - w.aimSince < aimSeconds) return;
+    if (e.time - w.aimSince < aimSeconds || options.holdFire) {
+      u.fireBlockReason = options.holdFire ? "holding-fire" : "aiming";
+      return;
+    }
     // Fire at observed coordinates, never teleport aim to an unseen target's new position.
     const movement = u.path?.length || u.state === "moving" ? 1.8 : 1,
       armPenalty =
@@ -1254,8 +1279,11 @@
           G.distance(u, v) < d &&
           G.clear(u, v),
       )
-    )
+    ) {
+      u.fireBlockReason = "friendly-in-lane";
       return;
+    }
+    u.fireBlockReason = null;
     u.lastShotAt = e.time;
     w.loaded--;
     w.spent++;
@@ -1511,8 +1539,31 @@
     let mode = "hold",
       reason = "식별·사격 조건 확보 전 사격 보류";
     if (civilianRisk) reason = "민간인·미식별 인원 사격선 위험, 사격 보류";
-    else if (covert && !danger) {
-      mode = range < 300 && main?.kind !== "withdraw" ? "evade" : "conceal";
+    else if (
+      covert &&
+      !danger &&
+      !(
+        e.mission &&
+        ["aiming", "firing"].includes(target.activity) &&
+        target.heading != null &&
+        Math.abs(
+          Math.atan2(
+            Math.sin(
+              target.heading - Math.atan2(u.y - target.y, u.x - target.x),
+            ),
+            Math.cos(
+              target.heading - Math.atan2(u.y - target.y, u.x - target.x),
+            ),
+          ),
+        ) < 0.4
+      )
+    ) {
+      mode =
+        range <
+          (e.mission?.agencyControl ? 25 : Math.min(300, G.MAP.width * 0.18)) &&
+        main?.kind !== "withdraw"
+          ? "evade"
+          : "conceal";
       reason =
         mode === "evade"
           ? "근거리 위협 관측, 은밀 우회·거리 확보"
@@ -1644,13 +1695,68 @@
               t && t.side === "red" && !["down", "dead"].includes(c.condition)
             );
           })
-          .sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
+          .filter(
+            (c) =>
+              G.distance(u, c) <= WEAPONS[u.weapon.model].range &&
+              ["prone", "kneeling", "standing"].some((stance) =>
+                G.clear({ ...u, stance, prone: stance === "prone" }, c),
+              ),
+          )
+          .sort(
+            (a, b) =>
+              G.distance(u, a) -
+              (a.specialty === "sniper"
+                ? q.assignment?.kind === "counter-sniper"
+                  ? 700
+                  : 300
+                : 0) -
+              (a.combatActive ? 100 : 0) -
+              (a.id === u.weapon.targetId ? 450 : 0) +
+              (q.assignment?.kind === "corridor-cover"
+                ? G.distance(
+                    a,
+                    e.mission.agencyControl?.waypoint ||
+                      e.mission.contract.insertion,
+                  ) * 0.8
+                : q.assignment?.kind === "flank-security"
+                  ? G.distance(a, e.mission.contract.extraction) * 0.6
+                  : 0) -
+              (G.distance(u, b) -
+                (b.specialty === "sniper"
+                  ? q.assignment?.kind === "counter-sniper"
+                    ? 700
+                    : 300
+                  : 0) -
+                (b.combatActive ? 100 : 0) -
+                (b.id === u.weapon.targetId ? 450 : 0) +
+                (q.assignment?.kind === "corridor-cover"
+                  ? G.distance(
+                      b,
+                      e.mission.agencyControl?.waypoint ||
+                        e.mission.contract.insertion,
+                    ) * 0.8
+                  : q.assignment?.kind === "flank-security"
+                    ? G.distance(b, e.mission.contract.extraction) * 0.6
+                    : 0)),
+          )[0];
         if (!target) continue;
+        const silent =
+          e.mission?.agencyControl &&
+          (!main || ["recon", "observe", "hold", "move"].includes(main.kind));
+        if (!u.path.length && !silent) chooseStance(e, u, target);
         const autonomous = !!e.battle.observerAutonomy;
         const permitted = autonomous
           ? observerDecision(s, e, q, u, target)
           : q.roe !== "hold";
         u.combatActive = permitted;
+        if (
+          !permitted &&
+          u.role === "sniper" &&
+          !u.path.length &&
+          !u.roofTransit &&
+          G.clear(u, target)
+        )
+          fire(s, e, u, target, { holdFire: true, keepStance: true });
         if (seekCover(e, u, target)) continue;
         if (u.role === "sniper" && u.path.length) continue;
         const selfDefense = e.time - u.lastThreatAt < 25;
