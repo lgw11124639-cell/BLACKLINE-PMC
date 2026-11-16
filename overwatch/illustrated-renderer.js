@@ -483,7 +483,7 @@
             y1 * entry.scale,
             (x2 - x1) * entry.scale,
             (y2 - y1) * entry.scale,
-            -width / 2 - motion.recoil * v.scale,
+            -width / 2 - motion.recoil * entityScale,
             -h * 0.85,
             width,
             h,
@@ -583,6 +583,20 @@
           ctx.fillText(label, q.x, labelY);
           ctx.shadowBlur = 0;
         }
+        if (!friendly && u.source === "agency" && knownArmed) {
+          ctx.strokeStyle = "#ff8b69";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(
+            q.x - width * 0.65 - 3,
+            q.y - height - 3,
+            width * 1.3 + 6,
+            height + 8,
+          );
+          ctx.font = "600 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#ffd5bb";
+          ctx.fillText("기관 식별", q.x, q.y + 18);
+        }
         if (!friendly && u.objectiveCode) {
           ctx.fillStyle = "#ffe089";
           ctx.font = "700 11px sans-serif";
@@ -647,8 +661,16 @@
           b = screen(shot.fx.to, v),
           angle = Math.atan2(b.y - a.y, b.x - a.x);
         ctx.save();
-        ctx.globalAlpha = Math.max(0, 1 - age / 350);
-        ctx.strokeStyle = "#ffe5a7";
+        ctx.globalAlpha = Math.max(
+          0,
+          1 - age / (shot.fx.side === "ally" ? 600 : 350),
+        );
+        ctx.strokeStyle =
+          shot.fx.side === "red"
+            ? "#ff8b69"
+            : shot.fx.side === "ally"
+              ? "#9ce7ff"
+              : "#ffe5a7";
         ctx.lineWidth = 1.4;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y - 9);
@@ -785,6 +807,7 @@
             ? [
                 ...next.friends,
                 ...next.contacts.filter((c) => !c.expired),
+                ...(next.supportActors || []),
                 ...(next.transports || []),
               ]
             : next.friends
@@ -897,6 +920,7 @@
         const u = [
           ...frame.friends,
           ...frame.contacts,
+          ...(frame.supportActors || []),
           ...(frame.transports || []),
         ].find((u) => u.id === id);
         span = Math.min(frame.map.height, u?.type === "drone" ? 520 : 28);
@@ -933,6 +957,14 @@
             pixels: positions.get(t.id)?.displaySize || 0,
           })),
           framesPending: raf === null ? 0 : 1,
+          recentShots: [...shots.values()]
+            .filter((s) => performance.now() - s.at < 650)
+            .map((s) => ({
+              eventId: s.fx.eventId,
+              actorId: s.fx.actorId,
+              side: s.fx.side,
+              kind: s.fx.kind,
+            })),
           motions: [...positions].map(([id, m]) => ({
             id,
             mode: m.motion,

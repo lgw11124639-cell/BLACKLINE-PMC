@@ -1247,7 +1247,9 @@
     )
       for (const a of e.world.actors)
         if (
-          (a.missionTargetCode ||
+          ((u.agencyReports[a.id] &&
+            (!a.health.alive || !a.health.conscious)) ||
+            a.missionTargetCode ||
             (m.contract.task === "rescue" && a.id === "agency-protected")) &&
           G.distance(u, a) < 120 &&
           G.clear(u, a) &&
@@ -1292,6 +1294,7 @@
         confidence: identified ? 0.95 : 0.85,
         classification: a.armed ? "armed-person" : "unarmed-person",
         observerId: u.id,
+        source: "agency",
         callsign: "보병조",
         uncertainty: identified ? 2 : 6,
         pose: B().snapshot(a, e.time).pose,
@@ -3165,7 +3168,8 @@
         s,
         e,
         "decision",
-        reason + ". 대형 유지. 식별 상황을 전파하고 위협 확인 시 엄폐 후 교전한다.",
+        reason +
+          ". 대형 유지. 식별 상황을 전파하고 위협 확인 시 엄폐 후 교전한다.",
         ev,
       );
       g.history ||= [];
@@ -3844,9 +3848,8 @@
           x: a.x,
           y: a.y,
           heading: a.heading,
-          pose: B().snapshot(a).pose,
+          ...B().snapshot(a, e.time),
           state: a.health.aid ? "treating" : a.state,
-          health: B().snapshot(a).health,
           reportedAt: e.time,
           observedAt: e.time,
         }));
@@ -4308,9 +4311,12 @@
             ),
         ),
       ),
+      contacts: f.contacts.filter(
+        (c) => !m.knowledge.actors.some((a) => a.id === c.id),
+      ),
       supportActors: [
         ...copy(m.knowledge.actors).map((a) =>
-          a.armed
+          a.armed && a.role !== "medic"
             ? {
                 ...a,
                 role: "infantry",
