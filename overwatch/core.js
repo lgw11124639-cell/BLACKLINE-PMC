@@ -4,7 +4,7 @@
   const GAME = "BLACKLINE_OVERWATCH",
     SCHEMA = 5;
   const LIMITS = Object.freeze({
-    headquarters: 10,
+    headquarters: 20,
     deploymentMinimum: 2,
     deploymentMaximum: 6,
     squads: 3,
@@ -52,7 +52,7 @@
     );
     requireThat(
       Array.isArray(s.members) && s.members.length <= LIMITS.headquarters,
-      "본부 인원은 최대 10명입니다.",
+      "본부 인원은 최대 20명입니다.",
     );
     const ids = new Set();
     for (const m of s.members) {

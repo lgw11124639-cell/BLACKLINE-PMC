@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.05",
+  const VERSION = "2026.11.16.06",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -346,7 +346,7 @@
     return (
       '<section class="page-title"><span class="eyebrow">BLACKLINE / HEADQUARTERS</span><h1>작전 본부</h1><p>인원을 편성하고 작전을 승인하세요. 현장 운용은 작전통제관에게 위임할 수 있습니다.</p></section><section class="metrics">' +
       [
-        ["본부 인원", state.members.length + " / 10"],
+        ["본부 인원", state.members.length + " / " + P.MAX_MEMBERS],
         ["출격 편성", state.squads.length + "개 조"],
         ["가용 인원", ready + "명"],
         ["운영 자금", PersonnelUI.money(state.headquarters.funds)],
@@ -773,7 +773,10 @@
       commit,
       navigate(next) {
         if (state && source === "primary" && !stale)
-          commit((s) => (s.ui.tab = next));
+          commit((s) => {
+            if (next === "command") P.interruptManaged(s);
+            s.ui.tab = next;
+          });
         tab = next;
         render();
       },
@@ -814,7 +817,10 @@
         e.preventDefault();
         const next = button.dataset.tab;
         if (state && source === "primary" && !stale)
-          commit((s) => (s.ui.tab = next));
+          commit((s) => {
+            if (next === "command") P.interruptManaged(s);
+            s.ui.tab = next;
+          });
         tab = next;
         notice = "";
         render();
@@ -1006,6 +1012,63 @@
     }
   });
   setInterval(() => runtime.pump(!document.hidden && !stale), 100);
+  let lastHQTick = performance.now(),
+    hqDirtyTicks = 0,
+    hqAutomationFailed = false;
+  setInterval(() => {
+    const now = performance.now(),
+      gap = now - lastHQTick;
+    lastHQTick = now;
+    if (
+      gap > 2500 ||
+      document.hidden ||
+      stale ||
+      source !== "primary" ||
+      !state ||
+      hqAutomationFailed ||
+      state.activeMission ||
+      state.commandExercise?.status === "running" ||
+      !OverwatchStaff.trainingEnabled(state)
+    )
+      return;
+    try {
+      const signature = state.activities
+        .map((a) => a.id + ":" + a.status)
+        .join("|");
+      if (!OverwatchStaff.manageTraining(state, 60)) return;
+      dirty = true;
+      hqDirtyTicks++;
+      const after = state.activities
+        .map((a) => a.id + ":" + a.status)
+        .join("|");
+      if (hqDirtyTicks >= 5 || signature !== after) {
+        saveRuntime();
+        hqDirtyTicks = 0;
+      }
+      if (signature !== after) render();
+      else {
+        OverwatchStaffUI.refreshTraining?.(root, state);
+        for (const node of root.querySelectorAll("[data-activity]")) {
+          const a = state.activities.find(
+            (a) => a.id === node.dataset.activity,
+          );
+          const bar = node.querySelector("progress");
+          if (a && bar) bar.value = a.workedSeconds;
+        }
+        const clock = root.querySelector("[data-live-clock]");
+        if (clock)
+          clock.textContent =
+            "본부 " + PersonnelUI.timestamp(state.clock.elapsedSeconds);
+      }
+    } catch (e) {
+      hqAutomationFailed = true;
+      rollbackRuntime(e);
+      error =
+        "교관 자동 관리가 중단되었습니다. 마지막 저장을 유지합니다. " +
+        e.message;
+      render();
+    }
+  }, 1000);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) pauseField();
     else toggleField();

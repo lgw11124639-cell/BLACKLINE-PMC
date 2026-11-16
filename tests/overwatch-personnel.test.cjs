@@ -80,11 +80,18 @@ test("recruiting charges exact prepaid wages once and removes the candidate", ()
   assert.equal(JSON.stringify(s), after);
   check(s);
 });
-test("ten active members, insufficient funds and invalid terms cannot be bypassed", () => {
+test("twenty active members, insufficient funds and invalid terms cannot be bypassed", () => {
   const s = make();
-  for (let i = 0; i < 10; i++) P.hire(s, s.market.candidates[0].id, 30);
+  P.finance(s, 200000000, "test-capital");
+  for (let i = 0; i < P.MAX_MEMBERS; i++) {
+    if (!s.market.candidates.length) {
+      P.elapse(s, 12 * P.HOUR);
+      P.refreshMarket(s);
+    }
+    P.hire(s, s.market.candidates[0].id, 30);
+  }
   const before = JSON.stringify(s);
-  assert.throws(() => P.hire(s, s.market.candidates[0].id, 30));
+  assert.throws(() => P.hire(s, "over-capacity", 30));
   assert.equal(JSON.stringify(s), before);
   const empty = make();
   empty.headquarters.funds = 1;
@@ -409,7 +416,10 @@ test("storage migrates once with byte-exact phase-one originals and persists new
   const before = store.raw(S.KEYS.primary),
     next = store.migrate();
   assert.equal(next.schemaVersion, C.SCHEMA);
-  assert.equal(JSON.parse(store.raw(S.KEYS.beforeMissionMigration)).primary, before);
+  assert.equal(
+    JSON.parse(store.raw(S.KEYS.beforeMissionMigration)).primary,
+    before,
+  );
   const money = next.headquarters.funds;
   assert.equal(store.migrate().headquarters.funds, money);
   const m = recruit(next, "observer");

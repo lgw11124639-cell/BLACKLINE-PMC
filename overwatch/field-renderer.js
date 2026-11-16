@@ -29,8 +29,9 @@
       pickHandler = () => {},
       targetMarker,
       rangeRing,
-      rangeId = null,
+      rangeIds = new Set(),
       focusId = null;
+    const rangeMeshes = new Map();
     const transportMeshes = new Map();
     const meshes = new Map(),
       materials = new Map(),
@@ -139,7 +140,7 @@
       };
     }
     function pose(m, u) {
-      const p = u.pose || (u.health && !u.health.alive ? "dead" : "standing");
+      const p = u.medicalCondition === "dead" || u.health?.alive === false ? "dead" : u.pose || "standing";
       m.group.rotation.z = 0;
       m.group.rotation.x = 0;
       if (p === "dead" || p === "down" || p === "carried")
@@ -264,21 +265,35 @@
       const cloudy = next.battle?.weather.timeOfDay === "overcast";
       scene.background.setHex(cloudy ? 0xdde4df : 0xeaf0e6);
       scene.fog.color.copy(scene.background);
-      const ranged = next.friends.find((u) => u.id === rangeId);
       if (rangeRing) {
-        rangeRing.visible = !!ranged;
-        if (ranged) {
-          const distance =
-            ranged.weapon?.range ||
-            root.OverwatchBattle.WEAPONS[ranged.weapon?.model]?.range ||
-            0;
-          rangeRing.position.set(
-            ranged.x,
-            (ranged.elevation || 0) + 0.5,
-            ranged.y,
-          );
-          rangeRing.scale.set(distance, 1, distance);
-        }
+        rangeRing.visible = false;
+        for (const mesh of rangeMeshes.values()) mesh.visible = false;
+        for (const [i, u] of next.friends
+          .filter((u) => rangeIds.has(u.id))
+          .entries())
+          for (const [kind, distance] of [
+            ["fire", u.weapon?.range || 0],
+            ["vision", u.visionRange || 0],
+            ["identify", u.identificationRange || 0],
+          ]) {
+            const key = u.id + ":" + kind;
+            let ring = rangeMeshes.get(key);
+            if (!ring) {
+              ring = rangeRing.clone();
+              ring.material = rangeRing.material.clone();
+              ring.material.color.setHex(
+                [0x55ddff, 0xffd166, 0xa4f28b, 0xe6a6ff, 0xff91a4, 0xa6cbff][
+                  i % 6
+                ],
+              );
+              rangeMeshes.set(key, ring);
+              scene.add(ring);
+            }
+            ring.material.opacity = kind === "fire" ? 0.9 : 0.45;
+            ring.visible = distance > 0;
+            ring.position.set(u.x, (u.elevation || 0) + 0.6, u.y);
+            ring.scale.set(distance, 1, distance);
+          }
       }
       const now = performance.now(),
         ids = new Set();
@@ -425,6 +440,7 @@
         v.line?.material.dispose();
       }
       for (const m of meshes.values()) m.flash.material.dispose();
+      for (const ring of rangeMeshes.values()) ring.material.dispose();
       for (const g of geometries) g.dispose();
       for (const m of materials.values()) m.dispose();
       renderer?.dispose();
@@ -650,7 +666,9 @@
         size();
       },
       setRange(id) {
-        rangeId = rangeId === id ? null : id;
+        const nextIds = new Set(Array.isArray(id) ? id : id ? [id] : []);
+        if ([...nextIds].join("|") === [...rangeIds].join("|")) return;
+        rangeIds = nextIds;
         update(frame);
       },
       setPickHandler(fn) {
@@ -683,6 +701,7 @@
           motions: [...meshes]
             .filter(([, m]) => m.group.visible)
             .map(([id, m]) => ({ id, mode: m.motion, flash: m.flash.visible })),
+          rangeIds: [...rangeIds],
           visibleTracers: effects.filter((v) => v.line?.visible).length,
           knownIds: [...meshes]
             .filter(([id, m]) => m.group.visible)

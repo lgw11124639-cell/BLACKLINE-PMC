@@ -135,3 +135,21 @@ test("agency medic only uses treatment art for an actual treating phase and neve
     "medic-move",
   );
 });
+
+test('observed deaths use corpse art without hidden health, while unconfirmed down contacts remain wounded', () => {
+  for (const faction of ['regular','insurgent','allied','civilian','unknown']) {
+    const u={faction,classification:'armed-person',pose:'standing',medicalCondition:'dead'};
+    assert.equal(Sprites.select(u).action,'dead');
+    assert.ok(Sprites.select(u).key.endsWith('-dead'));
+    assert.notEqual(Sprites.select({...u,medicalCondition:'down',pose:'down'}).action,'dead');
+  }
+  assert.equal(Sprites.select({faction:'regular',specialty:'sniper',medicalCondition:'dead'}).key,'enemy-sniper-dead');
+});
+test('hit and death crops never enlarge the same character beyond its standing extent', () => {
+  for (const faction of ['regular','insurgent','allied','civilian']) {
+    const extent=u=>{const x=Sprites.select(u),b=x.art.bounds;return Math.max(x.widthM,x.widthM*(b[3]-b[1])/(b[2]-b[0]));};
+    const standing=extent({faction,pose:'standing'});
+    for(const pose of ['down','dead']) assert.ok(extent({faction,pose})<=standing+1e-9);
+    assert.ok(extent({faction,medicalCondition:'wounded'})<=standing+1e-9);
+  }
+});

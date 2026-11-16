@@ -17,7 +17,7 @@
     const c = s.commandStaff || {},
       running = s.commandExercise?.status === "running";
     return (
-      '<section class="panel staff-panel"><div class="section-heading"><span class="eyebrow">COMMAND STAFF</span><h2>지휘 편성</h2></div><p class="muted">본부 승인 → 작전통제관 → 관측수 → 저격수. 지원 인력은 별도 시장에서 계약하며 전투대원 10명·출격 편제에 포함되지 않습니다.</p><div class="staff-assignments">' +
+      '<section class="panel staff-panel"><div class="section-heading"><span class="eyebrow">COMMAND STAFF</span><h2>지휘 편성</h2></div><p class="muted">본부 승인 → 작전통제관 → 관측수 → 저격수. 지원 인력은 별도 시장에서 계약하며 전투대원 20명·출격 편제에 포함되지 않습니다.</p><div class="staff-assignments">' +
       [
         ["controller", "작전통제관", "정찰·조별 임무·철수와 지원 배분"],
         ["instructor", "훈련 교관", "모의 훈련의 과업·관측·복귀 통제"],
@@ -70,7 +70,12 @@
       '>작전권 위임</label><label><input type="checkbox" data-staff-support' +
       (c.autoSupport ? " checked" : "") +
       (!editable ? " disabled" : "") +
-      '>통제관 지원 자동 배분</label></div><p class="muted">UAV·의료 회수·보급은 계약 제공분 안에서 운용합니다. 본부의 직접 요청은 계속 가능합니다.</p></section>' +
+      '>통제관 지원 자동 배분</label><label><input type="checkbox" data-staff-training' +
+      (c.autoTraining !== false ? " checked" : "") +
+      (!editable ? " disabled" : "") +
+      ">훈련·휴식 교관 위임</label></div><p data-instructor-status>" +
+      esc(c.trainingPlan?.status || "교관 배정 시 2~4명 훈련·휴식 자동 관리") +
+      '</p><p class="muted">본부 훈련은 1초에 1분씩 자동 진행 · 훈련비 하루 최대 50만원 · 작전 수락 시 자동 중단</p><p class="muted">UAV·의료 회수·보급은 계약 제공분 안에서 운용합니다. 본부의 직접 요청은 계속 가능합니다.</p></section>' +
       (options.market === false ? "" : market(s, editable))
     );
   }
@@ -211,15 +216,32 @@
     for (const [selector, key] of [
       ["[data-staff-delegated]", "delegated"],
       ["[data-staff-support]", "autoSupport"],
+      ["[data-staff-training]", "autoTraining"],
     ])
       for (const el of node.querySelectorAll(selector))
         el.addEventListener("change", () => {
           if (editable)
             commit((next) => {
               if (key === "delegated") S().delegate(next, el.checked);
-              else S().initialize(next)[key] = el.checked;
+              else {
+                S().initialize(next)[key] = el.checked;
+                if (key === "autoTraining" && !el.checked)
+                  root.OverwatchPersonnel.interruptManaged(next);
+              }
             });
         });
   }
-  root.OverwatchStaffUI = { render, market, field, refresh, bind };
+  function refreshTraining(node, s) {
+    for (const el of node.querySelectorAll("[data-instructor-status]"))
+      el.textContent =
+        s.commandStaff?.trainingPlan?.status || "교관 상태 확인 중";
+  }
+  root.OverwatchStaffUI = {
+    render,
+    market,
+    field,
+    refresh,
+    refreshTraining,
+    bind,
+  };
 })(window);

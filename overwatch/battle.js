@@ -543,15 +543,24 @@
       armor.helmet = Math.max(0, armor.helmet - power * 25);
       severity = Math.min(severity, 2);
     }
-    // Only a penetrating central cranial strike is immediately fatal. A graze
-    // is not promoted to a lethal brain injury merely by the weapon category.
+    const directTorso =
+      power === 3 && !graze && !blocked && ["chest", "abdomen"].includes(part);
+    if (directTorso) severity = 3;
+    // Penetrating central cranial strikes and .338 central chest hits are lethal.
+    // Grazes and limb hits remain distinct injuries regardless of rifle category.
     const fatal =
-      part === "head" &&
-      !graze &&
-      !blocked &&
-      height >= 1.62 &&
-      height <= 1.8 &&
-      Math.abs(lateral) < 0.1;
+      (part === "head" &&
+        !graze &&
+        !blocked &&
+        height >= 1.62 &&
+        height <= 1.8 &&
+        Math.abs(lateral) < 0.1) ||
+      (model === "AXMC" &&
+        directTorso &&
+        part === "chest" &&
+        Math.abs(lateral) < 0.2 &&
+        height >= 1.05 &&
+        height <= 1.45);
     if (fatal) severity = 3;
     if (blocked)
       I().event(e, "armor-impact", {
@@ -1750,8 +1759,113 @@
     }
     return mode === "engage";
   }
+  function displaceUnderFire(s, e, q) {
+    if (
+      !e.mission ||
+      q.displacement ||
+      e.time - (q.lastDisplacedAt ?? -100) < 20
+    )
+      return;
+    const pair = [q.observerId, q.sniperId].map((id) => unit(e, id)),
+      hurt = pair.find(
+        (u) =>
+          healthy(u) &&
+          !u.health.aid &&
+          !u.boardedBy &&
+          !u.home &&
+          moveFactor(u) > 0 &&
+          underFire(e, u),
+      );
+    if (!hurt) return;
+    const incoming = e.battle.shots.findLast(
+      (shot) =>
+        e.time - shot.time < 8 &&
+        shot.side === "red" &&
+        G.distance(shot.to, hurt) < 12,
+    );
+    if (!incoming) return;
+    const danger = G.project({
+        x: Math.max(
+          12,
+          Math.min(G.MAP.width - 12, Math.round(incoming.from.x / 80) * 80),
+        ),
+        y: Math.max(
+          12,
+          Math.min(G.MAP.height - 12, Math.round(incoming.from.y / 80) * 80),
+        ),
+      }),
+      options = [];
+    for (const r of [8, 15, 22])
+      for (let i = 0; i < 12; i++) {
+        const p = {
+          x: hurt.x + Math.cos((i * Math.PI) / 6) * r,
+          y: hurt.y + Math.sin((i * Math.PI) / 6) * r,
+          ...(hurt.roofId ? { roofId: hurt.roofId } : {}),
+        };
+        if (G.blocked(p) || !G.path(hurt, p).length) continue;
+        const score =
+          (!G.clear({ ...p, prone: true, stance: "prone" }, danger) ? 100 : 0) +
+          G.distance(p, danger) * 0.05 -
+          r * 0.5;
+        options.push({ p, score });
+      }
+    options.sort((a, b) => b.score - a.score);
+    if (!options.length) return;
+    const c = e.commands.find((c) => c.id === q.commandId);
+    if (c && ["executing", "completed"].includes(c.status)) c.status = "failed";
+    q.bound = null;
+    q.lastDisplacedAt = e.time;
+    q.emergencyRepositionUntil = e.time + 45;
+    q.avoidPositions = [
+      ...(q.avoidPositions || []),
+      { x: hurt.x, y: hurt.y, at: e.time },
+    ].slice(-6);
+    const mover = hurt,
+      other = pair.find((u) => u.id !== mover.id),
+      goal = options[0].p;
+    for (const u of pair) {
+      delete u.overwatchPath;
+      u.path = [];
+      u.prone = true;
+      u.state = "covering";
+    }
+    mover.path = G.path(mover, goal);
+    mover.goal = { ...goal };
+    const otherGoal = {
+      ...goal,
+      x: goal.x + (goal.roofId ? 2 : 4),
+      y: goal.y + 1,
+    };
+    const second =
+      other && moveFactor(other) > 0 && !G.blocked(otherGoal)
+        ? G.path(other, otherGoal)
+        : [];
+    if (other && second.length) other.goal = otherGoal;
+    q.displacement = {
+      activeId: mover.id,
+      secondId: other?.id || null,
+      secondPath: second,
+    };
+    const ev = I().event(e, "sniper-position-abandoned", {
+      callsign: q.callsign,
+      actorId: mover.id,
+      position: goal,
+      sourceEventId: incoming.id,
+    });
+    I().report(
+      s,
+      e,
+      q,
+      "request",
+      q.callsign +
+        ". 피격·노출 위험 확인. 현 진지를 포기하고 조원 엄호 아래 대체 엄폐점으로 재배치한다.",
+      ev,
+      { commandId: c?.id },
+    );
+  }
   function friendlyTick(s, e) {
     for (const q of e.squads) {
+      displaceUnderFire(s, e, q);
       const main = e.commands.find((c) => c.id === q.commandId),
         threat = q.contacts.find(
           (c) =>

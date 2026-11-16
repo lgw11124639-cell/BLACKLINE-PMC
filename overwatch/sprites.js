@@ -253,7 +253,7 @@
                 ? "allied"
                 : "regular";
     const down = ["down", "carried"].includes(u.pose),
-      dead = u.health?.alive === false || u.pose === "dead";
+      dead = u.health?.alive === false || u.pose === "dead" || u.medicalCondition === "dead";
     const wounded =
       (u.health?.wounds || []).some((w) => !w.treated) ||
       (!u.health &&
@@ -322,25 +322,13 @@
     }
     const fallback = !art;
     if (!art) art = data[role + (role === "civilian" ? "-walk" : "-move")];
-    const widthM = ["dead", "prone", "down"].includes(action)
-      ? role === "sniper"
-        ? 2.6
-        : 2.2
-      : action === "observe" && role === "sniper"
-        ? 2.6
-        : action === "observe"
-          ? 1.8
-          : action === "wounded"
-            ? 1.2
-            : action === "kneeling"
-              ? role === "sniper"
-                ? 1.8
-                : 1.5
-              : role === "sniper"
-                ? 1.65
-                : role === "civilian"
-                  ? 0.95
-                  : 1.25;
+    // Normalize the longest cropped dimension, not image width: casualty art
+    // is wider than walking art and must not enlarge the same person.
+    const extentM = ["dead", "down", "prone"].includes(action) ||
+      (action === "observe" && role === "sniper") ? 1.8 :
+      action === "kneeling" || action === "wounded" ? 1.55 : 1.8;
+    const [x1, y1, x2, y2] = art.bounds;
+    const widthM = extentM * (x2 - x1) / Math.max(x2 - x1, y2 - y1);
     return { key, role, action, art, widthM, fallback };
   }
   const api = { data, select };

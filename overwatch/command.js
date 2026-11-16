@@ -165,6 +165,7 @@
     { mapId = "command-range", live = false, callsigns = null } = {},
   ) {
     G.activate(mapId);
+    P.interruptManaged(s);
     ok(
       [3, 4, 5].includes(s.schemaVersion) &&
         !s.activeMission &&
@@ -472,6 +473,13 @@
   }
   function receive(s, e, q, c) {
     if (c.status !== "queued") return;
+    if (c.supportContact && e.time - c.supportContact.lastSeen < 25) {
+      const contact = { ...copy(c.supportContact), reportedAt: -100 };
+      const old = q.contacts.find((x) => x.id === contact.id);
+      if (old) Object.assign(old, contact);
+      else q.contacts.push(contact);
+    }
+
     const old = e.commands.find((a) => a.id === q.commandId);
     const auxiliary = ["roe", "report"].includes(c.kind);
     if (!auxiliary && old && old.ordinal > c.ordinal) {
@@ -613,6 +621,7 @@
     if (
       c.kind === "cover" &&
       !c.reposition &&
+      !(q.avoidPositions || []).some((old) => e.time - old.at < 300) &&
       e.mission?.agencyControl &&
       q.tactical?.position &&
       e.commands.some(
@@ -698,6 +707,12 @@
           });
     const assessed = [];
     for (const p of points) {
+      if (
+        (q.avoidPositions || []).some(
+          (old) => e.time - old.at < 300 && G.distance(old, p) < 15,
+        )
+      )
+        continue;
       if (
         e.mission?.agencyControl &&
         (G.MAP.urban || G.MAP.width < 500) &&
@@ -1312,6 +1327,19 @@
     else u.state = "moving";
   }
   function boundMovement(s, e, q, c) {
+    if (q.displacement) {
+      const d = q.displacement,
+        active = unit(e, d.activeId);
+      if (!active.path.length || !active.capable) {
+        const second = unit(e, d.secondId);
+        if (d.secondPath?.length && second?.capable) {
+          second.path = d.secondPath;
+          d.secondPath = [];
+          d.activeId = second.id;
+        } else q.displacement = null;
+      }
+      return;
+    }
     const people = [q.observerId, q.sniperId].map((id) => unit(e, id));
     const eligible =
       e.battle?.observerAutonomy &&
@@ -1420,6 +1448,33 @@
       ["executing", "completed"].includes(task.status)
     );
     if (e.battle) u.observationAt = optics ? e.time : null;
+    let look = q.sector;
+    if (
+      e.mission &&
+      optics &&
+      u.role === "observer" &&
+      q.assignment?.kind !== "corridor-cover" &&
+      !q.urgentSupportUntil
+    ) {
+      const points =
+        q.assignment?.kind === "flank-security"
+          ? [
+              [0.18, 0.45],
+              [0.5, 0.18],
+              [0.85, 0.65],
+            ]
+          : [
+              [0.35, 0.25],
+              [0.65, 0.25],
+              [0.82, 0.5],
+            ];
+      const index = Math.floor(e.time / 16) % points.length;
+      look = {
+        x: G.MAP.width * points[index][0],
+        y: G.MAP.height * points[index][1],
+      };
+      u.scanSector = index;
+    }
     const m = member(s, u.id),
       v = P.effectiveSkills(m),
       observerFactor = u.role === "observer" ? 1 : 0.65,
@@ -1442,7 +1497,7 @@
       heading =
         u.path.length || u.state === "moving"
           ? u.heading
-          : Math.atan2(q.sector.y - u.y, q.sector.x - u.x);
+          : Math.atan2(look.y - u.y, look.x - u.x);
     u.heading = heading;
     if (e.battle) {
       u.visionRange = radius * e.battle.weather.visibility;
