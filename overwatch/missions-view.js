@@ -377,7 +377,6 @@
       [
         ["drone", "UAV 정찰 요청"],
         ["medical", "보고된 부상자 의료 회수"],
-        ["supply", "집결지 재보급"],
       ]
         .map(
           ([k, v]) =>
@@ -486,6 +485,13 @@
           complete: "확인 완료 · 철수 필요",
           failed: "목표 실패 · 철수 판단 필요",
         }[m.objective];
+    if (goal && m.reconProgress)
+      goal.textContent +=
+        " · 구역 확인 " +
+        m.reconProgress.checked +
+        "/" +
+        m.reconProgress.required +
+        (m.reconProgress.current ? " · " + m.reconProgress.current : "");
     if (goal && m.targetProgress)
       goal.textContent +=
         " · 신원 " +

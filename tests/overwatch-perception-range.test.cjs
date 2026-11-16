@@ -252,3 +252,56 @@ test("steady tracked contacts update map intelligence without repeated audible c
   );
   C.validate(s);
 });
+
+test("a sniper keeps tracking the actually identified aim target when its assigned broad watch sector points elsewhere", () => {
+  const { s, e, t } = scenario(300),
+    q = e.squads[0],
+    u = e.world.units[1];
+  q.sector = { x: 12, y: u.y };
+  u.goal = null;
+  u.path = [];
+  u.overwatchPath = [];
+  u.weapon.targetId = t.id;
+  u.weapon.aimSince = e.time;
+  u.weapon.nextFireAt = e.time + 20;
+  t.weapon.nextFireAt = e.time + 20;
+  const contact = q.contacts.find((c) => c.id === t.id);
+  assert.ok(contact);
+  contact.classification = "armed-person";
+  contact.confidence = 1;
+  contact.lastSeen = e.time;
+  B.setPaused(s, false);
+  D.step(s, 1);
+  assert.ok(Math.abs(u.heading - Math.atan2(t.y - u.y, t.x - u.x)) < 0.01);
+  assert.equal(q.contacts.find((c) => c.id === t.id).lastSeen, e.time);
+  C.validate(s);
+});
+test("settled optics keep a separate rotating short-range rear check without granting long-range rear vision", () => {
+  const { s, e, u, t } = scenario(300),
+    q = e.squads[0];
+  Object.assign(t, {
+    x: u.x - 40,
+    y: u.y,
+    route: [{ x: u.x - 40, y: u.y }],
+    waypoint: 0,
+    speed: 0,
+  });
+  q.contacts = [];
+  e.knowledge.contacts = {};
+  q.sector = { x: 1190, y: u.y };
+  e.world.units[1].home = true;
+  for (let i = 0; i < 65; i++) {
+    t.weapon.nextFireAt = e.time + 20;
+    u.weapon.nextFireAt = e.time + 20;
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  assert.ok(
+    q.contacts.some(
+      (c) => c.id === t.id && c.classification === "armed-person",
+    ),
+  );
+  assert.ok(u.peripheralRange <= 80);
+  assert.ok(u.visionRange > 1000);
+  C.validate(s);
+});

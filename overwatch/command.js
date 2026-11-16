@@ -111,7 +111,80 @@
       ),
     );
   }
+  function compactHistory(e) {
+    if (e.radio.length > 2200) {
+      const recent = new Set(e.radio.slice(-1000).map((r) => r.id));
+      const evidence = new Set();
+      const contacts = Object.values(e.knowledge.contacts),
+        friends = Object.values(e.knowledge.friends);
+      for (const c of contacts) {
+        const r = e.radio.findLast(
+          (r) =>
+            r.route === "up" &&
+            r.status === "delivered" &&
+            r.payload?.contact?.id === c.id &&
+            r.payload.contact.observedAt === c.observedAt,
+        );
+        if (r) evidence.add(r.id);
+      }
+      for (const f of friends) {
+        const r = e.radio.findLast(
+          (r) =>
+            r.route === "up" &&
+            r.status === "delivered" &&
+            r.payload?.friends?.some(
+              (x) => x.id === f.id && x.observedAt === f.observedAt,
+            ),
+        );
+        if (r) evidence.add(r.id);
+      }
+      const currentCommands = new Set(e.squads.map((q) => q.commandId));
+      e.radio = e.radio.filter(
+        (r) =>
+          r.status === "queued" ||
+          (r.deliveredAt != null && e.time - r.deliveredAt < 120) ||
+          recent.has(r.id) ||
+          evidence.has(r.id) ||
+          currentCommands.has(r.payload?.commandId),
+      );
+    }
+    if (e.commands.length > 240) {
+      const keep = new Set(e.commands.slice(-120).map((c) => c.id));
+      for (const r of e.radio)
+        if (
+          r.payload?.commandId &&
+          (r.status === "queued" ||
+            (r.payload.contact &&
+              e.knowledge.contacts[r.payload.contact.id]?.observedAt ===
+                r.payload.contact.observedAt) ||
+            r.payload.friends?.some(
+              (f) => e.knowledge.friends[f.id]?.observedAt === f.observedAt,
+            ))
+        )
+          keep.add(r.payload.commandId);
+      for (const q of e.squads) if (q.commandId) keep.add(q.commandId);
+      for (const o of Object.values(e.control?.orders || {}))
+        if (o.id) keep.add(o.id);
+      for (const q of e.squads)
+        for (const kind of Object.keys(ORDERS)) {
+          const c = e.commands.findLast(
+            (c) => c.callsign === q.callsign && c.kind === kind,
+          );
+          if (c) keep.add(c.id);
+        }
+      e.commands = e.commands.filter(
+        (c) =>
+          keep.has(c.id) ||
+          ["queued", "received", "thinking", "executing"].includes(c.status),
+      );
+      const remaining = new Set(e.commands.map((c) => c.id));
+      e.radio = e.radio.filter(
+        (r) => !r.payload?.commandId || remaining.has(r.payload.commandId),
+      );
+    }
+  }
   function radio(s, e, q, route, from, to, kind, body, cause, payload = null) {
+    compactHistory(e);
     const r = {
       id: "radio-" + ++e.sequence,
       createdAt: e.time,
@@ -375,6 +448,7 @@
         ["hold", "selfDefense", "authorized"].includes(roe),
         "교전 규칙이 잘못되었습니다.",
       );
+    compactHistory(e);
     ok(
       e.commands.length < 300 && e.radio.length < 3000,
       "훈련 기록 한도입니다. 종료 후 새 훈련을 시작하세요.",
@@ -451,11 +525,15 @@
         name: u.name,
         role: u.role,
         callsign: q.callsign,
-        assignmentLabel: q.assignment?.label || null,
+        assignmentLabel:
+          q.friendlySupportTarget && q.urgentSupportUntil > e.time
+            ? "아군 저격조 긴급 엄호"
+            : q.assignment?.label || null,
         x: u.x,
         y: u.y,
         state: u.state,
         capable: u.capable,
+        fieldDecision: q.fieldDecision?.reason || null,
         observedAt: e.time,
         elevation: G.elevation(u),
         roofId: u.roofId || null,
@@ -479,6 +557,7 @@
   }
   function receive(s, e, q, c) {
     if (c.status !== "queued") return;
+    if (c.watchSector) q.watchSector = copy(c.watchSector);
     if (c.supportContact && e.time - c.supportContact.lastSeen < 25) {
       const contact = {
         ...copy(c.supportContact),
@@ -671,12 +750,14 @@
         e.time - v.observedAt < 30 &&
         v.health?.alive !== false,
     );
-    const protectedPoint = allies.length
-      ? {
-          x: allies.reduce((n, v) => n + v.x, 0) / allies.length,
-          y: allies.reduce((n, v) => n + v.y, 0) / allies.length,
-        }
-      : null;
+    const protectedPoint = c.protectPosition
+      ? copy(c.protectPosition)
+      : allies.length
+        ? {
+            x: allies.reduce((n, v) => n + v.x, 0) / allies.length,
+            y: allies.reduce((n, v) => n + v.y, 0) / allies.length,
+          }
+        : null;
     const sector = c.target
       ? copy(c.target)
       : recent.length
@@ -718,6 +799,9 @@
           });
     const assessed = [];
     for (const p of points) {
+      const band = c.watchSector || q.watchSector;
+      if (band && !c.protectPosition && (p.x < band.x1 || p.x > band.x2))
+        continue;
       if (
         (q.avoidPositions || []).some(
           (old) => e.time - old.at < 300 && G.distance(old, p) < 15,
@@ -1452,15 +1536,22 @@
           u.overwatchPath = u.path;
           u.path = [];
         }
-        u.state = "observing";
-        const prone =
-          (e.mission?.agencyControl &&
-            u.roofId &&
-            G.distance(u, u.goal || u) > 1) ||
-          (u.role === "sniper" &&
-            G.clear({ ...u, stance: "prone", prone: true }, q.sector));
-        u.prone = prone;
-        u.stance = prone ? "prone" : "kneeling";
+        const enRoute = !!(
+          u.overwatchPath?.length ||
+          (u.goal && G.distance(u, u.goal) > 1)
+        );
+        u.state = enRoute ? "covering" : "observing";
+        if (enRoute) {
+          u.prone = false;
+          u.stance = "standing";
+          u.observationAt = null;
+        } else {
+          const prone =
+            u.role === "sniper" &&
+            G.clear({ ...u, stance: "prone", prone: true }, q.sector);
+          u.prone = prone;
+          u.stance = prone ? "prone" : "kneeling";
+        }
       }
     }
   }
@@ -1471,6 +1562,8 @@
     const optics = !!(
       e.battle &&
       !u.path.length &&
+      !u.overwatchPath?.length &&
+      (!u.goal || G.distance(u, u.goal) < 1) &&
       Battle().commandReady(u) &&
       task &&
       ["cover", "recon", "observe"].includes(task.kind) &&
@@ -1504,6 +1597,37 @@
         y: G.MAP.height * points[index][1],
       };
       u.scanSector = index;
+    }
+    if (u.nearThreatFocus && u.nearThreatFocus.until > e.time) {
+      const seen = q.contacts.find(
+        (c) =>
+          c.id === u.nearThreatFocus.id &&
+          e.time - c.lastSeen < 6 &&
+          c.confidence < 0.82,
+      );
+      if (seen) look = { x: seen.x, y: seen.y };
+      else u.nearThreatFocus = null;
+    }
+    if (q.watchSector && !q.urgentSupportUntil && !u.nearThreatFocus)
+      look = {
+        x: Math.max(q.watchSector.x1, Math.min(q.watchSector.x2, look.x)),
+        y: look.y,
+      };
+    if (
+      optics &&
+      u.role === "sniper" &&
+      u.weapon?.targetId &&
+      u.weapon.aimSince !== null
+    ) {
+      const tracked = q.contacts.find(
+        (c) =>
+          c.id === u.weapon.targetId &&
+          c.classification === "armed-person" &&
+          c.confidence >= 0.82 &&
+          e.time - c.lastSeen <= 8 &&
+          !["dead", "down"].includes(c.condition),
+      );
+      if (tracked) look = tracked;
     }
     const m = member(s, u.id),
       v = P.effectiveSkills(m),
@@ -1539,6 +1663,13 @@
           : Math.PI * 0.18
         : Math.PI * 0.42;
     }
+    u.peripheralRange =
+      (u.role === "observer" ? 80 : 50) * e.battle?.weather?.visibility || 50;
+    u.peripheralHeading =
+      heading +
+      (((Math.floor(e.time / 3) + (u.role === "observer" ? 0 : 2)) % 4) *
+        Math.PI) /
+        2;
     for (const actor of e.world.actors) {
       if (
         e.mission &&
@@ -1555,9 +1686,20 @@
         delta = Math.abs(
           Math.atan2(Math.sin(angle - heading), Math.cos(angle - heading)),
         );
+      const peripheralDelta = Math.abs(
+        Math.atan2(
+          Math.sin(angle - u.peripheralHeading),
+          Math.cos(angle - u.peripheralHeading),
+        ),
+      );
+      const peripheral =
+        !!e.battle &&
+        d <= u.peripheralRange &&
+        peripheralDelta < Math.PI * 0.42;
       if (
-        d > radius * (e.battle ? e.battle.weather.visibility : 1) ||
-        delta > (e.battle ? u.visionHalfAngle : Math.PI * 0.42) ||
+        ((d > radius * (e.battle ? e.battle.weather.visibility : 1) ||
+          delta > (e.battle ? u.visionHalfAngle : Math.PI * 0.42)) &&
+          !peripheral) ||
         !G.clear(u, actor)
       )
         continue;
@@ -1594,6 +1736,13 @@
             v.observation / (e.battle ? 1000 : 2500),
         ),
       );
+      if (
+        peripheral &&
+        delta > (u.visionHalfAngle || 0.5) &&
+        seen.confidence >= 0.22 &&
+        seen.confidence < 0.82
+      )
+        u.nearThreatFocus = { id: actor.id, until: e.time + 8 };
       const previousClassification = seen.classification,
         previousFaction = seen.faction,
         previousSpecialty = seen.specialty;
@@ -1820,6 +1969,7 @@
           other = unit(e, id === q.observerId ? q.sniperId : q.observerId);
         if (
           e.battle?.observerAutonomy &&
+          !q.displacement &&
           other.health.alive &&
           (!other.health.conscious ||
             other.health.wounds.some((w) => !w.treated) ||
@@ -1834,7 +1984,8 @@
         }
         if (
           u.capable &&
-          (q.bound?.activeId === u.id ||
+          (q.displacement?.activeId === u.id ||
+            q.bound?.activeId === u.id ||
             !other.capable ||
             G.distance(u, other) < 70 ||
             G.distance(u, u.goal || u) > G.distance(other, other.goal || other))
@@ -1931,7 +2082,11 @@
       "훈련 시간은 1~120초씩 진행합니다.",
     );
     ok(!e.paused, "긴급 보고로 일시정지했습니다. 확인 후 계속하세요.");
-    ok(e.radio.length < 3000, "통신 기록 한도입니다. 훈련을 종료하세요.");
+    compactHistory(e);
+    ok(
+      e.radio.length < 3000,
+      "미전달 통신이 너무 많습니다. 통신 상태를 확인하세요.",
+    );
     let advanced = 0;
     for (let i = 0; i < seconds; i++) {
       if (e.radio.length >= 3000) break;
@@ -2132,6 +2287,7 @@
       squads: e.squads.map((q) => ({
         callsign: q.callsign,
         assignment: q.assignment ? copy(q.assignment) : null,
+        watchSector: q.watchSector ? copy(q.watchSector) : null,
         roe:
           commands
             .filter(
