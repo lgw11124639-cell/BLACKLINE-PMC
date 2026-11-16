@@ -472,10 +472,7 @@
         m.securityControl.reason;
     else if (agency && m.agencyControl)
       agency.textContent =
-        "기관 보병: " +
-        m.agencyControl.reason +
-        " · 엄호 준비 " +
-        (m.agencyControl.readyTeams.join(" / ") || "대기");
+        "기관 보병: " + m.agencyControl.reason + " · 자체 수색·경계·교전";
     const goal = rootNode.querySelector("[data-live-objective]");
     if (goal)
       goal.textContent =
@@ -492,6 +489,20 @@
         "/" +
         m.reconProgress.required +
         (m.reconProgress.current ? " · " + m.reconProgress.current : "");
+    if (goal && m.groundSearch)
+      goal.textContent +=
+        " · 보병 수색 " +
+        m.groundSearch.checked +
+        "/" +
+        m.groundSearch.required +
+        " · " +
+        m.groundSearch.area +
+        (m.targetProgress
+          ? " · 현장 확보 " +
+            (m.groundSearch.secured || 0) +
+            "/" +
+            m.targetProgress.required
+          : "");
     if (goal && m.targetProgress)
       goal.textContent +=
         " · 신원 " +

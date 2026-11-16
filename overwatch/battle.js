@@ -1314,6 +1314,20 @@
     u.prone = desired === "prone";
     return desired;
   }
+  function friendlyInLane(e, u, known) {
+    if (u.side === "red") return false;
+    const d = G.distance(u, known);
+    return all(e).some(
+      (v) =>
+        v.id !== u.id &&
+        v.id !== known.id &&
+        v.health.alive &&
+        v.side !== "red" &&
+        pointSegment(v, u, known) < 1.2 &&
+        G.distance(u, v) < d &&
+        G.clear(u, v),
+    );
+  }
   function fire(s, e, u, known, options = {}) {
     if (u.roofTransit) {
       u.fireBlockReason = "stairs";
@@ -1423,22 +1437,7 @@
         e.battle.weather.wind * d * 0.00013,
       dz = Math.sin(b * Math.PI * 2) * spread * sigma;
     // Physical allies and visible civilians in the shooting lane cause the team to hold fire.
-    const lane = all(e).filter(
-      (v) =>
-        v.id !== u.id &&
-        v.id !== target.id &&
-        v.health.alive &&
-        v.side !== "red" &&
-        u.side !== "red",
-    );
-    if (
-      lane.some(
-        (v) =>
-          pointSegment(v, u, known) < 1.2 &&
-          G.distance(u, v) < d &&
-          G.clear(u, v),
-      )
-    ) {
+    if (friendlyInLane(e, u, known)) {
       u.fireBlockReason = "friendly-in-lane";
       return;
     }
@@ -2723,6 +2722,7 @@
     health,
     weapon,
     fire,
+    friendlyInLane,
     chooseStance,
     stanceOf,
     coverPoint,
