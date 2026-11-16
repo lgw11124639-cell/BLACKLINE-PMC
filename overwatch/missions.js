@@ -115,6 +115,66 @@
       brief:
         "도보로 출발해 능선 외곽에서 무장 접촉 2개를 식별한다. 별도 수송·의료 회수·공습 지원은 제공되지 않는다.",
     },
+    {
+      key: "high-value-target",
+      issuer: "지역 정보연락실",
+      title: "지휘관 암살",
+      type: "지정 표적 암살",
+      task: "eliminate",
+      targetCount: 1,
+      targetLabel: "RAVEN",
+      min: 2,
+      recommended: 4,
+      risk: 3,
+      reward: 9800000,
+      bonus: 2000000,
+      transport: "vehicle",
+      drone: true,
+      medical: true,
+      supply: false,
+      brief:
+        "무장 지휘관 RAVEN이 이동해 회합 장소에 도착한다. 관측수가 계약 표적의 신원을 실제 식별한 뒤 사살을 확인하고 철수한다. 일반 경계병 사살은 목표에 포함하지 않는다.",
+    },
+    {
+      key: "counter-sniper",
+      issuer: "세라 합동군",
+      title: "적 저격수 제거",
+      type: "대저격 작전",
+      task: "eliminate",
+      targetCount: 1,
+      targetLabel: "NEEDLE",
+      min: 2,
+      recommended: 4,
+      risk: 3,
+      reward: 8500000,
+      bonus: 1700000,
+      transport: "helicopter",
+      drone: true,
+      medical: true,
+      supply: true,
+      brief:
+        "NEEDLE로 지정된 적 저격조가 고지로 진입한다. 저격수를 실제 관측·식별하고 제거 확인 후 복귀한다. 다른 경계병과 혼동하지 않아야 한다.",
+    },
+    {
+      key: "courier-intercept",
+      issuer: "지역 정보연락실",
+      title: "무장 전달책 이동 차단",
+      type: "표적 이동 차단",
+      task: "interdict",
+      targetCount: 2,
+      targetLabel: "COURIER",
+      min: 2,
+      recommended: 4,
+      risk: 2,
+      reward: 7600000,
+      bonus: 1500000,
+      transport: "vehicle",
+      drone: true,
+      medical: false,
+      supply: true,
+      brief:
+        "서로 다른 시각에 이동하는 무장 전달책 두 명을 신원 확인 후 저지한다. 실제 행동 불능 또는 사망을 관측해야 하며, 살아서 탈출 지점에 도착하면 실패한다. 비무장 인원은 표적이 아니다.",
+    },
   ];
   const participant = (s, id) => s.activeMission?.memberIds.includes(id),
     member = (s, id) =>
@@ -136,6 +196,7 @@
     s.schemaVersion = 5;
     s.operations = {
       sequence: 0,
+      contentVersion: 2,
       reports: [],
       nextRefreshAt: 0,
       inspection: null,
@@ -149,24 +210,34 @@
   function event(s, type, message, data = {}) {
     return P.recordEvent(s, type, message, data);
   }
-  function offers(s) {
+  function offers(s, templates = TEMPLATES) {
     const seq = ++s.operations.sequence;
-    for (const t of TEMPLATES) {
+    for (const t of templates) {
+      s.operations.clients[t.issuer] ||= { trust: 50, completed: 0 };
       const cityMaps = [
           "urban-modern",
           "urban-quarter",
           "urban-port",
           "urban-market",
+          "urban-embassy",
+          "urban-rail",
+          "urban-research",
         ],
         original = { "aid-cover": 1, "rescue-cover": 2, "vip-cover": 0 }[t.key],
         baseMapId =
-          original === undefined
-            ? seq % 3 === 1
-              ? "ridge-field"
-              : cityMaps[
-                  (seq + (t.key === "quiet-watch" ? 2 : 0)) % cityMaps.length
-                ]
-            : cityMaps[(original + seq - 1) % cityMaps.length],
+          t.task === "eliminate" || t.task === "interdict"
+            ? {
+                "high-value-target": "urban-embassy",
+                "counter-sniper": "urban-research",
+                "courier-intercept": "urban-rail",
+              }[t.key]
+            : original === undefined
+              ? seq % 3 === 1
+                ? "ridge-field"
+                : cityMaps[
+                    (seq + (t.key === "quiet-watch" ? 2 : 0)) % cityMaps.length
+                  ]
+              : cityMaps[(original + seq - 1) % cityMaps.length],
         mapId = G.maps[baseMapId + "-operation"]
           ? baseMapId + "-operation"
           : baseMapId,
@@ -222,6 +293,18 @@
       });
     }
     s.operations.nextRefreshAt = s.clock.elapsedSeconds + 6 * P.HOUR;
+  }
+  const targeted = (m) =>
+    ["eliminate", "interdict"].includes(m?.contract?.task);
+  function upgrade(s) {
+    if (s.schemaVersion !== 5 || s.operations.contentVersion === 2)
+      return false;
+    const missing = TEMPLATES.filter(
+      (t) => !s.contracts.some((c) => c.key === t.key),
+    );
+    if (missing.length) offers(s, missing);
+    s.operations.contentVersion = 2;
+    return true;
   }
   function updateOffers(s) {
     if (s.schemaVersion !== 5) return;
@@ -376,8 +459,18 @@
       return "진행 중인 전장·훈련을 먼저 종료하세요.";
     if (s.operations.inspection && !s.operations.inspection.completed)
       return "귀환 후 점검·재정비가 필요합니다.";
-    if (s.activities.some((a) => a.status === "running"))
-      return "진행 중인 본부 활동을 마치거나 중단하세요.";
+    const selectedIds = selectedSquads(s, c).flatMap((q) => [
+      q.observerId,
+      q.sniperId,
+    ]);
+    if (
+      s.activities.some(
+        (a) =>
+          a.status === "running" &&
+          a.memberIds.some((id) => selectedIds.includes(id)),
+      )
+    )
+      return "선택한 출격 대원의 본부 활동을 마치거나 해당 조를 출격에서 제외하세요.";
     const teams = selectedSquads(s, c);
     if (c.teamCallsigns && teams.length !== c.teamCallsigns.length)
       return "선택한 저격조의 본부 편성이 변경되었습니다. 투입 조를 다시 선택하세요.";
@@ -551,6 +644,7 @@
     }
     setupTask(e);
     setupForces(e);
+    if (targeted(m)) setupTargets(e);
     for (const q of e.squads) {
       q.roe = "selfDefense";
       if (c.interest) q.sector = copy(c.interest);
@@ -671,7 +765,7 @@
       };
       a.heading = Math.atan2(destination.y - a.y, destination.x - a.x);
     }
-    if (m.contract.task !== "recon")
+    if (m.contract.task !== "recon" && !targeted(m))
       for (let i = 0; i < 3; i++) {
         const p = G.project({
           x: m.contract.insertion.x + 5 + i * 3,
@@ -738,13 +832,135 @@
       points.length;
     return [...points.slice(offset), ...points.slice(0, offset)];
   }
+  function setupTargets(e) {
+    const m = e.mission,
+      count = m.contract.targetCount || 1;
+    const reds = e.world.actors.filter((a) => a.side === "red");
+    m.targetIds = [];
+    m.targetProgress = { identified: [], confirmed: [], escaped: [] };
+    m.knowledge.targetProgress = {
+      identified: 0,
+      confirmed: 0,
+      required: count,
+    };
+    m.targetExit = G.project({ x: G.MAP.width - 24, y: G.MAP.height * 0.55 });
+    for (let i = 0; i < count; i++) {
+      const a = reds[i],
+        point = G.project({
+          x: (m.contract.interest?.x || G.MAP.width * 0.55) + i * 35,
+          y: m.contract.interest?.y || G.MAP.height * 0.45,
+        });
+      a.missionTargetCode =
+        m.contract.targetLabel + (count > 1 ? "-" + (i + 1) : "");
+      a.name = a.missionTargetCode;
+      a.armed = true;
+      a.specialty = m.contract.key === "counter-sniper" ? "sniper" : "rifleman";
+      a.weapon = B().weapon(a.specialty === "sniper" ? "SVD" : "AKM", 3);
+      a.deployment.destination = point;
+      a.deployment.releaseAt = 120 + i * 90;
+      a.route = [point, G.project({ x: point.x + 30, y: point.y })];
+      a.waypoint = 0;
+      if (m.contract.task === "interdict") a.escapeAfter = 2400 + i * 120;
+      m.targetIds.push(a.id);
+    }
+    // There is no agency escort to follow on an autonomous target contract.
+    m.agencyControl = null;
+  }
+  function targetOutcome(s, e) {
+    const m = e.mission,
+      p = m.targetProgress,
+      before = JSON.stringify(p);
+    for (const id of m.targetIds) {
+      const target = e.world.actors.find((a) => a.id === id);
+      const observations = e.squads
+        .flatMap((q) => q.contacts)
+        .filter(
+          (c) =>
+            c.id === id &&
+            c.objectiveCode &&
+            c.confidence >= 0.85 &&
+            e.time - c.lastSeen < 15,
+        );
+      if (observations.length && !p.identified.includes(id)) {
+        p.identified.push(id);
+        const ev = log(e, "mission-target-identified", {
+          actorId: id,
+          code: target.missionTargetCode,
+        });
+        say(
+          s,
+          e,
+          "objective",
+          target.missionTargetCode +
+            " 계약 표적 신원 식별 확인. 현장 관측수의 사격 판단에 따른다.",
+          ev,
+        );
+      }
+      const confirmed = observations.some((c) =>
+        m.contract.task === "interdict"
+          ? ["dead", "down"].includes(c.medicalCondition)
+          : c.medicalCondition === "dead",
+      );
+      if (
+        confirmed &&
+        (!target.health.alive ||
+          (m.contract.task === "interdict" && !target.health.conscious)) &&
+        !p.confirmed.includes(id)
+      ) {
+        p.confirmed.push(id);
+        log(e, "mission-target-confirmed", {
+          actorId: id,
+          code: target.missionTargetCode,
+          condition: !target.health.alive ? "dead" : "down",
+        });
+      }
+      if (
+        target.escaped &&
+        !p.confirmed.includes(id) &&
+        !p.escaped.includes(id)
+      )
+        p.escaped.push(id);
+    }
+    if (before !== JSON.stringify(p)) {
+      const ev = log(e, "target-progress-report", {
+        identified: p.identified.slice(),
+        confirmed: p.confirmed.slice(),
+        escaped: p.escaped.slice(),
+      });
+      say(
+        s,
+        e,
+        "objective",
+        "계약 표적 신원 확인 " +
+          p.identified.length +
+          "/" +
+          m.targetIds.length +
+          " · 저지·사살 확인 " +
+          p.confirmed.length +
+          "/" +
+          m.targetIds.length,
+        ev,
+        {
+          targetProgress: {
+            identified: p.identified.length,
+            confirmed: p.confirmed.length,
+            required: m.targetIds.length,
+          },
+        },
+      );
+    }
+    return {
+      complete: p.confirmed.length === m.targetIds.length,
+      failed: p.escaped.length > 0,
+    };
+  }
   function setupTask(e) {
     G.activate(e.mapId || "command-range");
     const m = e.mission,
       t = m.contract.task;
     const city = G.MAP.urban || G.MAP.width < 500,
       at = (legacy, local) => G.project(city ? local : legacy);
-    if (t === "recon") return;
+    if (t === "recon" || targeted(m)) return;
     if (t === "rescue") {
       const a = taskPerson(
           e,
@@ -805,7 +1021,7 @@
   function moveGround(u, goal, speed, e) {
     if (
       u.taskMoveGoal &&
-      (G.distance(u.taskMoveGoal, goal) > 5 ||
+      (G.distance(u.taskMoveGoal, goal) > Math.max(30, G.MAP.grid * 3) ||
         (u.taskMoveGoal.roofId || null) !== (goal.roofId || null))
     )
       u.path = [];
@@ -1107,18 +1323,19 @@
   function beforeTick(s, e) {
     const m = e.mission;
     if (!m || m.settled) return;
-    m.agencyControl ??= {
-      version: 1,
-      authorized: false,
-      phase: "holding",
-      reason: "기존 현장 유지·엄호 보고 재확인",
-      waypoint: null,
-      lastAssessment: -100,
-      everAuthorized: false,
-      readyTeams: [],
-      history: [],
-      legacy: true,
-    };
+    if (!targeted(m))
+      m.agencyControl ??= {
+        version: 1,
+        authorized: false,
+        phase: "holding",
+        reason: "기존 현장 유지·엄호 보고 재확인",
+        waypoint: null,
+        lastAssessment: -100,
+        everAuthorized: false,
+        readyTeams: [],
+        history: [],
+        legacy: true,
+      };
     if (m.returnRequested && m.recoveryVersion !== 2) {
       const primary = m.transports[0];
       m.recoveryVersion = 2;
@@ -1950,7 +2167,8 @@
   function updateAgencyControl(s, e) {
     const m = e.mission,
       g = m?.agencyControl;
-    if (!g || m.contract.task === "recon" || m.returnRequested) return;
+    if (!g || m.contract.task === "recon" || targeted(m) || m.returnRequested)
+      return;
     const frame = D().frame(s),
       friends = frame.friends.filter(
         (f) =>
@@ -2047,7 +2265,7 @@
       target = objective;
     for (const p of route) {
       const d = G.distance(prev, p),
-        step = Math.min(35, G.MAP.width * 0.1);
+        step = Math.min(120, G.MAP.width * 0.25);
       if (length + d >= step) {
         const f = (step - length) / Math.max(0.001, d);
         target = {
@@ -2187,6 +2405,8 @@
           null,
           e.commandAuthority,
         );
+        command.advanceSector = true;
+        command.reposition = true;
         if (e.control)
           e.control.orders[team.callsign] = {
             id: command.id,
@@ -2196,7 +2416,8 @@
         g.scanCommandId = command.id;
         g.lastScanAt = e.time;
         g.authorized = false;
-        g.reason = "진지는 유지, 기관 진출 예정 구간으로 관측 전환 중";
+        g.reason =
+          "저격조가 다음 전진 구역으로 선행, 관측·확보 완료 보고 전 기관 보병 대기";
         g.lastAssessment = e.time;
         return;
       }
@@ -2218,6 +2439,8 @@
           null,
           e.commandAuthority,
         );
+        command.reposition = true;
+        command.advanceSector = true;
         command.reposition = true;
         if (e.control)
           e.control.orders[mover.callsign] = {
@@ -2283,6 +2506,95 @@
       everAuthorized: g.everAuthorized || authorized,
     });
   }
+  function agencyCover(s, e, u, enemies) {
+    if (!u.armed || B().moveFactor(u) <= 0) return false;
+    const incoming = B().underFire(e, u),
+      shot = e.battle.shots.findLast(
+        (x) =>
+          x.side === "red" && e.time - x.time < 8 && G.distance(x.to, u) < 12,
+      );
+    if (incoming && !u.agencyCoverGoal) {
+      // Unknown gunfire supplies a coarse incoming direction, never an enemy contact.
+      const threat =
+        enemies[0] ||
+        (shot
+          ? {
+              x: Math.round(shot.from.x / 80) * 80,
+              y: Math.round(shot.from.y / 80) * 80,
+            }
+          : null);
+      if (threat) {
+        const points = [];
+        const cover = B().coverPoint(e, u, threat);
+        if (cover) points.push(cover);
+        for (const b of G.MAP.buildings)
+          for (const x of [b[0] - 1.2, b[2] + 1.2])
+            for (const y of [b[1] - 1.2, b[3] + 1.2]) points.push({ x, y });
+        const candidates = points
+          .filter(
+            (p) =>
+              G.distance(u, p) < 40 &&
+              G.distance(u, p) > 1 &&
+              !G.blocked(p) &&
+              G.path(u, p).length,
+          )
+          .map((p) => ({
+            p,
+            score:
+              (!G.clear({ ...p, prone: true, stance: "prone" }, threat)
+                ? 100
+                : 0) - G.distance(u, p),
+          }))
+          .sort((a, b) => b.score - a.score);
+        if (candidates.length) {
+          u.agencyCoverGoal = copy(candidates[0].p);
+          u.agencyCoverUntil = e.time + 60;
+          log(e, "agency-cover-selected", {
+            actorId: u.id,
+            position: u.agencyCoverGoal,
+            sourceEventId: shot?.id || null,
+          });
+        }
+      }
+    }
+    if (!u.agencyCoverGoal) {
+      if (incoming) {
+        u.prone = true;
+        u.stance = "prone";
+      }
+      return false;
+    }
+    if (G.distance(u, u.agencyCoverGoal) > 1) {
+      moveGround(u, u.agencyCoverGoal, 0.9 * B().moveFactor(u), e);
+      u.prone = false;
+      u.stance = "standing";
+      u.state = "cover-move";
+      return true;
+    }
+    u.path = [];
+    u.prone = true;
+    u.stance = "prone";
+    u.state = "covering";
+    if (incoming) u.agencyCoverUntil = e.time + 12;
+    if (enemies.length && !u.health.wounds.some((w) => !w.treated)) {
+      const target = enemies.find((a) => G.clear(u, a));
+      if (target) {
+        u.heading = Math.atan2(target.y - u.y, target.x - u.x);
+        B().fire(s, e, u, {
+          id: target.id,
+          x: target.x,
+          y: target.y,
+          lastSeen: e.time,
+        });
+      }
+    }
+    if (e.time >= u.agencyCoverUntil) {
+      delete u.agencyCoverGoal;
+      u.path = [];
+      return false;
+    }
+    return !u.health.wounds.some((w) => !w.treated);
+  }
   function actorTaskTick(s, e, u) {
     if (u.waitingForDeployment) {
       if (e.mission.fieldStartedAt == null) return;
@@ -2341,6 +2653,7 @@
         },
       );
     }
+    if (agencyCover(s, e, u, enemies)) return;
     if (u.health.wounds.some((w) => !w.treated)) {
       if (!B().underFire(e, u)) {
         const medic =
@@ -2512,7 +2825,7 @@
   function tick(s, e) {
     const m = e.mission;
     harvest(e);
-    if (m.contract.task !== "recon" && !m.returnRequested) {
+    if (m.contract.task !== "recon" && !targeted(m) && !m.returnRequested) {
       m.taskLeaderId ||=
         m.contract.task === "rescue" ? "agency-rescuer" : "agency-guide";
       const old = e.world.actors.find((a) => a.id === m.taskLeaderId);
@@ -2576,8 +2889,10 @@
     const protectedUnit = e.world.actors.find(
       (a) => a.id === "agency-protected",
     );
-    const complete =
-      m.contract.task === "recon"
+    const targetResult = targeted(m) ? targetOutcome(s, e) : null;
+    const complete = targetResult
+      ? targetResult.complete
+      : m.contract.task === "recon"
         ? new Set(
             e.squads
               .flatMap((q) => q.contacts)
@@ -2591,9 +2906,10 @@
           G.distance(protectedUnit, m.taskGoal) <
             (G.MAP.width < 500 ? 8 : 20) &&
           (m.contract.task !== "rescue" || m.taskLinked);
-    const failed =
-      (protectedUnit && !protectedUnit.health.alive) ||
-      m.agencyLeaderUnavailable;
+    const failed = targetResult
+      ? targetResult.failed
+      : (protectedUnit && !protectedUnit.health.alive) ||
+        m.agencyLeaderUnavailable;
     if ((complete && !m.objective) || (failed && !m.objectiveFailed)) {
       m.objective = !!complete;
       m.objectiveFailed = !!failed;
@@ -2606,7 +2922,9 @@
         e,
         "objective",
         failed
-          ? "보호 대상 생체 신호 소실. 계약 목표 달성 불가, 철수 판단 바란다."
+          ? targeted(m)
+            ? "지정 표적 탈출 확인. 계약 목표 달성 불가, 철수한다."
+            : "보호 대상 생체 신호 소실. 계약 목표 달성 불가, 철수 판단 바란다."
           : "현장 목표 실제 달성. 철수·수송·본부 도착은 별도로 진행해야 한다.",
         ev,
         { missionObjective: failed ? "failed" : "complete" },
@@ -2723,6 +3041,8 @@
     }
   }
   function applyPayload(e, r) {
+    if (r.payload?.targetProgress)
+      e.mission.knowledge.targetProgress = copy(r.payload.targetProgress);
     if (r.payload?.supportAlert)
       e.mission.knowledge.supportAlert = {
         ...copy(r.payload.supportAlert),
@@ -2762,6 +3082,7 @@
     harvest(e);
     const report = {
       id: m.id,
+      targets: targeted(m) ? copy(m.targetProgress) : null,
       contractId: m.contract.id,
       title: m.contract.title,
       issuer: m.contract.issuer,
@@ -3040,6 +3361,10 @@
         title: m.contract.title,
         issuer: m.contract.issuer,
         task: m.contract.task,
+        targetLabel: m.contract.targetLabel || null,
+        targetProgress: m.knowledge.targetProgress
+          ? copy(m.knowledge.targetProgress)
+          : null,
         phase: e.status === "ended" ? "settled" : m.knowledge.phase,
         objective: m.knowledge.objective,
         transport: m.contract.transport,
@@ -3226,6 +3551,30 @@
         n(m.escrow),
       "실전 전장 연결이 잘못되었습니다.",
     );
+    if (targeted(m)) {
+      ok(
+        Array.isArray(m.targetIds) &&
+          m.targetIds.length === (m.contract.targetCount || 1) &&
+          new Set(m.targetIds).size === m.targetIds.length &&
+          m.targetIds.every((id) =>
+            e.world.actors.some(
+              (a) =>
+                a.id === id &&
+                a.side === "red" &&
+                a.armed &&
+                typeof a.missionTargetCode === "string",
+            ),
+          ) &&
+          m.targetProgress &&
+          ["identified", "confirmed", "escaped"].every(
+            (k) =>
+              Array.isArray(m.targetProgress[k]) &&
+              m.targetProgress[k].every((id) => m.targetIds.includes(id)),
+          ) &&
+          point(m.targetExit),
+        "지정 표적 상태가 잘못되었습니다.",
+      );
+    }
     if (m.agencyControl) {
       const g = m.agencyControl;
       ok(
@@ -3344,6 +3693,7 @@
     selectRegion,
     PRICES,
     initialize,
+    upgrade,
     updateOffers,
     refresh,
     accept,

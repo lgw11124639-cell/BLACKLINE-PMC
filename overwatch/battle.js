@@ -939,7 +939,7 @@
         M().actorTaskTick(s, e, u);
         continue;
       }
-      if (!activeActor(u)) continue;
+      if (!activeActor(u) || u.escaped) continue;
       if (u.health.aid) continue;
       if (
         untreated(u) &&
@@ -1091,6 +1091,19 @@
         u.state = u.prone ? "covering" : "aiming";
         if (e.time - seen.firstSeen > 4) fire(s, e, u, seen);
       } else {
+        if (u.escapeAfter && e.time >= u.escapeAfter && e.mission?.targetExit) {
+          u.state = "escaping";
+          advanceActor(e, u, e.mission.targetExit, 0.85);
+          if (G.distance(u, e.mission.targetExit) < 8) {
+            u.escaped = true;
+            u.path = [];
+            I().event(e, "mission-target-escaped", {
+              actorId: u.id,
+              position: { x: u.x, y: u.y },
+            });
+          }
+          continue;
+        }
         if (u.deployment?.phase === "approach") {
           const d = u.deployment;
           if (e.time < d.releaseAt) {
@@ -1642,7 +1655,9 @@
         );
       }),
       covert =
-        !main || ["recon", "observe", "hold", "withdraw"].includes(main.kind),
+        (!main ||
+          ["recon", "observe", "hold", "withdraw"].includes(main.kind)) &&
+        !target.objectiveCode,
       range = G.distance(u, target),
       civilianRisk = q.contacts.some(
         (c) =>
@@ -1657,6 +1672,12 @@
     let mode = "hold",
       reason = "식별·사격 조건 확보 전 사격 보류";
     if (civilianRisk) reason = "민간인·미식별 인원 사격선 위험, 사격 보류";
+    else if (
+      ["eliminate", "interdict"].includes(e.mission?.contract.task) &&
+      !target.objectiveCode &&
+      !danger
+    )
+      reason = "계약 표적 신원 불일치, 불필요한 교전 회피";
     else if (
       covert &&
       !danger &&
@@ -1928,6 +1949,7 @@
           .sort(
             (a, b) =>
               G.distance(u, a) -
+              (a.objectiveCode ? 2000 : 0) -
               (a.specialty === "sniper"
                 ? q.assignment?.kind === "counter-sniper"
                   ? 700
@@ -1945,6 +1967,7 @@
                   ? G.distance(a, e.mission.contract.extraction) * 0.6
                   : 0) -
               (G.distance(u, b) -
+                (b.objectiveCode ? 2000 : 0) -
                 (b.specialty === "sniper"
                   ? q.assignment?.kind === "counter-sniper"
                     ? 700

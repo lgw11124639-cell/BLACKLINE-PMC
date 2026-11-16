@@ -55,8 +55,8 @@ test("schema 4 migration archives exact saves and never resets money, personnel,
   assert.equal(up.headquarters.funds, s.headquarters.funds);
   assert.deepEqual(up.fieldPreferences, s.fieldPreferences);
   assert.equal(JSON.parse(st.raw(S.KEYS.beforeMissionMigration)).primary, raw);
-  assert.equal(up.contracts.length, 5);
-  assert.equal(st.migrate().contracts.length, 5);
+  assert.equal(up.contracts.length, M.TEMPLATES.length);
+  assert.equal(st.migrate().contracts.length, M.TEMPLATES.length);
 });
 test("contracts enforce single operation, minimum crew, readiness and real escrow without double launch", () => {
   const { s, c } = make("rescue-cover");

@@ -421,9 +421,11 @@
           (c) =>
             '<article class="field-contact"><strong>' +
             esc(
-              c.specialty === "sniper"
-                ? "저격수 식별"
-                : labels[c.classification] || "인원 관측",
+              c.objectiveCode
+                ? "계약 표적 " + c.objectiveCode
+                : c.specialty === "sniper"
+                  ? "저격수 식별"
+                  : labels[c.classification] || "인원 관측",
             ) +
             "</strong><small>" +
             esc(
@@ -520,7 +522,7 @@
     return (
       '<section class="page-title"><span class="eyebrow">TRAINING CONTROL</span><h1>저격조 모의 훈련</h1><p>교관이 과업을 통제하는 실시간 훈련입니다. 관측수와 저격수의 행동을 관전하며 연습 부상·전사는 실전 인사 손실로 반영하지 않습니다.</p></section>' +
       (!s?.commandExercise?.mission && (!battle || !active)
-        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 훈련에는 계약 기관의 실전 수송·지원이 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
+        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 훈련에는 계약 기관의 실전 수송·지원이 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option><option value="urban-embassy">공관·언덕 지구</option><option value="urban-rail">철도·정비 지구</option><option value="urban-research">통신·연구 단지</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
           (!editable ||
           !s.squads.length ||
           s.commandExercise?.status === "running"

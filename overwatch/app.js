@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.07",
+  const VERSION = "2026.11.16.08",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -55,7 +55,9 @@
   function rollbackRuntime(errorValue) {
     runtime.stop();
     OverwatchAudio.stop();
-    root.querySelector(".field-fullscreen")?.classList.remove("field-fullscreen");
+    root
+      .querySelector(".field-fullscreen")
+      ?.classList.remove("field-fullscreen");
     if (lastSaved) state = Core.clone(lastSaved);
     if (
       state?.commandExercise?.battle &&
@@ -261,6 +263,15 @@
       ) {
         const next = Core.clone(state);
         OverwatchStaff.upgrade(next);
+        state = store.save(next, state.revision);
+      }
+      if (
+        source === "primary" &&
+        state?.schemaVersion === 5 &&
+        state.operations.contentVersion !== 2
+      ) {
+        const next = Core.clone(state);
+        OverwatchMissions.upgrade(next);
         state = store.save(next, state.revision);
       }
       lastSaved = state ? Core.clone(state) : null;
