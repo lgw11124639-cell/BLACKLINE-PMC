@@ -75,7 +75,8 @@
     return MAP;
   }
   function project(p) {
-    if (!blocked(p)) return { x: p.x, y: p.y };
+    if (!blocked(p))
+      return { x: p.x, y: p.y, ...(p.roofId ? { roofId: p.roofId } : {}) };
     for (let r = 1; r < 80; r++)
       for (let i = 0; i < 16; i++) {
         const q = {
@@ -101,14 +102,34 @@
       p.x < b[2] + pad &&
       p.y > b[1] - pad &&
       p.y < b[3] + pad;
+  function roofBuilding(p) {
+    if (!/^roof-\d+$/.test(p?.roofId || "")) return null;
+    const b = MAP.buildings[Number(p.roofId.slice(5))];
+    return b && inside(p, b, -0.6) ? b : null;
+  }
+  function roofs() {
+    return MAP.width < 500
+      ? MAP.buildings
+          .map((b, i) => ({
+            id: "roof-" + i,
+            height: b[4],
+            point: { x: (b[0] + b[2]) / 2, y: b[3] - 2, roofId: "roof-" + i },
+            access: project({ x: (b[0] + b[2]) / 2, y: b[3] + 2 }),
+          }))
+          .filter((r) => distance(r.access, r.point) < 12)
+      : [];
+  }
   const blocked = (p) =>
     p.x < 10 ||
     p.y < 10 ||
     p.x > MAP.width - 10 ||
     p.y > MAP.height - 10 ||
-    MAP.buildings.some((b) => inside(p, b, MAP.clearance ?? 6)) ||
+    (!roofBuilding(p) &&
+      MAP.buildings.some((b) => inside(p, b, MAP.clearance ?? 6))) ||
     (MAP.covers || []).some((c) => inside(p, coverBounds(c), 0.4));
   function elevation(p) {
+    const roof = roofBuilding(p);
+    if (roof) return roof[4];
     return Math.max(
       0,
       ...MAP.heights.map(
@@ -117,6 +138,34 @@
     );
   }
   function clear(a, b, ground = false) {
+    if (ground && roofBuilding(a) && a.roofId === b.roofId && roofBuilding(b))
+      return true;
+    if (ground) {
+      const intersects = (box, pad) => {
+        let lo = 0,
+          hi = 1;
+        for (const [start, delta, min, max] of [
+          [a.x, b.x - a.x, box[0] - pad + 1e-7, box[2] + pad - 1e-7],
+          [a.y, b.y - a.y, box[1] - pad + 1e-7, box[3] + pad - 1e-7],
+        ]) {
+          if (Math.abs(delta) < 1e-10) {
+            if (start <= min || start >= max) return false;
+          } else {
+            const t1 = (min - start) / delta,
+              t2 = (max - start) / delta;
+            lo = Math.max(lo, Math.min(t1, t2));
+            hi = Math.min(hi, Math.max(t1, t2));
+            if (lo > hi) return false;
+          }
+        }
+        return hi >= lo;
+      };
+      if (
+        MAP.buildings.some((r) => intersects(r, MAP.clearance ?? 6)) ||
+        (MAP.covers || []).some((c) => intersects(coverBounds(c), 0.4))
+      )
+        return false;
+    }
     const n = Math.max(
       2,
       Math.ceil(distance(a, b) / ((MAP.covers || []).length ? 0.4 : 5)),
@@ -152,6 +201,32 @@
   }
   function path(a, b, resolution = MAP.grid) {
     if (blocked(a) || blocked(b)) return [];
+    if (a.roofId || b.roofId) {
+      const ra = roofs().find((r) => r.id === a.roofId),
+        rb = roofs().find((r) => r.id === b.roofId);
+      if ((a.roofId && !ra) || (b.roofId && !rb)) return [];
+      if (ra && rb && ra.id === rb.id)
+        return [{ x: b.x, y: b.y, roofId: rb.id }];
+      const start = ra ? ra.access : a,
+        end = rb ? rb.access : b,
+        ground = path(start, end, resolution);
+      if (!ground.length && distance(start, end) > 1) return [];
+      return [
+        ...(ra
+          ? [
+              { ...ra.point },
+              { ...ra.access, roofTransition: "down", roofFrom: ra.id },
+            ]
+          : []),
+        ...ground,
+        ...(rb
+          ? [
+              { ...rb.point, roofTransition: "up" },
+              { x: b.x, y: b.y, roofId: rb.id },
+            ]
+          : []),
+      ];
+    }
     if (clear(a, b, true)) return [{ x: b.x, y: b.y }];
     const g = resolution,
       cols = MAP.width / g + 1,
@@ -241,6 +316,8 @@
       return MAP;
     },
     maps,
+    roofs,
+    roofBuilding,
     activate,
     project,
     coverBounds,

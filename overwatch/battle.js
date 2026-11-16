@@ -390,7 +390,9 @@
         const ally = copy(civilian);
         Object.assign(ally, {
           id: "support-" + i,
-          name: "지원 분대 " + (i + 1),
+          name: "기관 보병 " + (i + 1),
+          role: "infantry",
+          roleLabel: "기관 보병",
           x: p.x,
           y: p.y,
           side: "ally",
@@ -451,6 +453,7 @@
       I().report(s, e, q, kind, q.callsign + ". " + body, ev, payload);
   }
   function bandage(s, e, u, target) {
+    if ((u.roofId || null) !== (target.roofId || null)) return false;
     if (
       u.health.aid ||
       u.health.kit <= 0 ||
@@ -668,6 +671,8 @@
         if (t) {
           t.x = u.x;
           t.y = u.y;
+          if (u.roofId) t.roofId = u.roofId;
+          else delete t.roofId;
           t.state = "carried";
           if (G.distance(u, rally(e)) < (G.MAP.width < 500 ? 8 : 35)) {
             if (!e.mission) {
@@ -706,7 +711,10 @@
               G.clear(u, v),
           );
         if (buddy) {
-          if (G.distance(u, buddy) < 12) {
+          if (
+            G.distance(u, buddy) < 12 &&
+            (u.roofId || null) === (buddy.roofId || null)
+          ) {
             if (untreated(buddy)) bandage(s, e, u, buddy);
             else {
               u.carrying = buddy.id;
@@ -734,6 +742,62 @@
         }
       }
     }
+  }
+  function visualAcquire(e, observer, target, range) {
+    observer.detectionTracks ??= [];
+    let track = observer.detectionTracks.find((t) => t.id === target.id);
+    if (!track) {
+      track = {
+        id: target.id,
+        confidence: 0,
+        lastAt: e.time - 1,
+        seenAt: e.time - 1,
+        x: target.x,
+        y: target.y,
+      };
+      observer.detectionTracks.push(track);
+    }
+    const gap = e.time - track.lastAt,
+      dt = Math.max(0, Math.min(2, gap));
+    if (!dt) return track.confidence >= 0.8;
+    if (gap > 3) track.confidence *= Math.exp(-(gap - 3) / 20);
+    const moving =
+      G.distance(track, target) > 0.2 ||
+      (target.path?.length &&
+        ["moving", "climbing", "walking", "advancing"].includes(target.state));
+    const prone = stanceOf(target) === "prone",
+      d = G.distance(observer, target);
+    const conceal = prone
+      ? target.role === "sniper"
+        ? 0.18
+        : 0.35
+      : stanceOf(target) === "kneeling"
+        ? 0.65
+        : 1;
+    const shadow = (G.MAP.shadows || []).some((b) => G.inside(target, b));
+    const cover = (G.MAP.covers || []).some(
+      (c) => G.distance(target, c) < Math.max(c.w, c.h) / 2 + 1.5,
+    );
+    let exposure =
+      (0.055 + (observer.skill || 55) / 1600) *
+      Math.max(0.15, 1 - (0.8 * d) / range) *
+      conceal *
+      (moving ? 2.8 : 1) *
+      (shadow ? 0.5 : 1) *
+      (cover ? 0.55 : 1) *
+      (target.roofId && prone ? 0.75 : 1);
+    if (target.lastShotAt != null && e.time - target.lastShotAt < 4)
+      exposure += WEAPONS[target.weapon?.model]?.suppressed ? 0.17 : 0.42;
+    if (d < 14) exposure = Math.max(exposure, 0.45);
+    track.confidence = Math.min(1, track.confidence + exposure * dt);
+    track.lastAt = e.time;
+    track.seenAt = e.time;
+    track.x = target.x;
+    track.y = target.y;
+    observer.detectionTracks = observer.detectionTracks
+      .filter((t) => e.time - t.seenAt < 180)
+      .slice(-32);
+    return track.confidence >= 0.8;
   }
   function scanEnemy(e, u) {
     const targets =
@@ -769,6 +833,11 @@
           Math.PI * 0.42,
     );
     for (const v of visible) {
+      const range =
+        ((u.weapon.model === "SVD" ? 750 : u.side === "ally" ? 350 : 240) +
+          G.elevation(u) * 3) *
+        e.battle.weather.visibility;
+      if (!visualAcquire(e, u, v, range)) continue;
       let m = u.memory.find((m) => m.id === v.id);
       if (m && e.time - m.lastSeen > 8) m.firstSeen = e.time;
       if (!m) {
@@ -780,6 +849,7 @@
         y: v.y,
         lastSeen: e.time,
         condition: snapshot(v).pose,
+        roofId: v.roofId || null,
       });
     }
     return u.memory
@@ -1082,6 +1152,7 @@
     return desired;
   }
   function fire(s, e, u, known) {
+    if (u.roofTransit) return null;
     G.activate(e.mapId || "command-range");
     if (
       u.weapon.loaded === 0 &&
@@ -2045,10 +2116,25 @@
           typeof u.prone === "boolean",
         "전투 역량 정보가 잘못되었습니다.",
       );
+      if (u.detectionTracks)
+        ok(
+          Array.isArray(u.detectionTracks) &&
+            u.detectionTracks.length <= 32 &&
+            u.detectionTracks.every(
+              (t) =>
+                typeof t.id === "string" &&
+                n(t.confidence, 0, 1) &&
+                n(t.lastAt, 0, e.time) &&
+                n(t.seenAt, 0, e.time) &&
+                n(t.x, 10, 1190) &&
+                n(t.y, 10, 790),
+            ),
+          "시각 탐지 기록이 잘못되었습니다.",
+        );
       if (["red", "ally"].includes(u.side))
         ok(
           Array.isArray(u.memory) &&
-            u.memory.length <= 12 &&
+            u.memory.length <= 32 &&
             u.memory.every(
               (m) =>
                 typeof m.id === "string" &&
@@ -2202,6 +2288,8 @@
     chooseStance,
     stanceOf,
     coverPoint,
+    scanEnemy,
+    visualAcquire,
   };
   root.OverwatchBattle = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
