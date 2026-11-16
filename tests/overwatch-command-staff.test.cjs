@@ -236,7 +236,7 @@ test("delegated foot insertion completes its published route before the controll
   C.validate(s);
 });
 
-test("a delegated reconnaissance move leaves one actual teammate stationary with optics while the other advances", () => {
+test("a moving bound pauses one teammate weapon-ready without pretending it is a settled observation post", () => {
   const { s } = setup();
   B.begin(s, { seed: 7 });
   advance(s, 35);
@@ -247,7 +247,9 @@ test("a delegated reconnaissance move leaves one actual teammate stationary with
     (u) => !u.path.length && u.overwatchPath?.length,
   );
   assert.equal(stationary.length, 1);
-  assert.ok(stationary[0].visionRange > 1000);
+  assert.equal(stationary[0].prone, false);
+  assert.equal(stationary[0].stance, "standing");
+  assert.ok(stationary[0].visionRange < 1000);
   assert.ok(e.world.units.some((u) => u.path.length));
   C.validate(s);
 });
@@ -311,7 +313,7 @@ test("market generation varies given names and refresh does not rename contracte
   );
   assert.equal(
     new Set(s.commandStaff.market.map((m) => m.name.slice(1))).size,
-    6,
+    9,
   );
   C.validate(s);
 });

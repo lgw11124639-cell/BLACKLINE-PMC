@@ -353,6 +353,28 @@
                         }[u.state] || u.state,
               ) +
               (u.roofId ? " · 옥상 진지" : "") +
+              (u.role === "sniper" && u.health?.alive && u.health.conscious
+                ? " · " +
+                  esc(
+                    {
+                      reload: "재장전 중",
+                      medical: "응급처치 중",
+                      cycling: "다음 탄 장전 중",
+                      "no-ammo": "탄약 소진",
+                      stairs: "계단 이동 중 사격 보류",
+                      range: "사거리 밖",
+                      "line-of-sight": "건물·지형 사각",
+                      acquiring: "표적 추적 확보 중",
+                      aiming: "조준 안정화 중",
+                      "holding-fire": "관측수 사격 보류",
+                      "friendly-in-lane": "아군 사격선 진입",
+                      "lost-visual": "식별 표적 시야 상실",
+                      moving: "이동 중 사격 보류",
+                      "no-target": "식별 표적 대기",
+                    }[u.fireBlockReason] ||
+                      (u.activity === "firing" ? "격발" : "사격 조건 확인 중"),
+                  )
+                : "") +
               "</p><p>" +
               ((u.health?.wounds || [])
                 .map(

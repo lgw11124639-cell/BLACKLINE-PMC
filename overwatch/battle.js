@@ -142,7 +142,13 @@
   function moveFactor(u) {
     if (u.boardedBy || u.home) return 0;
     if (!u.health) return 1;
-    if (!healthy(u) || untreated(u) || u.health.aid?.phase === "treating")
+    if (
+      !healthy(u) ||
+      (untreated(u) &&
+        (u.health.bloodMl < 3300 ||
+          u.health.wounds.some((w) => !w.treated && w.severity > 1))) ||
+      u.health.aid?.phase === "treating"
+    )
       return 0;
     const legs = u.health.wounds.filter((w) => /Leg/.test(w.part));
     if (legs.some((w) => w.severity === 3)) return 0;
@@ -189,6 +195,10 @@
       heading: u.heading || 0,
       mobility: moveFactor(u) > 0,
       combatActive: !!u.combatActive,
+      fireBlockReason: u.fireBlockReason || null,
+      underFire: now !== null && now - (u.lastThreatAt ?? -100) < 8,
+      peripheralRange: u.peripheralRange || null,
+      peripheralHeading: u.peripheralHeading || 0,
       visionRange: u.visionRange || null,
       identificationRange: u.identificationRange || null,
       visionHalfAngle: u.visionHalfAngle || null,
@@ -658,7 +668,16 @@
       } else if (
         healthy(u) &&
         untreated(u) &&
-        (!underFire(e, u) || h.bloodMl < 3300)
+        (!underFire(e, u) || h.bloodMl < 3300) &&
+        (h.bloodMl < 3300 ||
+          !(
+            (u.agencyCoverGoal ||
+              e.squads.some(
+                (q) =>
+                  q.displacement && [q.observerId, q.sniperId].includes(u.id),
+              )) &&
+            u.path.length
+          ))
       )
         bandage(s, e, u, u);
       if (u.weapon.reloadUntil !== null && e.time >= u.weapon.reloadUntil) {
@@ -1264,7 +1283,7 @@
   function chooseStance(e, u, known) {
     const distance = G.distance(u, known);
     let desired =
-      u.path?.length || distance < 65
+      u.path?.length || u.overwatchPath?.length || distance < 65
         ? "standing"
         : distance > 220
           ? "prone"
@@ -1323,8 +1342,18 @@
       u.health.aid ||
       w.reloadUntil !== null ||
       e.time < w.nextFireAt
-    )
+    ) {
+      u.fireBlockReason = u.health.aid
+        ? "medical"
+        : w.reloadUntil !== null
+          ? "reload"
+          : e.time < w.nextFireAt
+            ? "cycling"
+            : !healthy(u)
+              ? "incapacitated"
+              : "no-target";
       return;
+    }
     const d = G.distance(u, known);
     if (!options.keepStance) chooseStance(e, u, known);
     if (d > stats.range || !G.clear(u, known)) {
@@ -1332,6 +1361,7 @@
       return;
     }
     if (!w.loaded) {
+      u.fireBlockReason = w.magazines.length ? "reload" : "no-ammo";
       reload(e, u);
       return;
     }
@@ -1646,14 +1676,18 @@
   }
   function observerDecision(s, e, q, u, target) {
     const main = e.commands.find((c) => c.id === q.commandId),
-      danger = [q.observerId, q.sniperId].some((id) => {
-        const teammate = unit(e, id);
-        return (
-          teammate &&
-          G.distance(u, teammate) <= 600 &&
-          e.time - teammate.lastThreatAt < 25
-        );
-      }),
+      danger =
+        (main?.protectPosition &&
+          (target.combatActive ||
+            ["aiming", "firing"].includes(target.activity))) ||
+        [q.observerId, q.sniperId].some((id) => {
+          const teammate = unit(e, id);
+          return (
+            teammate &&
+            G.distance(u, teammate) <= 600 &&
+            e.time - teammate.lastThreatAt < 25
+          );
+        }),
       covert =
         (!main ||
           ["recon", "observe", "hold", "withdraw"].includes(main.kind)) &&
@@ -1985,7 +2019,25 @@
                     ? G.distance(b, e.mission.contract.extraction) * 0.6
                     : 0)),
           )[0];
-        if (!target) continue;
+        if (!target) {
+          const recent = q.contacts.filter(
+            (c) =>
+              c.classification === "armed-person" &&
+              c.confidence >= 0.82 &&
+              !["down", "dead"].includes(c.condition) &&
+              e.time - c.lastSeen < 30,
+          );
+          u.fireBlockReason = recent.some(
+            (c) => G.distance(u, c) <= WEAPONS[u.weapon.model].range,
+          )
+            ? recent.some((c) => e.time - c.lastSeen <= 5)
+              ? "line-of-sight"
+              : "lost-visual"
+            : recent.length
+              ? "range"
+              : "no-target";
+          continue;
+        }
         const silent =
           e.mission?.agencyControl &&
           (!main || ["recon", "observe", "hold", "move"].includes(main.kind));
@@ -2004,7 +2056,10 @@
         )
           fire(s, e, u, target, { holdFire: true, keepStance: true });
         if (seekCover(e, u, target)) continue;
-        if (u.role === "sniper" && u.path.length) continue;
+        if (u.role === "sniper" && u.path.length) {
+          u.fireBlockReason = "moving";
+          continue;
+        }
         const selfDefense = e.time - u.lastThreatAt < 25;
         if (
           !permitted ||

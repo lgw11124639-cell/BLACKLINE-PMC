@@ -5,6 +5,7 @@
     tick,
     checkpoint,
     baseRate = 1,
+    maxWorkMs = Infinity,
     afterPump = () => {},
     onError = () => {},
     now = () => performance.now(),
@@ -45,7 +46,9 @@
         accumulator += elapsed * speed * baseRate;
         let steps = 0;
         try {
+          const workStarted = now();
           while (accumulator >= 1 - 1e-9 && running) {
+            if (steps && now() - workStarted >= maxWorkMs) break;
             accumulator = Math.max(0, accumulator - 1);
             const proceed = tick();
             steps++;

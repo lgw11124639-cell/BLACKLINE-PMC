@@ -21,6 +21,11 @@
       [
         ["controller", "작전통제관", "정찰·조별 임무·철수와 지원 배분"],
         ["instructor", "훈련 교관", "모의 훈련의 과업·관측·복귀 통제"],
+        [
+          "personnel",
+          "인사관리관",
+          "진료 대기 자동 치료 배정 · 가용 대원 저격조 편성",
+        ],
       ]
         .map(
           ([k, label, desc]) =>
@@ -53,7 +58,11 @@
                   " · 판단 " +
                   m.skills.judgment +
                   " · " +
-                  (m.duty === "controller" ? "작전통제관" : "훈련 교관") +
+                  {
+                    controller: "작전통제관",
+                    instructor: "훈련 교관",
+                    personnel: "인사관리관",
+                  }[m.duty] +
                   "</option>",
               )
               .join("") +
@@ -73,18 +82,31 @@
       '>통제관 지원 자동 배분</label><label><input type="checkbox" data-staff-training' +
       (c.autoTraining !== false ? " checked" : "") +
       (!editable ? " disabled" : "") +
-      ">훈련·휴식 교관 위임</label></div><p data-instructor-status>" +
+      '>훈련·휴식 교관 위임</label><label><input type="checkbox" data-staff-personnel' +
+      (c.autoPersonnel !== false ? " checked" : "") +
+      (!editable ? " disabled" : "") +
+      ">진료·편성 인사관리관 위임</label></div><p data-personnel-status>" +
+      esc(
+        c.personnelStatus ||
+          "인사관리관 배정 시 진료 대기·가용 대원 편성 자동 관리",
+      ) +
+      "</p><p data-instructor-status>" +
       esc(c.trainingPlan?.status || "교관 배정 시 2~4명 훈련·휴식 자동 관리") +
-      '</p><p class="muted">본부 훈련은 1초에 1분씩 자동 진행 · 훈련비 하루 최대 50만원 · 작전 수락 시 자동 중단</p><p class="muted">UAV·의료 회수·보급은 계약 제공분 안에서 운용합니다. 본부의 직접 요청은 계속 가능합니다.</p></section>' +
+      '</p><p class="muted">본부 훈련은 1초에 1분씩 자동 진행 · 훈련비 하루 최대 50만원 · 작전 수락 시 자동 중단</p><p class="muted">UAV·의료 회수는 계약 제공분 안에서 운용합니다. 본부의 직접 요청은 계속 가능합니다.</p></section>' +
       (options.market === false ? "" : market(s, editable))
     );
   }
   function market(s, editable) {
     const c = s.commandStaff || {},
       running = s.commandExercise?.status === "running";
-    const role = (m) => (m.duty === "controller" ? "작전통제관" : "훈련 교관");
+    const role = (m) =>
+      ({
+        controller: "작전통제관",
+        instructor: "훈련 교관",
+        personnel: "인사관리관",
+      })[m.duty];
     return (
-      '<section class="panel staff-market"><span class="eyebrow">SUPPORT STAFF MARKET</span><h2>교관·통제관 별도 채용</h2><p class="muted">전투 편제와 별도 · 직책별 현역 계약 최대 2명 · 30일 급여 선지급</p><div class="staff-market-grid">' +
+      '<section class="panel staff-market"><span class="eyebrow">SUPPORT STAFF MARKET</span><h2>교관·통제관·인사관리관 채용</h2><p class="muted">전투 편제와 별도 · 직책별 현역 계약 최대 2명 · 30일 급여 선지급</p><div class="staff-market-grid">' +
       (c.market || [])
         .map(
           (m) =>
@@ -219,6 +241,7 @@
       ["[data-staff-delegated]", "delegated"],
       ["[data-staff-support]", "autoSupport"],
       ["[data-staff-training]", "autoTraining"],
+      ["[data-staff-personnel]", "autoPersonnel"],
     ])
       for (const el of node.querySelectorAll(selector))
         el.addEventListener("change", () => {
@@ -234,6 +257,10 @@
         });
   }
   function refreshTraining(node, s) {
+    for (const el of node.querySelectorAll("[data-personnel-status]"))
+      el.textContent =
+        s.commandStaff?.personnelStatus ||
+        "인사관리관 배정 시 진료·편성 자동 관리";
     for (const el of node.querySelectorAll("[data-instructor-status]"))
       el.textContent =
         s.commandStaff?.trainingPlan?.status || "교관 상태 확인 중";

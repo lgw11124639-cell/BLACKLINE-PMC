@@ -19,6 +19,7 @@
         version: 1,
         controllerId: null,
         instructorId: null,
+        personnelId: null,
         delegated: true,
         autoSupport: true,
         history: [],
@@ -34,7 +35,7 @@
     const c = s.commandStaff;
     c.market = [];
     c.nextMarketAt = s.clock.elapsedSeconds + 43200;
-    for (const duty of ["controller", "instructor"])
+    for (const duty of ["controller", "instructor", "personnel"])
       for (let i = 0; i < 3; i++) {
         const serial = ++c.sequence;
         c.market.push({
@@ -65,9 +66,20 @@
   }
   function upgrade(s) {
     const c = initialize(s);
-    if (c.marketVersion === 2) return;
+    if (c.marketVersion === 3) return;
+    if (
+      c.marketVersion === 2 &&
+      !c.market.some((m) => m.duty === "personnel")
+    ) {
+      const existing = c.market.slice();
+      fillMarket(s);
+      c.market = [
+        ...existing,
+        ...c.market.filter((m) => m.duty === "personnel"),
+      ];
+    }
     // Transfer only already assigned HQ personnel; preserve their identity and paid contract.
-    for (const key of ["controller", "instructor"]) {
+    for (const key of ["controller", "instructor", "personnel"]) {
       const i = s.members.findIndex((m) => m.id === c[key + "Id"]);
       if (i >= 0) {
         const m = s.members.splice(i, 1)[0];
@@ -76,7 +88,7 @@
         c.members.push(m);
       }
     }
-    c.marketVersion = 2;
+    c.marketVersion = 3;
     P().diversifyMarket(s);
   }
   function hire(s, id, days = 30) {
@@ -126,7 +138,11 @@
       "recruited",
       m.name +
         " · " +
-        (m.duty === "controller" ? "작전통제관" : "훈련 교관") +
+        {
+          controller: "작전통제관",
+          instructor: "훈련 교관",
+          personnel: "인사관리관",
+        }[m.duty] +
         " 별도 계약",
       { staffId: m.id },
     );
@@ -153,7 +169,7 @@
   function reserved(s, id) {
     return (
       !!id &&
-      ["controller", "instructor"].some(
+      ["controller", "instructor", "personnel"].some(
         (k) => s.commandStaff?.[k + "Id"] === id,
       )
     );
@@ -171,7 +187,7 @@
   }
   function assign(s, key, id) {
     ok(
-      ["controller", "instructor"].includes(key),
+      ["controller", "instructor", "personnel"].includes(key),
       "지원 직책이 잘못되었습니다.",
     );
     const c = initialize(s);
@@ -238,6 +254,11 @@
   }
   function order(s, e, a, q, kind, target) {
     const c = D().issue(s, q.callsign, kind, target, null, a);
+    if (
+      e.control.watchSectors?.[q.callsign] &&
+      ["cover", "recon"].includes(kind)
+    )
+      c.watchSector = copy(e.control.watchSectors[q.callsign]);
     e.control.orders[q.callsign] = {
       id: c.id,
       kind,
@@ -247,7 +268,24 @@
   }
   function regions(e) {
     const g = G().MAP,
-      center = e.mission?.contract.interest || g.sector || e.squads[0].sector;
+      center =
+        (e.mission?.contract.task === "recon" &&
+        e.mission.knowledge.reconProgress?.currentId != null
+          ? e.mission.reconPlan?.areas.find(
+              (a) => a.id === e.mission.knowledge.reconProgress.currentId,
+            )?.point
+          : null) ||
+        e.mission?.contract.interest ||
+        g.sector ||
+        e.squads[0].sector;
+    if (e.control?.watchSectors)
+      return e.squads.map((q) => {
+        const band = e.control.watchSectors[q.callsign];
+        return G().project({
+          x: (band.x1 + band.x2) / 2,
+          y: Math.max(20, Math.min(g.height - 20, center.y)),
+        });
+      });
     if (
       e.mission?.agencyControl &&
       !["recon", "eliminate", "interdict"].includes(e.mission.contract.task)
@@ -428,21 +466,28 @@
   function missionProgress(s, e, a, c, frame) {
     const m = e.mission;
     if (
-      !m?.agencyControl?.everAuthorized ||
+      !m?.agencyControl ||
+      m.fieldStartedAt == null ||
       m.contract.task === "recon" ||
       m.returnRequested ||
       m.knowledge.objective !== "pending"
     )
       return false;
-    const phase =
-        m.contract.task === "rescue" && !m.taskLinked ? "approach" : "escort",
+    const phase = !m.agencyControl.everAuthorized
+        ? "preparation"
+        : m.contract.task === "rescue" && !m.taskLinked
+          ? "approach"
+          : "escort",
       actors = m.knowledge.actors || [],
       anchor = actors.find(
         (x) =>
           x.id ===
           (phase === "escort"
             ? "agency-protected"
-            : m.taskLeaderId || "agency-rescuer"),
+            : m.taskLeaderId ||
+              (m.contract.task === "rescue"
+                ? "agency-rescuer"
+                : "agency-guide")),
       );
     if (!anchor || e.time - anchor.observedAt > 30) return false;
     const goal =
@@ -546,6 +591,12 @@
         G().project({ x: anchor.x, y: anchor.y }),
       );
       command.reposition = true;
+      const blocked = q.tactical?.position;
+      if (blocked)
+        q.avoidPositions = [
+          ...(q.avoidPositions || []),
+          { x: blocked.x, y: blocked.y, at: e.time },
+        ].slice(-6);
       m.agencyControl.authorized = false;
       m.agencyControl.scanCommandId = command.id;
       w.replanAt = e.time;
@@ -652,6 +703,240 @@
           : P().LABELS[activity.course] + " 보완 훈련");
     return true;
   }
+  function personnelEnabled(s) {
+    return (
+      available(s, staff(s, "personnel")) &&
+      s.commandStaff?.autoPersonnel !== false
+    );
+  }
+  function managePersonnel(s) {
+    if (
+      !personnelEnabled(s) ||
+      s.activeMission ||
+      s.commandExercise?.status === "running"
+    )
+      return false;
+    let changed = false;
+    const c = s.commandStaff;
+    for (const m of s.members.filter(
+      (m) =>
+        P().injured(m) &&
+        !m.activityId &&
+        m.contract.endsAt > s.clock.elapsedSeconds,
+    )) {
+      const plan = P().treatmentPlan(m);
+      if (s.headquarters.funds < plan.cost) {
+        c.personnelStatus = "진료 예산 대기";
+        continue;
+      }
+      const q = s.squads.find((q) => [q.observerId, q.sniperId].includes(m.id));
+      if (q) {
+        const busy = s.activities.some(
+          (a) =>
+            a.status === "running" &&
+            a.memberIds.some((id) => [q.observerId, q.sniperId].includes(id)),
+        );
+        if (busy) continue;
+        P().clearSquad(s, q.callsign);
+      }
+      P().start(s, { kind: "treatment", memberIds: [m.id] });
+      changed = true;
+    }
+    const assigned = new Set(
+      s.squads.flatMap((q) => [q.observerId, q.sniperId]),
+    );
+    const pool = s.members.filter(
+      (m) => !assigned.has(m.id) && P().readiness(s, m) === null,
+    );
+    const observers = pool
+      .filter((m) => m.specialty === "observer")
+      .sort(
+        (a, b) =>
+          P().effectiveSkills(b).judgment - P().effectiveSkills(a).judgment,
+      );
+    const snipers = pool
+      .filter((m) => m.specialty === "sniper")
+      .sort(
+        (a, b) =>
+          P().effectiveSkills(b).shooting - P().effectiveSkills(a).shooting,
+      );
+    for (const call of ["ALPHA", "BRAVO", "CHARLIE"]) {
+      if (
+        s.squads.some((q) => q.callsign === call) ||
+        !observers.length ||
+        !snipers.length
+      )
+        continue;
+      P().assign(s, call, observers.shift().id, snipers.shift().id);
+      changed = true;
+    }
+    c.personnelStatus =
+      "진료 자동 배정 · 가용 " +
+      s.members.filter((m) => P().readiness(s, m) === null).length +
+      "명 · " +
+      s.squads.length +
+      "개 조 편성";
+    return changed;
+  }
+  function manageHeadquarters(s, seconds = 0) {
+    let changed = managePersonnel(s);
+    if (trainingEnabled(s)) changed = manageTraining(s, seconds) || changed;
+    else if (
+      personnelEnabled(s) &&
+      seconds > 0 &&
+      s.activities.some((a) => a.status === "running")
+    ) {
+      P().elapse(s, seconds);
+      changed = true;
+    }
+    return managePersonnel(s) || changed;
+  }
+  function friendlyCover(s, e, a, c, frame) {
+    if (
+      !e.mission ||
+      e.mission.returnRequested ||
+      e.time - (c.lastFriendlyCoverAt ?? -100) < 15
+    )
+      return;
+    const threatened = frame.friends.filter(
+      (f) =>
+        f.age < 25 &&
+        f.health?.alive &&
+        !f.home &&
+        !f.boardedBy &&
+        !f.waitingForDeployment &&
+        (f.underFire || f.health.wounds.some((w) => !w.treated)),
+    );
+    threatened.sort(
+      (x, y) =>
+        Number(!y.health.conscious) -
+        Number(!x.health.conscious) +
+        y.health.wounds
+          .filter((w) => !w.treated)
+          .reduce((n, w) => n + w.severity, 0) -
+        x.health.wounds
+          .filter((w) => !w.treated)
+          .reduce((n, w) => n + w.severity, 0),
+    );
+    const patient = threatened[0];
+    if (!patient) return;
+    const candidates = e.squads
+      .filter(
+        (q) =>
+          q.callsign !== patient.callsign &&
+          !q.displacement &&
+          !(q.emergencyRepositionUntil > e.time),
+      )
+      .map((q) => ({
+        q,
+        sniper: frame.friends.find((f) => f.id === q.sniperId),
+        pair: frame.friends.filter((f) => f.callsign === q.callsign),
+      }))
+      .filter(
+        (x) =>
+          x.pair.length === 2 &&
+          x.pair.every(
+            (f) =>
+              f.age < 25 &&
+              f.health?.alive &&
+              f.health.conscious &&
+              !f.home &&
+              !f.boardedBy &&
+              !f.waitingForDeployment &&
+              !f.health.aid &&
+              !f.health.wounds.some((w) => !w.treated),
+          ),
+      )
+      .sort(
+        (x, y) =>
+          G().distance(x.sniper, patient) - G().distance(y.sniper, patient),
+      );
+    const choice = candidates[0];
+    if (!choice) return;
+    c.lastFriendlyCoverAt = e.time;
+    const current = e.commands.find((x) => x.id === choice.q.commandId);
+    if (
+      choice.q.friendlySupportTarget === patient.id &&
+      current?.kind === "cover" &&
+      !["failed", "cancelled", "superseded"].includes(current.status)
+    ) {
+      choice.q.urgentSupportUntil = e.time + 30;
+      return;
+    }
+    const contact = frame.contacts
+      .filter(
+        (x) =>
+          x.current &&
+          x.classification === "armed-person" &&
+          x.confidence >= 0.82 &&
+          !["down", "dead"].includes(x.medicalCondition) &&
+          G().distance(x, patient) < 600,
+      )
+      .sort(
+        (x, y) =>
+          Number(!!y.combatActive) - Number(!!x.combatActive) ||
+          G().distance(x, patient) - G().distance(y, patient),
+      )[0];
+    const center = e.mission.contract.interest || G().MAP.sector || patient,
+      d = Math.max(1, G().distance(center, patient));
+    const point =
+      contact ||
+      G().project({
+        x: Math.max(
+          10,
+          Math.min(
+            G().MAP.width - 10,
+            patient.x + ((center.x - patient.x) / d) * 70,
+          ),
+        ),
+        y: Math.max(
+          10,
+          Math.min(
+            G().MAP.height - 10,
+            patient.y + ((center.y - patient.y) / d) * 70,
+          ),
+        ),
+      });
+    const command = order(s, e, a, choice.q, "cover", G().project(point));
+    command.protectPosition = {
+      x: patient.x,
+      y: patient.y,
+      ...(patient.roofId ? { roofId: patient.roofId } : {}),
+    };
+    command.reposition =
+      !G().clear(choice.sniper, patient) ||
+      !G().clear(choice.sniper, point) ||
+      G().distance(choice.sniper, point) >
+        (choice.sniper.weapon?.range || 1100);
+    if (contact)
+      command.supportContact = {
+        ...copy(contact),
+        lastSeen: contact.observedAt,
+      };
+    choice.q.friendlySupportTarget = patient.id;
+    choice.q.urgentSupportUntil = e.time + 45;
+    note(
+      s,
+      e,
+      a,
+      "controller-friendly-cover",
+      patient.callsign +
+        " 아군 피격·부상 보고 수신. " +
+        choice.q.callsign +
+        " 엄호 전환. " +
+        (contact
+          ? "식별된 위협에 대한 사격선을 확보한다."
+          : "발사원 미식별. 부상 조 주변 접근로를 관측하고 엄호 진지를 확보한다."),
+      {
+        callsign: choice.q.callsign,
+        protectedId: patient.id,
+        position: command.protectPosition,
+        observedAt: patient.observedAt,
+        contactId: contact?.id || null,
+        reposition: command.reposition,
+      },
+    );
+  }
   function tick(s, e) {
     if (!s.commandStaff?.delegated || !e.battle || e.status !== "running")
       return;
@@ -674,6 +959,24 @@
         decisions: [],
       };
     const c = e.control;
+    if (e.mission && !c.watchSectors) {
+      c.watchSectors = {};
+      for (const [i, q] of e.squads.entries()) {
+        const width = G().MAP.width / e.squads.length;
+        c.watchSectors[q.callsign] = {
+          x1: Math.max(10, i * width),
+          x2: Math.min(G().MAP.width - 10, (i + 1) * width),
+          y1: 10,
+          y2: G().MAP.height - 10,
+          label:
+            e.squads.length === 1
+              ? "전체 구역"
+              : e.squads.length === 2
+                ? ["서부", "동부"][i]
+                : ["서부", "중앙", "동부"][i],
+        };
+      }
+    }
     if (e.mission)
       for (const [i, q] of e.squads.entries())
         if (!q.assignment) {
@@ -824,6 +1127,7 @@
     }
     if (e.mission?.returnRequested || e.battle.objective.returnRequested)
       return;
+    friendlyCover(s, e, a, c, frame);
     const alert = e.mission?.knowledge.supportAlert;
     if (
       alert &&
@@ -887,10 +1191,11 @@
       const targets = known.filter(
         (x) =>
           x.objectiveCode &&
-          x.current &&
+          x.age <= 90 &&
+          !e.mission.targetProgress.confirmed.includes(x.id) &&
           !["down", "dead"].includes(x.medicalCondition),
       );
-      if (targets.length) c.targetWatchAt = e.time;
+      if (targets.some((t) => t.current)) c.targetWatchAt = e.time;
       if (e.time - c.targetWatchAt > 2400) {
         note(
           s,
@@ -905,6 +1210,18 @@
       c.phase = targets.length ? "target-engagement" : "target-search";
       for (const [i, q] of e.squads.entries()) {
         if (q.displacement || q.emergencyRepositionUntil > e.time) continue;
+        const support = e.commands.find(
+          (command) => command.id === q.commandId,
+        );
+        if (
+          q.urgentSupportUntil &&
+          (q.urgentSupportUntil > e.time ||
+            ["queued", "received", "thinking", "executing"].includes(
+              support?.status,
+            ))
+        )
+          continue;
+        q.urgentSupportUntil = null;
         const target = targets[i % Math.max(1, targets.length)],
           old = c.orders[q.callsign],
           cmd = old && e.commands.find((x) => x.id === old.id);
@@ -933,7 +1250,9 @@
           cmd.status === "failed" ||
           searchAgain ||
           (old.kind !== kind &&
-            !["queued", "received", "thinking"].includes(cmd.status)) ||
+            !["queued", "received", "thinking", "executing"].includes(
+              cmd.status,
+            )) ||
           (target &&
             cmd.status === "completed" &&
             G().distance(old.target, point) > 45)
@@ -945,6 +1264,12 @@
         }
       }
       return;
+    }
+    const reportedArea = e.mission?.knowledge.reconProgress?.currentId;
+    if (reportedArea != null && e.control.reconAreaId !== reportedArea) {
+      e.control.reconAreaId = reportedArea;
+      c.orders = {};
+      c.coverage = {};
     }
     const sectors = regions(e),
       reconTask = e.mission
@@ -1005,18 +1330,6 @@
           x.kind === "recon" &&
           x.status === "completed",
       );
-      if (
-        staged &&
-        !alreadyRecon &&
-        i > 0 &&
-        !frame.commands.some(
-          (x) =>
-            x.callsign === e.squads[i - 1].callsign &&
-            x.kind === "cover" &&
-            x.status === "completed",
-        )
-      )
-        continue;
       const old = c.orders[q.callsign],
         command = old && e.commands.find((x) => x.id === old.id),
         kind =
@@ -1028,7 +1341,7 @@
         command.status === "failed" ||
         (command.status === "completed" &&
           kind === "recon" &&
-          identified.length < 2 &&
+          (reconTask || identified.length < 2) &&
           (c.coverage[q.callsign] || 0) < 6) ||
         (old.kind !== kind &&
           !["queued", "received", "thinking"].includes(command.status))
@@ -1037,7 +1350,9 @@
         if (kind === "recon" && command?.status === "completed") {
           const index = (c.coverage[q.callsign] || 0) + 1;
           c.coverage[q.callsign] = index;
-          const contact = identified[i % Math.max(1, identified.length)];
+          const contact = reconTask
+            ? null
+            : identified[i % Math.max(1, identified.length)];
           target = contact
             ? G().project({ x: contact.x, y: contact.y })
             : G().project({
@@ -1074,12 +1389,13 @@
       }
     }
     if (e.mission) {
-      if (e.squads.some((q) => q.urgentSupportUntil))
+      if (e.mission.agencyControl && e.squads.some((q) => q.urgentSupportUntil))
         e.mission.agencyControl.authorized = false;
       else M().updateAgencyControl(s, e);
     }
     if (
       reconTask &&
+      !e.mission &&
       e.squads.every(
         (q) =>
           (c.coverage[q.callsign] || 0) >= 6 &&
@@ -1144,25 +1460,6 @@
             "아직 확인되지 않은 담당 구역에 UAV를 우선 투입한다. 중복 출동은 보류한다.",
             { type: "drone", target },
           );
-        } else if (
-          friends.some(
-            (x) =>
-              x.weapon &&
-              x.weapon.loaded + x.weapon.magazines.reduce((n, a) => n + a, 0) <
-                x.weapon.capacity,
-          ) &&
-          m.supports.supply < m.contract.support.supply &&
-          !active("supply")
-        ) {
-          M().requestSupport(s, "supply");
-          note(
-            s,
-            e,
-            a,
-            "controller-support",
-            "수신 탄약 잔량이 부족한 조를 위해 보급을 요청한다.",
-            { type: "supply" },
-          );
         }
       } catch (error) {
         c.lastSupportFailure = error.message;
@@ -1190,7 +1487,7 @@
         Array.isArray(c.members) &&
           Array.isArray(c.market) &&
           c.members.length <= 100 &&
-          c.market.length <= 6,
+          c.market.length <= 9,
         "지원 인력 저장이 잘못되었습니다.",
       );
       const ids = new Set(
@@ -1202,7 +1499,7 @@
             typeof m.id === "string" &&
             !ids.has(m.id) &&
             typeof m.name === "string" &&
-            ["controller", "instructor"].includes(m.duty) &&
+            ["controller", "instructor", "personnel"].includes(m.duty) &&
             Number.isFinite(m.dailySalary) &&
             m.dailySalary > 0 &&
             P().SKILLS.every(
@@ -1246,7 +1543,7 @@
         );
     }
     const assigned = [];
-    for (const key of ["controller", "instructor"]) {
+    for (const key of ["controller", "instructor", "personnel"]) {
       const id = c[key + "Id"];
       ok(
         id === null || typeof id === "string",
@@ -1266,7 +1563,7 @@
   }
   function release(s, id) {
     if (!s.commandStaff) return;
-    for (const k of ["controller", "instructor"])
+    for (const k of ["controller", "instructor", "personnel"])
       if (s.commandStaff[k + "Id"] === id) s.commandStaff[k + "Id"] = null;
   }
   const api = {
@@ -1283,6 +1580,9 @@
     authority,
     tick,
     trainingEnabled,
+    personnelEnabled,
+    managePersonnel,
+    manageHeadquarters,
     manageTraining,
     missionProgress,
     validate,

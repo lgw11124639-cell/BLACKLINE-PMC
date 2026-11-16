@@ -72,9 +72,20 @@ test("real six-member insertion waits for observation, assigns separate tasks an
   assert.ok(
     e.world.units.some((u) => G.distance(u, e.mission.contract.insertion) > 25),
   );
-  assert.ok(!e.commands.some((c) => c.callsign === "BRAVO"));
+  assert.ok(
+    ["ALPHA", "BRAVO", "CHARLIE"].every((call) =>
+      e.commands.some((c) => c.callsign === call),
+    ),
+  );
+  const bands = Object.values(e.control.watchSectors).sort(
+    (a, b) => a.x1 - b.x1,
+  );
+  assert.equal(bands.length, 3);
+  assert.ok(bands[0].x2 <= bands[1].x1 && bands[1].x2 <= bands[2].x1);
   assert.equal(
-    e.events.find((ev) => ev.type === "bound-overwatch-swapped").coveringId,
+    e.events.find(
+      (ev) => ev.type === "bound-overwatch-swapped" && ev.callsign === "ALPHA",
+    ).coveringId,
     e.squads[0].sniperId,
   );
 });
@@ -218,38 +229,46 @@ test("agency infantry starts actual self-aid instead of remaining immobilized fo
   );
   C.validate(s);
 });
-test("reported repeated movement receives one real route reassessment, then an abort and physical recovery request rather than endless objective waiting", () => {
-  const { s, e } = launch(2);
-  for (let i = 0; i < 150; i++) {
-    B.setPaused(s, false);
-    D.step(s, 1);
-  }
-  e.mission.agencyControl.everAuthorized = true;
-  const a = e.commandAuthority,
-    c = e.control,
-    frame = D.frame(s),
-    anchor = e.mission.knowledge.actors.find((a) => a.id === "agency-rescuer");
-  function assess(t) {
-    e.time = t;
-    s.clock.elapsedSeconds = e.startedAt + t;
-    anchor.observedAt = t;
-    frame.time = t;
-    frame.friends.forEach((f) => {
-      f.age = 0;
-      f.observedAt = t;
-    });
-    return Staff.missionProgress(s, e, a, c, frame);
-  }
-  assess(200);
-  assess(510);
-  assert.ok(e.events.some((ev) => ev.type === "controller-route-stalled"));
-  assert.equal(e.mission.returnRequested, false);
-  assess(810);
-  assert.equal(e.mission.returnRequested, true);
-  assert.equal(e.mission.abortRequested, true);
-  assert.equal(e.mission.objective, false);
-  assert.equal(e.status, "running");
-  assert.equal(s.operations.reports.length, 0);
-  assert.ok(e.events.some((ev) => ev.type === "controller-progress-abort"));
-  assert.ok(e.commands.some((command) => command.kind === "withdraw"));
-});
+for (const prepared of [false, true])
+  test(
+    "reported stalled " +
+      (prepared ? "advance" : "initial preparation") +
+      " replans then requests physical recovery",
+    () => {
+      const { s, e } = launch(2);
+      for (let i = 0; i < 150; i++) {
+        B.setPaused(s, false);
+        D.step(s, 1);
+      }
+      e.mission.agencyControl.everAuthorized = prepared;
+      const a = e.commandAuthority,
+        c = e.control,
+        frame = D.frame(s),
+        anchor = e.mission.knowledge.actors.find(
+          (a) => a.id === "agency-rescuer",
+        );
+      function assess(t) {
+        e.time = t;
+        s.clock.elapsedSeconds = e.startedAt + t;
+        anchor.observedAt = t;
+        frame.time = t;
+        frame.friends.forEach((f) => {
+          f.age = 0;
+          f.observedAt = t;
+        });
+        return Staff.missionProgress(s, e, a, c, frame);
+      }
+      assess(200);
+      assess(510);
+      assert.ok(e.events.some((ev) => ev.type === "controller-route-stalled"));
+      assert.equal(e.mission.returnRequested, false);
+      assess(810);
+      assert.equal(e.mission.returnRequested, true);
+      assert.equal(e.mission.abortRequested, true);
+      assert.equal(e.mission.objective, false);
+      assert.equal(e.status, "running");
+      assert.equal(s.operations.reports.length, 0);
+      assert.ok(e.events.some((ev) => ev.type === "controller-progress-abort"));
+      assert.ok(e.commands.some((command) => command.kind === "withdraw"));
+    },
+  );

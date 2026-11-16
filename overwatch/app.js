@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.09",
+  const VERSION = "2026.11.16.10",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -80,6 +80,7 @@
   }
   const runtime = OverwatchRealtime.create({
     baseRate: OverwatchRealtime.GAME_RATE,
+    maxWorkMs: 12,
     tick() {
       if (
         source !== "primary" ||
@@ -259,7 +260,7 @@
       if (
         source === "primary" &&
         state?.schemaVersion === 5 &&
-        (!state.commandStaff || state.commandStaff.marketVersion !== 2)
+        (!state.commandStaff || state.commandStaff.marketVersion !== 3)
       ) {
         const next = Core.clone(state);
         OverwatchStaff.upgrade(next);
@@ -1023,7 +1024,7 @@
       render();
     }
   });
-  setInterval(() => runtime.pump(!document.hidden && !stale), 100);
+  setInterval(() => runtime.pump(!document.hidden && !stale), 40);
   let lastHQTick = performance.now(),
     hqDirtyTicks = 0,
     hqAutomationFailed = false;
@@ -1040,19 +1041,20 @@
       hqAutomationFailed ||
       state.activeMission ||
       state.commandExercise?.status === "running" ||
-      !OverwatchStaff.trainingEnabled(state)
+      (!OverwatchStaff.trainingEnabled(state) &&
+        !OverwatchStaff.personnelEnabled(state))
     )
       return;
     try {
-      const signature = state.activities
-        .map((a) => a.id + ":" + a.status)
-        .join("|");
-      if (!OverwatchStaff.manageTraining(state, 60)) return;
+      const signature =
+        state.activities.map((a) => a.id + ":" + a.status).join("|") +
+        JSON.stringify(state.squads);
+      if (!OverwatchStaff.manageHeadquarters(state, 60)) return;
       dirty = true;
       hqDirtyTicks++;
-      const after = state.activities
-        .map((a) => a.id + ":" + a.status)
-        .join("|");
+      const after =
+        state.activities.map((a) => a.id + ":" + a.status).join("|") +
+        JSON.stringify(state.squads);
       if (hqDirtyTicks >= 5 || signature !== after) {
         saveRuntime();
         hqDirtyTicks = 0;
