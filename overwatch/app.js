@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.13",
+  const VERSION = "2026.11.16.14",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -53,6 +53,24 @@
   let lastSaved = null,
     dirty = false,
     unsavedRecovery = null;
+  const updates = OverwatchUpdates.create({
+    version: VERSION,
+    beforeUpdate() {
+      if (unsavedRecovery)
+        throw Error(
+          "저장되지 않은 진행이 있습니다. 저장 관리에서 복구 백업을 먼저 내보내세요.",
+        );
+      try {
+        saveRuntime();
+      } catch (error) {
+        throw Error(
+          "진행을 저장하지 못했습니다. 저장 공간과 저장 상태를 확인한 뒤 다시 시도하세요.",
+        );
+      }
+      runtime.stop();
+      OverwatchAudio.stop();
+    },
+  });
   function rollbackRuntime(errorValue) {
     try {
       if (state) {
@@ -654,9 +672,11 @@
     root.innerHTML =
       '<header class="topbar"><button class="mobile-menu-button" data-mobile-menu aria-label="본부 메뉴 열기" aria-expanded="false">메뉴</button><a class="brand" href="#" data-tab="headquarters"><span class="brand-emblem" aria-hidden="true">B</span><span>BLACKLINE<small>OVERWATCH</small></span></a><div class="topbar-status"><span class="status-dot"></span><span data-live-clock>본부 ' +
       PersonnelUI.timestamp(state?.clock.elapsedSeconds || 0) +
-      ' / 본부</span><button id="version-check" class="quiet">' +
+      ' / 본부</span><button id="version-check" class="quiet" title="현재 버전 ' +
       VERSION +
-      '</button><button data-save-now aria-label="현재 진행 저장" title="현재 진행을 저장합니다.">저장</button><button data-game-fullscreen aria-label="게임 전체화면">전체화면</button></div></header><button class="mobile-nav-backdrop" data-mobile-menu-close aria-label="본부 메뉴 닫기"></button><div class="rotate-hint"><span>가로 화면 전용 · 기기를 옆으로 돌려주세요.</span><button data-game-fullscreen>전체화면</button></div><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
+      ' · 업데이트 확인"><span class="app-version-number">' +
+      VERSION +
+      '</span><span>업데이트</span></button><button data-save-now aria-label="현재 진행 저장" title="현재 진행을 저장합니다.">저장</button><button data-game-fullscreen aria-label="게임 전체화면">전체화면</button></div></header><button class="mobile-nav-backdrop" data-mobile-menu-close aria-label="본부 메뉴 닫기"></button><div class="rotate-hint"><span>가로 화면 전용 · 기기를 옆으로 돌려주세요.</span><button data-game-fullscreen>전체화면</button></div><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
       tabs
         .map(
           ([key, label, n]) =>
@@ -1087,25 +1107,7 @@
       ?.addEventListener("change", (e) =>
         commit((s) => (s.settings.reducedMotion = e.target.checked)),
       );
-    on("#version-check", async () => {
-      try {
-        const r = await fetch("version.json?check=" + Date.now(), {
-          cache: "no-store",
-        });
-        if (!r.ok) throw Error("HTTP " + r.status);
-        const v = await r.json();
-        notice =
-          v.version === VERSION
-            ? "최신 개발 빌드입니다."
-            : "배포 버전 " +
-              v.version +
-              " · 새로고침하면 배포된 화면을 확인할 수 있습니다.";
-        error = "";
-      } catch (e) {
-        error = "업데이트를 확인하지 못했습니다. " + e.message;
-      }
-      render();
-    });
+    on("#version-check", () => updates.check(true));
   }
   window.addEventListener("keydown", (e) => {
     if (!selectedPerson) return;
@@ -1247,4 +1249,5 @@
     { passive: true },
   );
   load();
+  updates.check();
 })();
