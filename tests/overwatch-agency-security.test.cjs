@@ -96,7 +96,7 @@ test("version-two live target operation receives missing security at insertion o
   assert.equal(guards[0].health.alive, false);
   C.validate(s);
 });
-test("security infantry wait for delivered stationary overwatch positions, then trail on ground routes and survive save/restore", () => {
+test("security infantry start their own ground search without waiting for stationary sniper positions and survive save/restore", () => {
   const { s, e } = make();
   let staged = null;
   for (let i = 0; i < 3000 && !e.mission.securityControl.authorized; i++) {
@@ -113,7 +113,8 @@ test("security infantry wait for delivered stationary overwatch positions, then 
   const g = e.mission.securityControl;
   assert.ok(staged);
   assert.ok(g.authorized);
-  assert.ok(g.readyTeams.length);
+  assert.equal(g.readyTeams.length,0);
+  assert.ok(e.mission.groundSearch);
   const guards = e.world.actors.filter((a) => a.taskDuty === "security"),
     before = guards.map((a) => ({ x: a.x, y: a.y }));
   step(s, 12);

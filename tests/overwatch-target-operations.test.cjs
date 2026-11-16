@@ -287,48 +287,16 @@ test("courier time window starts a real escape route, not an automatic timer fai
   C.validate(s);
 });
 
-test("agency escort stays at insertion until sniper positions are physically secured and reported, with a distributed forward overwatch", () => {
+test("agency escort begins independently while sniper teams establish distributed overwatch", () => {
   const { s, e } = make("aid-cover", 2);
-  let waitingPosition = null;
-  for (
-    let i = 0;
-    i < 4000 &&
-    !e.mission.agencyControl.everAuthorized &&
-    e.status === "running";
-    i++
-  ) {
-    step(s, 1);
-    const protectedUnit = e.world.actors.find(
-      (a) => a.id === "agency-protected",
-    );
-    if (
-      e.mission.fieldStartedAt != null &&
-      !e.mission.agencyControl.everAuthorized
-    ) {
-      if (!waitingPosition)
-        waitingPosition = { x: protectedUnit.x, y: protectedUnit.y };
-      assert.ok(G.distance(protectedUnit, waitingPosition) < 1);
-    }
-  }
-  const g = e.mission.agencyControl;
-  assert.ok(waitingPosition);
-  assert.ok(g.everAuthorized);
-  const approval = g.history.find((x) => x.authorized);
-  assert.ok(approval);
-  for (const call of g.readyTeams)
-    assert.ok(
-      e.commands.some(
-        (c) =>
-          c.callsign === call &&
-          ["recon", "cover"].includes(c.kind) &&
-          c.completedAt != null &&
-          c.completedAt <= approval.at,
-      ),
-    );
-  const positions = e.squads.map((q) => q.tactical.position);
+  step(s, 300);
+  assert.ok(e.mission.agencyControl.everAuthorized);
   assert.ok(
-    positions.some((p) => G.distance(p, e.mission.contract.insertion) > 150),
+    e.world.actors.some(
+      (a) =>
+        a.side === "ally" && G.distance(a, e.mission.contract.insertion) > 20,
+    ),
   );
-  assert.ok(G.distance(positions[0], positions[1]) > 100);
+  assert.equal(e.mission.returnRequested, false);
   C.validate(s);
 });

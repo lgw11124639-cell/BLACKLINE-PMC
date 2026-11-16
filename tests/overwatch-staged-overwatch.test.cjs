@@ -48,7 +48,7 @@ test("new city operations use a kilometre district while original saved/training
     e.mission.agencyControl,
   );
 });
-test("real six-member insertion waits for observation, assigns separate tasks and does not start with a firing squad", () => {
+test("real six-member insertion assigns separate sniper sectors while infantry search independently and initial deployment remains survivable", () => {
   const { s, e } = launch();
   for (let i = 0; i < 300; i++) {
     B.setPaused(s, false);
@@ -61,7 +61,7 @@ test("real six-member insertion waits for observation, assigns separate tasks an
     e.squads.map((q) => q.assignment.kind),
     ["counter-sniper", "corridor-cover", "flank-security"],
   );
-  assert.equal(e.mission.agencyControl.everAuthorized, false);
+  assert.equal(e.mission.agencyControl.everAuthorized, true);
   assert.equal(e.mission.taskLinked, false);
   const agency = e.world.actors.filter((a) => a.side === "ally" && a.armed);
   assert.ok(agency.length >= 4);

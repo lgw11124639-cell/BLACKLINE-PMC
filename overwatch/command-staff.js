@@ -269,6 +269,7 @@
   function regions(e) {
     const g = G().MAP,
       center =
+        e.mission?.knowledge.groundSearch?.point ||
         (e.mission?.contract.task === "recon" &&
         e.mission.knowledge.reconProgress?.currentId != null
           ? e.mission.reconPlan?.areas.find(
@@ -466,18 +467,28 @@
   function missionProgress(s, e, a, c, frame) {
     const m = e.mission;
     if (
-      !m?.agencyControl ||
+      (!m?.agencyControl && !m?.groundSearch) ||
       m.fieldStartedAt == null ||
       m.contract.task === "recon" ||
       m.returnRequested ||
       m.knowledge.objective !== "pending"
     )
       return false;
-    const phase = !m.agencyControl.everAuthorized
-        ? "preparation"
-        : m.contract.task === "rescue" && !m.taskLinked
-          ? "approach"
-          : "escort",
+    const phase =
+        m.groundSearch && !m.taskLinked
+          ? "search:" +
+            m.groundSearch.pass +
+            ":" +
+            (m.groundSearch.lead?.id ||
+              m.groundSearch.areas.find((a) => a.checkedAt == null)?.id ||
+              "complete") +
+            ":" +
+            m.groundSearch.securedIds.length
+          : !m.agencyControl?.everAuthorized
+            ? "preparation"
+            : m.contract.task === "rescue" && !m.taskLinked
+              ? "approach"
+              : "escort",
       actors = m.knowledge.actors || [],
       anchor = actors.find(
         (x) =>
@@ -485,15 +496,19 @@
           (phase === "escort"
             ? "agency-protected"
             : m.taskLeaderId ||
-              (m.contract.task === "rescue"
-                ? "agency-rescuer"
-                : "agency-guide")),
+              (["eliminate", "interdict"].includes(m.contract.task)
+                ? "agency-infantry-0"
+                : m.contract.task === "rescue"
+                  ? "agency-rescuer"
+                  : "agency-guide")),
       );
     if (!anchor || e.time - anchor.observedAt > 30) return false;
     const goal =
       phase === "escort"
         ? m.taskGoal
-        : m.contract.interest || G().MAP.sector || e.squads[0].sector;
+        : m.groundSearch
+          ? M().searchPoint(e)
+          : m.contract.interest || G().MAP.sector || e.squads[0].sector;
     let last = anchor,
       remaining = 0;
     const route = G().path(anchor, goal);
@@ -597,8 +612,7 @@
           ...(q.avoidPositions || []),
           { x: blocked.x, y: blocked.y, at: e.time },
         ].slice(-6);
-      m.agencyControl.authorized = false;
-      m.agencyControl.scanCommandId = command.id;
+      if (m.agencyControl) m.agencyControl.scanCommandId = command.id;
       w.replanAt = e.time;
     }
     return false;
@@ -1196,17 +1210,6 @@
           !["down", "dead"].includes(x.medicalCondition),
       );
       if (targets.some((t) => t.current)) c.targetWatchAt = e.time;
-      if (e.time - c.targetWatchAt > 2400) {
-        note(
-          s,
-          e,
-          a,
-          "target-search-ended",
-          "장시간 표적 재식별 실패. 불확실한 인원에 사격하지 않고 철수한다.",
-        );
-        M().requestReturn(s, { abort: true, authority: a });
-        return;
-      }
       c.phase = targets.length ? "target-engagement" : "target-search";
       for (const [i, q] of e.squads.entries()) {
         if (q.displacement || q.emergencyRepositionUntil > e.time) continue;
@@ -1235,7 +1238,10 @@
             [-140, 0],
           ],
           offset = offsets[(search + i) % offsets.length],
-          center = e.mission.contract.interest || G().MAP.sector;
+          center =
+            e.mission.knowledge.groundSearch?.point ||
+            e.mission.contract.interest ||
+            G().MAP.sector;
         const kind = target ? "cover" : "recon",
           point =
             target ||
@@ -1389,9 +1395,7 @@
       }
     }
     if (e.mission) {
-      if (e.mission.agencyControl && e.squads.some((q) => q.urgentSupportUntil))
-        e.mission.agencyControl.authorized = false;
-      else M().updateAgencyControl(s, e);
+      M().updateAgencyControl(s, e);
     }
     if (
       reconTask &&

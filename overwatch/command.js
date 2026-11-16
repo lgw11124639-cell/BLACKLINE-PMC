@@ -138,6 +138,20 @@
         );
         if (r) evidence.add(r.id);
       }
+      for (const c of Object.values(
+        e.mission?.knowledge.objectiveContacts || {},
+      ))
+        if (c.sourceMessageId) evidence.add(c.sourceMessageId);
+      for (const lead of [
+        e.mission?.groundSearch?.lead,
+        ...(e.mission?.groundSearch?.leadQueue || []),
+      ]) {
+        if (lead?.messageId) evidence.add(lead.messageId);
+        if (lead?.sourceMessageId) evidence.add(lead.sourceMessageId);
+      }
+      for (const r of e.radio)
+        if (r.route === "agency" && r.status === "queued")
+          evidence.add(r.payload?.agencyLead?.sourceMessageId);
       const currentCommands = new Set(e.squads.map((q) => q.commandId));
       e.radio = e.radio.filter(
         (r) =>
@@ -190,7 +204,7 @@
       createdAt: e.time,
       sentAt: null,
       deliveredAt: null,
-      hqVisibleAt: route === "down" ? e.time : null,
+      hqVisibleAt: ["down", "agency"].includes(route) ? e.time : null,
       from: endpoint(e, from),
       to: endpoint(e, to),
       callsign: q.callsign,
@@ -201,17 +215,19 @@
       payload: copy(payload),
       status: "queued",
       delay:
-        route === "local"
-          ? Math.max(
-              1,
-              Math.round(
-                5 -
-                  (P.effectiveSkills(member(s, q.leaderId)).teamwork +
-                    P.relationship(s, q).cohesion) /
-                    50,
-              ),
-            )
-          : latency(s, e, q),
+        route === "agency"
+          ? 4
+          : route === "local"
+            ? Math.max(
+                1,
+                Math.round(
+                  5 -
+                    (P.effectiveSkills(member(s, q.leaderId)).teamwork +
+                      P.relationship(s, q).cohesion) /
+                      50,
+                ),
+              )
+            : latency(s, e, q),
     };
     e.radio.push(r);
     return r;
@@ -1144,7 +1160,10 @@
       known.objectiveCode &&
         known.medicalCondition !== "dead" &&
         seen.reportedObjectiveCode !== known.objectiveCode
-        ? q.callsign +
+        ? known.objectiveCode === "RESCUE-PERSON"
+          ? q.callsign +
+            ". 구조 대상 신원 식별. 위치를 전파하고 보병 확보를 요청한다."
+          : q.callsign +
             ". 계약 표적 " +
             known.objectiveCode +
             " 신원 식별. 사격선·민간인 위험 확인 중."
@@ -1214,13 +1233,15 @@
         r.hqVisibleAt = e.time;
       if (r.status !== "queued") continue;
       const link =
-        r.route === "local"
-          ? unit(e, r.from.id)?.capable &&
-            unit(e, r.to.id)?.capable &&
-            G.distance(unit(e, r.from.id), unit(e, r.to.id)) <= 600
-          : e.mission && Mission().agencyId(e, r.from.id)
-            ? true
-            : linked(e, q);
+        r.route === "agency"
+          ? !!e.mission
+          : r.route === "local"
+            ? unit(e, r.from.id)?.capable &&
+              unit(e, r.to.id)?.capable &&
+              G.distance(unit(e, r.from.id), unit(e, r.to.id)) <= 600
+            : e.mission && Mission().agencyId(e, r.from.id)
+              ? true
+              : linked(e, q);
       if (!link) {
         r.sentAt = null;
         continue;
@@ -1263,6 +1284,7 @@
           );
         }
       }
+      if (r.route === "agency") Mission().applyPayload(e, r);
       if (r.route === "up") {
         applyKnowledge(e, r);
         if (
@@ -1785,9 +1807,11 @@
           canIdentify &&
           d <= u.identificationRange &&
           seen.confidence >= 0.9 &&
-          actor.missionTargetCode
+          (actor.missionTargetCode ||
+            (e.mission?.contract.task === "rescue" &&
+              actor.id === "agency-protected"))
         )
-          seen.objectiveCode = actor.missionTargetCode;
+          seen.objectiveCode = actor.missionTargetCode || "RESCUE-PERSON";
         seen.specialty =
           canIdentify && seen.confidence >= 0.9
             ? actor.specialty || null
@@ -1806,16 +1830,18 @@
       // A confirmed casualty is terminal information, not a fresh active contact
       // every scan. Optional marker also upgrades existing saves on next sighting.
       if (
-        seen.reportedCondition !== "dead" &&
-        ((seen.objectiveCode &&
+        (seen.objectiveCode &&
           seen.reportedObjectiveCode !== seen.objectiveCode) ||
-          seen.medicalCondition === "dead" ||
-          (seen.medicalCondition === "down" &&
-            seen.reportedCondition !== "down") ||
-          (seen.medicalCondition !== "down" &&
-            (e.time - seen.reportedAt >= 20 ||
-              (seen.reportedConfidence < 0.8 && seen.confidence >= 0.8) ||
-              seen.reportedCondition === "down")))
+        (seen.reportedCondition !== "dead" &&
+          ((seen.objectiveCode &&
+            seen.reportedObjectiveCode !== seen.objectiveCode) ||
+            seen.medicalCondition === "dead" ||
+            (seen.medicalCondition === "down" &&
+              seen.reportedCondition !== "down") ||
+            (seen.medicalCondition !== "down" &&
+              (e.time - seen.reportedAt >= 20 ||
+                (seen.reportedConfidence < 0.8 && seen.confidence >= 0.8) ||
+                seen.reportedCondition === "down"))))
       )
         sendContact(s, e, q, seen);
       if (
@@ -2551,7 +2577,7 @@
           text(r.body) &&
           text(r.eventId) &&
           e.squads.some((q) => q.callsign === r.callsign) &&
-          ["up", "down", "local"].includes(r.route) &&
+          ["up", "down", "local", "agency"].includes(r.route) &&
           ["queued", "delivered", "cancelled"].includes(r.status) &&
           num(r.createdAt, 0, e.time) &&
           num(r.delay, 1, 20) &&

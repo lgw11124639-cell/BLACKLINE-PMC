@@ -24,7 +24,7 @@ with sync_playwright() as p:
  q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,e=s.commandExercise;for(let i=0;i<130;i++){for(const a of e.world.actors.filter(a=>a.side==='red'))a.weapon.nextFireAt=e.time+20;OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1);}e.world.actors=e.world.actors.filter(a=>a.taskDuty!=='security');delete e.mission.securityControl;s.operations.contentVersion=2;st.save(s,s.revision);}""")
  q.reload(wait_until='networkidle')
  state=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state')
- assert state['operations']['contentVersion']==3
+ assert state['operations']['contentVersion']==4
  assert len([a for a in state['commandExercise']['world']['actors'] if a.get('taskDuty')=='security'])==4
  assert all(c.get('agencyInfantry')==4 for c in state['contracts'] if c['status'] in ['offered','accepted','active'])
  q.locator('button[data-inspector=support]').click();assert '기관 보병 4명' in q.locator('[data-agency-control]').inner_text()
