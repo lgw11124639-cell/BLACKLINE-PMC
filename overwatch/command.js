@@ -189,8 +189,14 @@
     );
     ok(deploying.length > 0, "먼저 관측수·저격수 저격조를 편성하세요.");
     ok(
-      !s.activities.some((a) => a.status === "running"),
-      "진행 중인 본부 활동을 마치거나 중단하세요.",
+      !s.activities.some(
+        (a) =>
+          a.status === "running" &&
+          a.memberIds.some((id) =>
+            deploying.some((q) => q.observerId === id || q.sniperId === id),
+          ),
+      ),
+      "선택한 출격 대원의 본부 활동을 마치거나 해당 조를 제외하세요.",
     );
     for (const q of deploying)
       for (const id of [q.observerId, q.sniperId])
@@ -474,7 +480,11 @@
   function receive(s, e, q, c) {
     if (c.status !== "queued") return;
     if (c.supportContact && e.time - c.supportContact.lastSeen < 25) {
-      const contact = { ...copy(c.supportContact), reportedAt: -100, reportedConfidence: 0 };
+      const contact = {
+        ...copy(c.supportContact),
+        reportedAt: -100,
+        reportedConfidence: 0,
+      };
       const old = q.contacts.find((x) => x.id === contact.id);
       if (old) Object.assign(old, contact);
       else q.contacts.push(contact);
@@ -534,11 +544,11 @@
           ...target,
           x: Math.max(
             b[0] + 0.8,
-            Math.min(b[2] - 0.8, target.x + (role === "sniper" ? 1 : -1)),
+            Math.min(b[2] - 0.8, target.x + (role === "sniper" ? 3 : -3)),
           ),
           y: Math.max(
             b[1] + 0.8,
-            Math.min(b[3] - 0.8, target.y + (role === "sniper" ? 1.2 : -1.2)),
+            Math.min(b[3] - 0.8, target.y + (role === "sniper" ? 3 : -3)),
           ),
         },
         route = G.path(
@@ -621,6 +631,7 @@
     if (
       c.kind === "cover" &&
       !c.reposition &&
+      !c.advanceSector &&
       !(q.avoidPositions || []).some((old) => e.time - old.at < 300) &&
       e.mission?.agencyControl &&
       q.tactical?.position &&
@@ -714,16 +725,8 @@
       )
         continue;
       if (
-        e.mission?.agencyControl &&
-        (G.MAP.urban || G.MAP.width < 500) &&
-        !(
-          (e.mission.agencyControl.everAuthorized ||
-            G.distance(p, G.MAP.base) < G.MAP.width * 0.58) &&
-          (p.x < G.MAP.width * 0.23 ||
-            p.y > G.MAP.height * 0.7 ||
-            (e.mission.agencyControl.everAuthorized &&
-              (p.x > G.MAP.width * 0.8 || p.y < G.MAP.height * 0.2)))
-        )
+        c.advanceSector &&
+        G.distance(p, sector) > Math.min(200, G.MAP.width * 0.25)
       )
         continue;
       if (
@@ -764,7 +767,21 @@
         : 300;
       if (recent.length && threatDistance < Math.min(90, G.MAP.width * 0.16))
         continue;
-      const allyView = protectedPoint && G.clear(p, protectedPoint) ? 70 : 0;
+      const allyView =
+        protectedPoint && G.clear(p, protectedPoint)
+          ? q.assignment?.kind === "corridor-cover"
+            ? 70
+            : 15
+          : 0;
+      const separation = Math.min(
+        150,
+        ...e.squads
+          .filter(
+            (other) =>
+              other.callsign !== q.callsign && other.tactical?.position,
+          )
+          .map((other) => G.distance(p, other.tactical.position)),
+      );
       const overlap =
         recent.filter((v) => G.clear(p, v) && G.distance(p, v) <= 1000).length *
         35;
@@ -772,9 +789,10 @@
         (visible ? 120 : -100) +
         height * 2 +
         allyView +
+        separation * 0.3 +
         overlap -
         Math.abs(G.distance(p, sector) - 280) * 0.12 -
-        G.distance(own, p) * (e.mission?.agencyControl ? 0.65 : 0.055);
+        G.distance(own, p) * (e.mission?.agencyControl ? 0.35 : 0.055);
       assessed.push({
         position: { x: p.x, y: p.y, ...(p.roofId ? { roofId: p.roofId } : {}) },
         sector,
@@ -1011,6 +1029,7 @@
               combatActive: !!seen.combatActive,
               medicalCondition: seen.medicalCondition || "normal",
               specialty: seen.specialty || null,
+              objectiveCode: seen.objectiveCode || null,
             }
           : {}),
       };
@@ -1024,6 +1043,8 @@
           r.status = "cancelled";
     const significant =
       seen.reportedAt < 0 ||
+      (!!known.objectiveCode &&
+        seen.reportedObjectiveCode !== known.objectiveCode) ||
       seen.reportedCondition !== known.medicalCondition ||
       (seen.reportedConfidence < 0.8 && known.confidence >= 0.8);
     const a = event(e, "contact-observed", {
@@ -1036,39 +1057,47 @@
       e,
       q,
       significant ? "observation" : "position",
-      known.medicalCondition === "dead"
+      known.objectiveCode &&
+        known.medicalCondition !== "dead" &&
+        seen.reportedObjectiveCode !== known.objectiveCode
         ? q.callsign +
+            ". 계약 표적 " +
+            known.objectiveCode +
+            " 신원 식별. 사격선·민간인 위험 확인 중."
+        : known.medicalCondition === "dead"
+          ? q.callsign +
             ". " +
             (known.classification === "armed-person"
               ? "표적 사살 확인. 위협 해제."
               : "관측 인원 사망 확인.")
-        : known.medicalCondition === "down"
-          ? q.callsign + ". 표적 쓰러짐 확인. 사망 여부 미확인."
-          : q.callsign +
-            ". " +
-            (known.classification === "unknown"
-              ? "미확인 인원"
-              : ["unarmed-target", "unarmed-person"].includes(
-                    known.classification,
-                  )
-                ? e.mission
-                  ? "비무장 인원"
-                  : "비무장 훈련 인원"
-                : known.classification === "armed-person"
-                  ? "무장 인원"
-                  : e.mission
-                    ? "지원 아군"
-                    : "훈련 표적 인원") +
-            " 관측. 좌표 약 " +
-            Math.round(known.x) +
-            ", " +
-            Math.round(known.y) +
-            (known.confidence >= 0.8
-              ? ". 식별 확인. 관측 유지."
-              : ". 소속 미확인. 식별 중."),
+          : known.medicalCondition === "down"
+            ? q.callsign + ". 표적 쓰러짐 확인. 사망 여부 미확인."
+            : q.callsign +
+              ". " +
+              (known.classification === "unknown"
+                ? "미확인 인원"
+                : ["unarmed-target", "unarmed-person"].includes(
+                      known.classification,
+                    )
+                  ? e.mission
+                    ? "비무장 인원"
+                    : "비무장 훈련 인원"
+                  : known.classification === "armed-person"
+                    ? "무장 인원"
+                    : e.mission
+                      ? "지원 아군"
+                      : "훈련 표적 인원") +
+              " 관측. 좌표 약 " +
+              Math.round(known.x) +
+              ", " +
+              Math.round(known.y) +
+              (known.confidence >= 0.8
+                ? ". 식별 확인. 관측 유지."
+                : ". 소속 미확인. 식별 중."),
       a,
       { contact: known },
     );
+    seen.reportedObjectiveCode = known.objectiveCode || null;
     seen.reportedCondition = known.medicalCondition || "normal";
     seen.reportedAt = e.time;
     seen.reportedConfidence = seen.confidence;
@@ -1454,7 +1483,8 @@
       optics &&
       u.role === "observer" &&
       q.assignment?.kind !== "corridor-cover" &&
-      !q.urgentSupportUntil
+      !q.urgentSupportUntil &&
+      !["eliminate", "interdict"].includes(e.mission.contract.task)
     ) {
       const points =
         q.assignment?.kind === "flank-security"
@@ -1499,6 +1529,7 @@
           ? u.heading
           : Math.atan2(look.y - u.y, look.x - u.x);
     u.heading = heading;
+    if (optics) Battle().chooseStance(e, u, look);
     if (e.battle) {
       u.visionRange = radius * e.battle.weather.visibility;
       u.identificationRange = identification * e.battle.weather.visibility;
@@ -1518,7 +1549,7 @@
         )
       )
         continue;
-      if (actor.waitingForDeployment) continue;
+      if (actor.waitingForDeployment || actor.escaped) continue;
       const d = G.distance(u, actor),
         angle = Math.atan2(actor.y - u.y, actor.x - u.x),
         delta = Math.abs(
@@ -1601,6 +1632,13 @@
             : actor.health.wounds.some((w) => !w.treated) && !actor.combatActive
               ? "wounded"
               : "normal";
+        if (
+          canIdentify &&
+          d <= u.identificationRange &&
+          seen.confidence >= 0.9 &&
+          actor.missionTargetCode
+        )
+          seen.objectiveCode = actor.missionTargetCode;
         seen.specialty =
           canIdentify && seen.confidence >= 0.9
             ? actor.specialty || null
@@ -1620,7 +1658,9 @@
       // every scan. Optional marker also upgrades existing saves on next sighting.
       if (
         seen.reportedCondition !== "dead" &&
-        (seen.medicalCondition === "dead" ||
+        ((seen.objectiveCode &&
+          seen.reportedObjectiveCode !== seen.objectiveCode) ||
+          seen.medicalCondition === "dead" ||
           (seen.medicalCondition === "down" &&
             seen.reportedCondition !== "down") ||
           (seen.medicalCondition !== "down" &&
@@ -2280,6 +2320,7 @@
         ok(
           [
             "overwatch",
+            "target-hunter",
             "counter-sniper",
             "corridor-cover",
             "flank-security",

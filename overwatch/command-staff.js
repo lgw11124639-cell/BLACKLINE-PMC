@@ -248,7 +248,10 @@
   function regions(e) {
     const g = G().MAP,
       center = e.mission?.contract.interest || g.sector || e.squads[0].sector;
-    if (e.mission?.agencyControl && e.mission.contract.task !== "recon") {
+    if (
+      e.mission?.agencyControl &&
+      !["recon", "eliminate", "interdict"].includes(e.mission.contract.task)
+    ) {
       const start = e.mission.contract.insertion,
         d = Math.max(1, G().distance(start, center));
       return e.squads.map((q, i) => {
@@ -259,12 +262,17 @@
             ? e.mission.taskGoal
             : center;
         const distance = Math.max(1, G().distance(start, focus)),
-          step = q.assignment?.kind === "flank-security" ? 80 : 60 + i * 65;
+          step = Math.min(
+            distance * 0.65,
+            G().MAP.width *
+              (q.assignment?.kind === "flank-security" ? 0.32 : 0.28),
+          );
         const p = {
           x: start.x + ((focus.x - start.x) / distance) * step,
           y: start.y + ((focus.y - start.y) / distance) * step,
         };
-        if (q.assignment?.kind === "flank-security") p.x -= 45;
+        if (q.assignment?.kind === "flank-security")
+          p.x += G().MAP.width * 0.15;
         return G().project({
           x: Math.max(12, Math.min(g.width - 12, p.x)),
           y: Math.max(12, Math.min(g.height - 12, p.y)),
@@ -278,7 +286,7 @@
           Math.min(
             g.width - 12,
             center.x +
-              (i - (e.squads.length - 1) / 2) * Math.min(65, g.width * 0.14),
+              (i - (e.squads.length - 1) / 2) * Math.min(220, g.width * 0.22),
           ),
         ),
         y: Math.max(
@@ -669,8 +677,15 @@
     if (e.mission)
       for (const [i, q] of e.squads.entries())
         if (!q.assignment) {
-          const roles =
-            e.squads.length === 1
+          const roles = ["eliminate", "interdict"].includes(
+            e.mission.contract.task,
+          )
+            ? [
+                ["target-hunter", "지정 표적 식별·정밀 사격"],
+                ["flank-security", "표적 접근로·퇴로 관측"],
+                ["counter-sniper", "경계 병력 감시·대저격"],
+              ]
+            : e.squads.length === 1
               ? [["overwatch", "지역 관측·저격 엄호"]]
               : [
                   ["counter-sniper", "외곽 고정 관측·대저격"],
@@ -867,6 +882,70 @@
       }
     }
     if (missionProgress(s, e, a, c, frame)) return;
+    if (["eliminate", "interdict"].includes(e.mission?.contract.task)) {
+      c.targetWatchAt ??= e.time;
+      const targets = known.filter(
+        (x) =>
+          x.objectiveCode &&
+          x.current &&
+          !["down", "dead"].includes(x.medicalCondition),
+      );
+      if (targets.length) c.targetWatchAt = e.time;
+      if (e.time - c.targetWatchAt > 2400) {
+        note(
+          s,
+          e,
+          a,
+          "target-search-ended",
+          "장시간 표적 재식별 실패. 불확실한 인원에 사격하지 않고 철수한다.",
+        );
+        M().requestReturn(s, { abort: true, authority: a });
+        return;
+      }
+      c.phase = targets.length ? "target-engagement" : "target-search";
+      for (const [i, q] of e.squads.entries()) {
+        if (q.displacement || q.emergencyRepositionUntil > e.time) continue;
+        const target = targets[i % Math.max(1, targets.length)],
+          old = c.orders[q.callsign],
+          cmd = old && e.commands.find((x) => x.id === old.id);
+        const search = c.coverage[q.callsign] || 0,
+          offsets = [
+            [0, 0],
+            [-100, -100],
+            [100, -100],
+            [0, -160],
+            [140, 0],
+            [-140, 0],
+          ],
+          offset = offsets[(search + i) % offsets.length],
+          center = e.mission.contract.interest || G().MAP.sector;
+        const kind = target ? "cover" : "recon",
+          point =
+            target ||
+            G().project({ x: center.x + offset[0], y: center.y + offset[1] });
+        const searchAgain =
+          !target &&
+          cmd?.status === "completed" &&
+          e.time - cmd.completedAt > 25;
+
+        if (
+          !cmd ||
+          cmd.status === "failed" ||
+          searchAgain ||
+          (old.kind !== kind &&
+            !["queued", "received", "thinking"].includes(cmd.status)) ||
+          (target &&
+            cmd.status === "completed" &&
+            G().distance(old.target, point) > 45)
+        ) {
+          if (searchAgain) c.coverage[q.callsign] = search + 1;
+          const issued = order(s, e, a, q, kind, G().project(point));
+          if (target && !G().clear(D().internals.leader(e, q), point))
+            issued.reposition = true;
+        }
+      }
+      return;
+    }
     const sectors = regions(e),
       reconTask = e.mission
         ? e.mission.contract.task === "recon"

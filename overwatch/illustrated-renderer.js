@@ -420,7 +420,9 @@
         const friendly = u.role !== undefined,
           knownArmed = u.classification === "armed-person",
           uncertain =
-            !friendly && u.pose !== "dead" && u.medicalCondition !== "dead" &&
+            !friendly &&
+            u.pose !== "dead" &&
+            u.medicalCondition !== "dead" &&
             (u.classification === "unknown" || u.faction === "unknown");
         const motion = root.OverwatchMotion.sample(u, {
           now,
@@ -593,6 +595,12 @@
           labelBoxes.push({ x: q.x, y: labelY, width: labelWidth });
           ctx.fillText(label, q.x, labelY);
           ctx.shadowBlur = 0;
+        }
+        if (!friendly && u.objectiveCode) {
+          ctx.fillStyle = "#ffe089";
+          ctx.font = "700 11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(u.objectiveCode, q.x, q.y - height - 4);
         }
         if (now - (m.hitAt || -Infinity) < 650) {
           ctx.strokeStyle = "#f06b59";

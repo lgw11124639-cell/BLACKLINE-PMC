@@ -185,6 +185,8 @@
           infiltration: "도보 투입 이동",
           reconnaissance: "조별 은밀 정찰·관측",
           overwatch: "아군 엄호·위협 대응",
+          "target-search": "지정 표적 수색·신원 식별",
+          "target-engagement": "지정 표적 저지·사살 확인",
           extraction: "회수·철수",
         }[e?.control?.phase] || "명령·현장 보고 대기";
   }

@@ -66,7 +66,17 @@
       (r.returnComplete ? "완료" : "미완료") +
       " / 미회수 " +
       r.missing.length +
-      '명</p><div class="live-money">' +
+      "명</p>" +
+      (r.targets
+        ? "<p>계약 표적 신원 확인 " +
+          r.targets.identified.length +
+          "명 · 저지·사살 확인 " +
+          r.targets.confirmed.length +
+          "명 · 탈출 " +
+          r.targets.escaped.length +
+          "명</p>"
+        : "") +
+      '<div class="live-money">' +
       [
         ["출격 예치", r.escrow],
         ["실제 사용·손실", r.consumed],
@@ -337,7 +347,11 @@
     return (
       '<section class="panel live-field-panel"><span class="eyebrow">LIVE CONTRACT / AGENCY SUPPORT</span><h2>' +
       esc(m.title) +
-      "</h2><p>BLACKLINE 저격조: 원거리 관측·정밀 엄호 / 기관 보병·구출조: 현장 접근·구출·호송</p><p>" +
+      "</h2><p>" +
+      (m.targetLabel
+        ? "BLACKLINE 저격조: 계약 표적 신원 식별·정밀 사격·실제 철수 / 일반 경계병 사살은 목표 달성에 포함하지 않습니다."
+        : "BLACKLINE 저격조: 원거리 관측·정밀 엄호 / 기관 보병·구출조: 현장 접근·구출·호송") +
+      "</p><p>" +
       esc(m.issuer) +
       " · <strong data-live-phase>" +
       esc(phases[m.phase] || m.phase) +
@@ -429,6 +443,9 @@
     const phase = rootNode.querySelector("[data-live-phase]");
     if (phase) phase.textContent = phases[m.phase] || m.phase;
     const agency = rootNode.querySelector("[data-agency-control]");
+    if (agency && m.targetLabel)
+      agency.textContent =
+        "지정 표적 " + m.targetLabel + " · 저격조 자율 관측·신원 식별";
     if (agency && m.agencyControl)
       agency.textContent =
         "기관 보병: " +
@@ -444,6 +461,16 @@
           complete: "확인 완료 · 철수 필요",
           failed: "목표 실패 · 철수 판단 필요",
         }[m.objective];
+    if (goal && m.targetProgress)
+      goal.textContent +=
+        " · 신원 " +
+        m.targetProgress.identified +
+        "/" +
+        m.targetProgress.required +
+        " · 저지·사살 " +
+        m.targetProgress.confirmed +
+        "/" +
+        m.targetProgress.required;
     if (m.phase === "settled" && goal)
       goal.textContent =
         "작전 종료 · " +
