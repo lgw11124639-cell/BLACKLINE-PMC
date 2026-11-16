@@ -2128,7 +2128,24 @@
           (u.goal === null || point(u.goal)) &&
           num(u.heading, -100, 100) &&
           text(u.state),
-        "훈련 대원·경로가 잘못되었습니다.",
+        "대원·경로 검증 실패: " +
+          u.name +
+          " · " +
+          (!point(u)
+            ? "지도 경계"
+            : u.roofId && !G.roofBuilding(u)
+              ? "옥상 층 정보"
+              : G.blocked(u) && !(e.mission && u.boardedBy && u.altitude > 40)
+                ? "장애물 내부 위치"
+                : u.path.some((p) => !point(p) || G.blocked(p))
+                  ? "이동 경유점"
+                  : u.overwatchPath?.some((p) => !point(p) || G.blocked(p))
+                    ? "엄호 교대 경로"
+                    : u.roofTransit &&
+                        !["up", "down"].includes(u.roofTransit.direction)
+                      ? "계단 상태"
+                      : "대원 상태") +
+          ".",
       );
       ids.add(u.id);
       if (e.status === "running")

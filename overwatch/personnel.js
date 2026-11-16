@@ -62,6 +62,7 @@
     "command-exercise-started",
     "command-exercise-ended",
     "mission-offered",
+    "mission-region-selected",
     "mission-offer-expired",
     "mission-accepted",
     "mission-cancelled",

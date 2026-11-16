@@ -198,7 +198,7 @@
           ? "down"
           : u.health.aid
             ? "aid"
-            : u.path?.length && moveFactor(u) > 0
+            : (u.path?.length || u.motionActive) && moveFactor(u) > 0
               ? "moving"
               : u.lastShotAt != null && now !== null && now - u.lastShotAt <= 1
                 ? "firing"
@@ -919,6 +919,7 @@
   }
   function actorTick(s, e) {
     for (const u of e.world.actors) {
+      u.motionActive = false;
       if (e.mission && u.side === "ally") {
         M().actorTaskTick(s, e, u);
         continue;
@@ -1009,6 +1010,62 @@
       const seen = scanEnemy(e, u);
       if (seen) {
         u.combatActive = true;
+        if (
+          u.deployment?.doctrine === "bounding-overwatch" &&
+          u.weapon.model !== "SVD" &&
+          u.deployment.index === 1 &&
+          G.distance(u, seen) > 35
+        ) {
+          const partner = e.world.actors.find(
+            (a) =>
+              a.id !== u.id &&
+              a.side === "red" &&
+              a.deployment?.group === u.deployment.group &&
+              a.health.alive &&
+              a.health.conscious &&
+              G.distance(a, u) < 120 &&
+              a.weapon.targetId === seen.id,
+          );
+          if (partner && e.time - (u.lastFlankAt ?? -100) > 40) {
+            const angle = Math.atan2(seen.y - u.y, seen.x - u.x);
+            const p = G.project({
+              x: Math.max(
+                12,
+                Math.min(
+                  G.MAP.width - 12,
+                  u.x +
+                    Math.cos(angle + Math.PI / 2) * 18 +
+                    Math.cos(angle) * 8,
+                ),
+              ),
+              y: Math.max(
+                12,
+                Math.min(
+                  G.MAP.height - 12,
+                  u.y +
+                    Math.sin(angle + Math.PI / 2) * 18 +
+                    Math.sin(angle) * 8,
+                ),
+              ),
+            });
+            if (G.path(u, p).length) {
+              u.flankGoal = p;
+              u.flankUntil = e.time + 12;
+              u.lastFlankAt = e.time;
+              I().event(e, "enemy-flank-started", {
+                actorId: u.id,
+                coveringId: partner.id,
+                contactId: seen.id,
+                observedAt: seen.lastSeen,
+              });
+            }
+          }
+          if (u.flankGoal && e.time < u.flankUntil && !underFire(e, u)) {
+            u.state = "flanking";
+            advanceActor(e, u, u.flankGoal, 0.85);
+            continue;
+          }
+        }
         if (seekCover(e, u, seen)) {
           advanceActor(e, u, u.coverGoal, 0.85);
           continue;
@@ -1019,6 +1076,49 @@
         u.state = u.prone ? "covering" : "aiming";
         if (e.time - seen.firstSeen > 4) fire(s, e, u, seen);
       } else {
+        if (u.deployment?.phase === "approach") {
+          const d = u.deployment;
+          if (e.time < d.releaseAt) {
+            u.state = "assembling";
+            continue;
+          }
+          if (G.distance(u, d.destination) > 8) {
+            const partner = e.world.actors.find(
+              (a) =>
+                a.id !== u.id &&
+                a.side === "red" &&
+                a.deployment?.group === d.group &&
+                healthy(a),
+            );
+            const moving =
+              d.doctrine !== "bounding-overwatch" ||
+              !partner ||
+              Math.floor((e.time - d.releaseAt) / 18) % 2 === d.index;
+            u.state = moving ? "approaching" : "covering";
+            u.heading = Math.atan2(
+              d.destination.y - u.y,
+              d.destination.x - u.x,
+            );
+            if (moving)
+              advanceActor(
+                e,
+                u,
+                d.destination,
+                d.doctrine === "bounding-overwatch" ? 0.9 : 0.75,
+              );
+            else {
+              u.prone = false;
+              u.stance = "kneeling";
+            }
+            continue;
+          }
+          d.phase = "on-station";
+          I().event(e, "enemy-arrived-area", {
+            actorId: u.id,
+            position: { x: u.x, y: u.y },
+            group: d.group,
+          });
+        }
         const noise = e.battle.noises
           .slice()
           .reverse()
@@ -1119,6 +1219,7 @@
       u.heading = Math.atan2(p.y - u.y, p.x - u.x);
       u.x = next.x;
       u.y = next.y;
+      u.motionActive = step > 0;
     }
   }
   function reload(e, u) {
