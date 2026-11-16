@@ -388,7 +388,9 @@
             frame.time +
             (paused
               ? 0
-              : Math.min(1, (now - frameAt) / 1000) * frame.battle.speed),
+              : Math.min(1, (now - frameAt) / 1000) *
+                frame.battle.speed *
+                (root.OverwatchRealtime?.GAME_RATE || 4)),
         });
         m.motion = motion.mode;
         m.flash = motion.flash;
@@ -399,7 +401,14 @@
             m.to,
             motion.mode === "walk",
           ),
-          entityScale = Math.max(v.scale, desktop ? 12 : 8),
+          entityScale = Math.max(
+            v.scale,
+            Math.min(
+              ((desktop ? 12 : 8) * v.scale) /
+                (host.clientHeight / frame.map.height),
+              host.clientHeight * 0.1,
+            ),
+          ),
           height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
@@ -697,7 +706,8 @@
             Math.min(
               2100,
               ((u.observedAt - m.observedAt || 1) * 1000) /
-                (next.battle?.speed || 1),
+                ((next.battle?.speed || 1) *
+                  (root.OverwatchRealtime?.GAME_RATE || 4)),
             ),
           );
           m.at = now;
@@ -708,6 +718,7 @@
           animate = Math.max(animate, 2100);
       }
       for (const fx of next.battle?.effects || []) {
+        if (fx.kind === "heard") continue;
         if (shots.has(fx.eventId)) continue;
         const at =
           initialized && !next.paused && next.status === "running"

@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.04",
+  const VERSION = "2026.11.16.05",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -76,6 +76,7 @@
     dirty = false;
   }
   const runtime = OverwatchRealtime.create({
+    baseRate: OverwatchRealtime.GAME_RATE,
     tick() {
       if (
         source !== "primary" ||
@@ -87,16 +88,18 @@
       OverwatchCommand.step(state, 1);
       dirty = true;
       if (state.commandExercise.status === "ended") setTimeout(render, 0);
+      return (
+        state.commandExercise.status === "running" &&
+        !state.commandExercise.paused
+      );
+    },
+    afterPump() {
       FieldUI.refresh(root, state, { playing: true });
       OverwatchStaffUI.refresh(root, state);
       const liveClock = root.querySelector("[data-live-clock]");
       if (liveClock)
         liveClock.textContent =
           "본부 " + PersonnelUI.timestamp(state.clock.elapsedSeconds);
-      return (
-        state.commandExercise.status === "running" &&
-        !state.commandExercise.paused
-      );
     },
     checkpoint: saveRuntime,
     onError: rollbackRuntime,

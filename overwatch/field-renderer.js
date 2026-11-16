@@ -228,7 +228,9 @@
             frame.time +
             (stopped
               ? 0
-              : Math.min(1, (time - frameAt) / 1000) * frame.battle.speed),
+              : Math.min(1, (time - frameAt) / 1000) *
+                frame.battle.speed *
+                (root.OverwatchRealtime?.GAME_RATE || 4)),
         });
         m.motion = sample.mode;
         m.legs[0].rotation.x = sample.leg;
@@ -298,7 +300,8 @@
           Math.min(
             2000,
             ((u.observedAt - (m.unit.observedAt || 0) || 1) * 1000) /
-              (next.battle?.speed || 1),
+              ((next.battle?.speed || 1) *
+                (root.OverwatchRealtime?.GAME_RATE || 4)),
           ),
         );
         m.unit = u;
@@ -363,6 +366,7 @@
       }
       for (const [id, m] of meshes) if (!ids.has(id)) m.group.visible = false;
       for (const fx of next.battle?.effects || []) {
+        if (fx.kind === "heard") continue;
         if (effects.some((v) => v.id === fx.eventId)) continue;
         // A historical packet/reload never fabricates a new shot animation.
         if (!initialized || next.paused || next.status !== "running") {
