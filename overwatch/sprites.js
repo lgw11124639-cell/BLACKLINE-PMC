@@ -340,7 +340,11 @@
     const widthM = (extentM * (x2 - x1)) / Math.max(x2 - x1, y2 - y1);
     return { key, role, action, art, widthM, fallback };
   }
-  const api = { data, select };
+  // A single map-space scale keeps actors proportional to terrain at every zoom.
+  // Readability comes from this fixed world magnification, never a pixel-size cap.
+  const mapScale = (map, pixelsPerMetre) =>
+    (map.height / 80) * 1.5 * pixelsPerMetre;
+  const api = { data, select, mapScale };
   root.OverwatchSprites = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window === "undefined" ? globalThis : window);

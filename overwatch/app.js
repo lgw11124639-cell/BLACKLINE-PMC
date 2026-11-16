@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.11",
+  const VERSION = "2026.11.16.12",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -635,7 +635,8 @@
       wasFullscreen = !!root.querySelector(".field-fullscreen"),
       wasInspectorCollapsed = !!root.querySelector(
         ".field-inspector-collapsed",
-      );
+      ),
+      wasHudOpen = !!root.querySelector(".field-hud-open");
     const radioScroll =
         root.querySelector(".command-radio-list")?.scrollTop || 0,
       showInternal = !!root.querySelector("[data-range-internal]")?.checked;
@@ -817,6 +818,12 @@
           oldFieldFocus.focus({ preventScroll: true });
           window.scrollTo(0, oldFieldScroll);
         }
+      }
+      if (wasHudOpen) {
+        root.querySelector(".field-layout")?.classList.add("field-hud-open");
+        root
+          .querySelector("[data-field-hud]")
+          ?.setAttribute("aria-expanded", "true");
       }
       if (wasInspectorCollapsed) {
         root
