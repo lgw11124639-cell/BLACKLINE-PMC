@@ -352,7 +352,12 @@
                           observing: "관측",
                         }[u.state] || u.state,
               ) +
-              (u.roofId ? " · 옥상 진지" : "") +
+              (u.roofId
+                ? " · 옥상 " +
+                  Math.round(u.elevation || u.roofAdvantage?.height || 0) +
+                  "m" +
+                  (u.roofAdvantage?.active ? " · 진지 보너스" : "")
+                : "") +
               (u.role === "sniper" && u.health?.alive && u.health.conscious
                 ? " · " +
                   esc(
@@ -436,7 +441,7 @@
       "unarmed-person": "비무장 인원",
       "friendly-person": "지원 아군",
     };
-    return (
+    const observed =
       f.contacts
         .filter((c) => !c.expired)
         .map(
@@ -468,7 +473,24 @@
             '">마지막 확인 위치 보기</button></article>',
         )
         .join("") ||
-      '<p class="muted">관측 보고 대기 · 미확인 적의 위치는 표시하지 않습니다.</p>'
+      '<p class="muted">관측 보고 대기 · 미확인 적의 위치는 표시하지 않습니다.</p>';
+    const directions = new Map();
+    for (const fx of f.battle?.effects || [])
+      if (typeof fx.bearing === "number" && !fx.sourceKnown) {
+        const index = (Math.round(fx.bearing / (Math.PI / 4)) + 8) % 8;
+        directions.set((fx.listenerId || "") + ":" + index, index);
+      }
+    return (
+      observed +
+      [...directions.values()]
+        .slice(-4)
+        .map(
+          (i) =>
+            '<article class="field-contact"><strong>총성 방향 · ' +
+            ["동", "남동", "남", "남서", "서", "북서", "북", "북동"][i] +
+            "쪽</strong><small>미확인 총격 · 정확한 위치는 아직 식별되지 않았습니다.</small></article>",
+        )
+        .join("")
     );
   }
   function radio(f) {
@@ -545,7 +567,7 @@
     return (
       '<section class="page-title"><span class="eyebrow">TRAINING CONTROL</span><h1>저격조 모의 훈련</h1><p>교관이 과업을 통제하는 실시간 훈련입니다. 관측수와 저격수의 행동을 관전하며 연습 부상·전사는 실전 인사 손실로 반영하지 않습니다.</p></section>' +
       (!s?.commandExercise?.mission && (!battle || !active)
-        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 훈련에는 계약 기관의 실전 수송·지원이 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option><option value="urban-embassy">공관·언덕 지구</option><option value="urban-rail">철도·정비 지구</option><option value="urban-research">통신·연구 단지</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
+        ? '<section class="panel"><h2>전장 연습 편성</h2><p>현재 편성한 저격조를 사용합니다. 정찰은 무장 인원 2개 접촉 식별, 위협 차단은 현장 무장 인원의 행동 중지를 확인한 뒤 집결지로 복귀합니다. 훈련에는 계약 기관의 실전 수송·지원이 출동하지 않습니다.</p><label class="field-label">전투지도<select data-field-map><option value="ridge-field">능선·물류 단지</option><option value="command-range">이전 지휘 훈련장</option><option value="urban-quarter">구도심 주거지</option><option value="urban-modern">신도심 업무지구</option><option value="urban-port">항만·물류 지구</option><option value="urban-market">시장·광장 지구</option><option value="urban-embassy">공관·언덕 지구</option><option value="urban-rail">철도·정비 지구</option><option value="urban-research">통신·연구 단지</option><option value="city-gwangju">광주 도심</option><option value="city-seoul">서울 고층 도심</option><option value="city-busan">부산 경사지 도심</option><option value="urban-radar">레이더 기지</option><option value="urban-hillside">산악 주거지</option><option value="urban-depot">군수 저장 단지</option></select></label><label class="field-label">연습 과업<select data-field-scenario><option value="support">지원 아군·민간인 엄호</option><option value="recon">능선 정찰·감시</option><option value="interdiction">위협 차단·복귀</option></select></label><button data-field-start' +
           (!editable ||
           !s.squads.length ||
           s.commandExercise?.status === "running"

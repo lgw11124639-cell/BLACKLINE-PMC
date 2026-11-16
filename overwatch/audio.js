@@ -114,7 +114,13 @@
             x: own.reduce((n, v) => n + v.x, 0) / own.length,
             y: own.reduce((n, v) => n + v.y, 0) / own.length,
           }
-        : fx.from;
+        : { ...fx.from };
+    const camera =
+      root.OverwatchIllustratedRenderer?.get?.()?.stats?.()?.viewCenter;
+    if (camera) {
+      listener.x = camera.x;
+      listener.y = camera.y;
+    }
     const distance =
         fx.audioDistance ??
         Math.hypot(fx.from.x - listener.x, fx.from.y - listener.y),
@@ -138,7 +144,10 @@
     gain.gain.value =
       fx.kind === "heard"
         ? Math.max(0.12, 0.45 / (1 + distance / 260))
-        : (suppressed ? 0.4 : 0.8) / (1 + distance / 260);
+        : Math.max(
+            fx.source === "agency" ? 0.22 : 0,
+            (suppressed ? 0.4 : 0.8) / (1 + distance / 260),
+          );
     source.playbackRate.value =
       model === "AXMC"
         ? 0.86

@@ -386,7 +386,7 @@
       }
       for (const [id, m] of meshes) if (!ids.has(id)) m.group.visible = false;
       for (const fx of next.battle?.effects || []) {
-        if (fx.kind === "heard") continue;
+        if (fx.kind === "heard" && typeof fx.bearing !== "number") continue;
         if (effects.some((v) => v.id === fx.eventId)) continue;
         // A historical packet/reload never fabricates a new shot animation.
         if (!initialized || next.paused || next.status !== "running") {
@@ -400,6 +400,17 @@
           shooter.group.rotation.y =
             -Math.atan2(fx.to.y - fx.from.y, fx.to.x - fx.from.x) + Math.PI / 2;
         }
+        const end =
+          typeof fx.bearing === "number"
+            ? {
+                x: fx.from.x + Math.cos(fx.bearing) * 50,
+                y: fx.from.y + Math.sin(fx.bearing) * 50,
+              }
+            : fx.to;
+        animateFor = Math.max(
+          animateFor,
+          typeof fx.bearing === "number" ? 3000 : 500,
+        );
         const g = new T.BufferGeometry().setFromPoints([
             new T.Vector3(
               fx.from.x,
@@ -407,9 +418,9 @@
               fx.from.y,
             ),
             new T.Vector3(
-              fx.to.x,
-              root.OverwatchGeometry.elevation(fx.to) + 1.1,
-              fx.to.y,
+              end.x,
+              root.OverwatchGeometry.elevation(end) + 1.1,
+              end.y,
             ),
           ]),
           material = new T.LineBasicMaterial({
@@ -417,7 +428,11 @@
           }),
           line = new T.Line(g, material);
         scene.add(line);
-        effects.push({ id: fx.eventId, line, until: now + 220 });
+        effects.push({
+          id: fx.eventId,
+          line,
+          until: now + (typeof fx.bearing === "number" ? 3000 : 220),
+        });
       }
       while (effects.length > 40) {
         const v = effects.shift();

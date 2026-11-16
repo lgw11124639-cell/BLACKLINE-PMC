@@ -229,6 +229,72 @@
       ]),
     );
   }
+  // Fractional practice is banked: splitting a course or repeatedly cancelling
+  // cannot manufacture minimum +1 rewards. Only completed activities call learn.
+  function learn(
+    m,
+    skill,
+    points,
+    { time = 0, source = "training", eventId = null } = {},
+  ) {
+    ok(
+      SKILLS.includes(skill) &&
+        Number.isFinite(points) &&
+        points >= 0 &&
+        points <= 20,
+      "성장 자료가 잘못되었습니다.",
+    );
+    m.development ||= { progress: {}, log: [] };
+    const before = m.skills[skill],
+      bank = (m.development.progress[skill] || 0) + points,
+      gain = Math.min(100 - before, Math.floor(bank + 1e-8));
+    m.skills[skill] += gain;
+    m.development.progress[skill] =
+      m.skills[skill] >= 100
+        ? 0
+        : Math.round((bank - Math.floor(bank + 1e-8)) * 10000) / 10000;
+    if (points > 0) {
+      m.development.log.push({
+        skill,
+        before,
+        after: m.skills[skill],
+        practice: points,
+        time,
+        source,
+        eventId,
+      });
+      m.development.log = m.development.log.slice(-24);
+    }
+    return gain;
+  }
+  function trainingPriorities(m) {
+    const targets =
+      m.specialty === "sniper"
+        ? {
+            shooting: 85,
+            composure: 80,
+            observation: 65,
+            fitness: 65,
+            judgment: 70,
+            teamwork: 75,
+          }
+        : {
+            shooting: 65,
+            composure: 75,
+            observation: 85,
+            fitness: 65,
+            judgment: 80,
+            teamwork: 80,
+          };
+    return SKILLS.map((skill) => ({
+      skill,
+      need:
+        (targets[skill] - m.skills[skill]) *
+        (skill === (m.specialty === "sniper" ? "shooting" : "observation")
+          ? 1.35
+          : 1),
+    })).sort((a, b) => b.need - a.need);
+  }
   function paired(s, id) {
     return s.squads.find((q) => q.observerId === id || q.sniperId === id);
   }
@@ -833,20 +899,30 @@
       m.activityId = null;
       m.status = "standby";
       if (a.kind === "training") {
-        if (SKILLS.includes(a.course))
-          m.skills[a.course] = Math.min(
-            100,
-            m.skills[a.course] +
-              Math.max(
-                1,
-                Math.round(
-                  ((a.dueAt - a.startedAt) / HOUR) *
-                    0.4 *
-                    (1 - m.skills[a.course] / 140),
-                ),
-              ),
+        const instructor =
+            a.instructorId &&
+            [...(s.commandStaff?.members || []), ...s.members].find(
+              (p) => p.id === a.instructorId,
+            ),
+          instructorSkills = instructor ? effectiveSkills(instructor) : null,
+          quality = instructorSkills
+            ? 0.8 +
+              instructorSkills.judgment / 200 +
+              instructorSkills.teamwork / 400
+            : 1,
+          hours = (a.dueAt - a.startedAt) / HOUR;
+        if (SKILLS.includes(a.course)) {
+          learn(
+            m,
+            a.course,
+            hours *
+              0.9 *
+              (1 - m.skills[a.course] / 125) *
+              quality *
+              Math.max(0.6, 1 - m.fatigue / 250),
+            { time: time(s), source: "training", eventId: a.id },
           );
-        else {
+        } else {
           m.proficiency.secondary[a.course] = Math.min(
             100,
             m.proficiency.secondary[a.course] +
@@ -859,7 +935,10 @@
           )
             m.secondarySpecialties.push(a.course);
         }
-        m.proficiency.primary = Math.min(100, m.proficiency.primary + 1);
+        m.proficiency.primary = Math.min(
+          100,
+          m.proficiency.primary + hours * 0.25 * quality,
+        );
         m.experience += ((a.dueAt - a.startedAt) / HOUR) * 8;
       }
       if (a.kind === "treatment") {
@@ -886,7 +965,21 @@
       }
       if (a.kind === "rehab") m.aftereffects = [];
       if (a.kind === "pair") {
-        m.skills.teamwork = Math.min(100, m.skills.teamwork + 1);
+        learn(m, "teamwork", 1.4, {
+          time: time(s),
+          source: "pair",
+          eventId: a.id,
+        });
+        learn(m, "judgment", 0.35, {
+          time: time(s),
+          source: "pair",
+          eventId: a.id,
+        });
+        learn(m, "composure", 0.35, {
+          time: time(s),
+          source: "pair",
+          eventId: a.id,
+        });
         m.experience += 24;
       }
     }
@@ -1300,6 +1393,25 @@
               num(e.penalty, 0, 100),
             "후유증 기록이 잘못되었습니다.",
           );
+        if (m.development)
+          ok(
+            m.development.progress &&
+              Object.entries(m.development.progress).every(
+                ([k, v]) => SKILLS.includes(k) && num(v, 0, 0.99999),
+              ) &&
+              Array.isArray(m.development.log) &&
+              m.development.log.length <= 24 &&
+              m.development.log.every(
+                (r) =>
+                  SKILLS.includes(r.skill) &&
+                  num(r.before, 0, 100) &&
+                  num(r.after, r.before, 100) &&
+                  num(r.practice, 0, 20) &&
+                  num(r.time, 0, time(s)) &&
+                  ["training", "pair", "field"].includes(r.source),
+              ),
+            "성장 기록이 잘못되었습니다.",
+          );
         if (group === "candidate") {
           ok(m.status === "candidate", "후보 상태가 잘못되었습니다.");
           continue;
@@ -1601,6 +1713,8 @@
     casualty,
     readiness,
     effectiveSkills,
+    learn,
+    trainingPriorities,
     relationship,
     age,
     date,

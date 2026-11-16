@@ -9,13 +9,20 @@ with sync_playwright() as p:
   c=b.new_context(ignore_https_errors=True,viewport={'width':w,'height':h});q=c.new_page();errors=[];q.on('pageerror',lambda e:errors.append(str(e)))
   q.goto(BASE,wait_until='networkidle');q.evaluate(SEED);q.reload(wait_until='networkidle')
   q.wait_for_function('!!OverwatchIllustratedRenderer.get()')
+  q.locator('[data-field-fit]').click()
+  q.wait_for_function('OverwatchAudio.status.enabled && OverwatchAudio.status.samples>0',timeout=15000)
   q.evaluate("const r=OverwatchIllustratedRenderer.get();r.focus('agency-guide');r.zoom(5)")
   q.wait_for_function("OverwatchIllustratedRenderer.get().stats().recentShots.some(s=>s.side==='ally'&&s.kind==='shot')",timeout=25000,polling=30)
+  q.wait_for_function('OverwatchAudio.status.playedBySide.ally>0',timeout=15000)
   q.screenshot(path=f'/tmp/ow-agency-fire-{w}x{h}.png')
   q.wait_for_function("OverwatchIllustratedRenderer.get().stats().knownIds.includes('opposition-4')",timeout=5000)
   # The delivered contact is attributed to the agency rather than exposing all hostiles.
   q.locator('button[data-inspector=personnel]').click() if q.locator('button[data-inspector=personnel]').count() else None
   assert '기관 식별' in q.locator('[data-field-contacts]').inner_text()
+  q.locator('button[data-inspector=support]').click()
+  for mode in ['hold','advance','withdraw','auto']:
+   q.locator('[data-agency-order="'+mode+'"]').click()
+   q.wait_for_function("mode=>document.querySelector('[data-agency-order=\"'+mode+'\"]').getAttribute('aria-pressed')==='true'",arg=mode,timeout=30000)
   q.evaluate("Object.defineProperty(document,'hidden',{value:true,configurable:true});document.dispatchEvent(new Event('visibilitychange'))")
   s=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');f=q.evaluate('OverwatchCommand.frame(OverwatchStorage.create({storage:localStorage}).load().state)')
   assert any(x['source']=='agency' for x in f['contacts'] if x['id']=='opposition-4')

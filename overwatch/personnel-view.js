@@ -123,8 +123,12 @@
       '<section class="panel hq-activities"><div class="personnel-section-title"><div><span class="eyebrow">HEADQUARTERS ACTIVITIES</span><h2>본부 활동 · ' +
       timestamp(s.clock.elapsedSeconds) +
       "</h2></div><button data-advance" +
-      (automatic(s) ? " hidden" : "") +
-      disabled(!editable || !active.length) +
+      disabled(
+        !editable ||
+          !active.length ||
+          !!s.activeMission ||
+          s.commandExercise?.status === "running",
+      ) +
       ">다음 활동 완료까지 " +
       duration(next) +
       " 진행</button></div>" +
@@ -464,7 +468,10 @@
     if (!m) return "";
     const hired = s.members.some((x) => x.id === id),
       candidate = m.status === "candidate",
-      effective = P.effectiveSkills(m),
+      effective =
+        (s.commandExercise?.status === "running" &&
+          s.commandExercise.knowledge.friends[id]?.combatSkills) ||
+        P.effectiveSkills(m),
       plan = P.treatmentPlan(m),
       busy = !!m.activityId,
       q = s.squads.find((q) => q.observerId === id || q.sniperId === id);
@@ -510,7 +517,7 @@
           ).join(" · ") +
           "</p>"
         : "") +
-      '<p class="muted">판단 경향·부특기의 현장 AI 행동 연결은 지휘 AI 단계에서 진행합니다.</p></section><section class="panel"><h2>급여·계약</h2><p>일급 ' +
+      '<p class="muted">사격은 탄착·조준, 관측은 식별, 침착성은 피격 영향 회복, 체력은 이동·지구력, 판단력은 반응·엄폐 선택, 팀워크는 지시 전달·재장전에 반영됩니다. 주특기 숙련도는 조준과 재장전을 보완합니다.</p></section><section class="panel"><h2>급여·계약</h2><p>일급 ' +
       money(m.dailySalary) +
       "</p>" +
       (candidate
@@ -553,7 +560,50 @@
       Math.round(m.fatigue) +
       "% · 스트레스 " +
       Math.round(m.stress) +
-      '%. 현재 적용 값에는 피로·스트레스·후유증이 반영됩니다.</p></section><section class="panel"><h2>건강·부상 이력</h2>' +
+      "%. 현재 적용 값에는 피로·스트레스·후유증과 수신된 전투 중 컨디션이 반영됩니다.</p></section>" +
+      (!candidate
+        ? '<section class="panel" data-development><h2>훈련·성장 기록</h2><p>권장 훈련: ' +
+          P.LABELS[P.trainingPriorities(m)[0].skill] +
+          ' · 훈련을 완료하면 능력이 누적 성장합니다. 중단한 훈련은 성장하지 않습니다.</p><div class="dossier-skills">' +
+          P.SKILLS.map(
+            (k) =>
+              "<div><label>" +
+              P.LABELS[k] +
+              " · 다음 +1까지 " +
+              Math.round((m.development?.progress[k] || 0) * 100) +
+              '%</label><progress max="1" value="' +
+              (m.development?.progress[k] || 0) +
+              '"></progress></div>',
+          ).join("") +
+          "</div>" +
+          ((m.development?.log || []).length
+            ? "<ul>" +
+              m.development.log
+                .slice(-6)
+                .reverse()
+                .map(
+                  (r) =>
+                    "<li>" +
+                    timestamp(r.time) +
+                    " · " +
+                    { training: "훈련", pair: "조 협동", field: "실전 복귀" }[
+                      r.source
+                    ] +
+                    " · " +
+                    P.LABELS[r.skill] +
+                    " " +
+                    r.before +
+                    " → " +
+                    r.after +
+                    (r.after === r.before ? " · 학습 누적" : "") +
+                    "</li>",
+                )
+                .join("") +
+              "</ul>"
+            : "<p>완료된 훈련과 실제 복귀 경험이 여기에 기록됩니다.</p>") +
+          "</section>"
+        : "") +
+      '<section class="panel"><h2>건강·부상 이력</h2>' +
       (m.injuries.length
         ? '<ul class="plain-list">' +
           m.injuries

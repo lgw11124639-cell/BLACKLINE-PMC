@@ -69,7 +69,8 @@ test("content upgrade adds only new offers and preserves accepted contract, mone
   assert.equal(
     s.contracts.filter((c) => ["eliminate", "interdict"].includes(c.task))
       .length,
-    3,
+    M.TEMPLATES.filter((t) => ["eliminate", "interdict"].includes(t.task))
+      .length,
   );
   assert.equal(
     JSON.stringify({

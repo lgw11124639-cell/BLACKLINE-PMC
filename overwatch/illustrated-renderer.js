@@ -36,6 +36,7 @@
     canvas.setAttribute("role", "img");
     const positions = new Map(),
       shots = new Map(),
+      bearings = new Map(),
       images = [],
       handlers = [];
     let initialized = false;
@@ -642,6 +643,44 @@
         }
         ctx.restore();
       }
+      for (const h of bearings.values()) {
+        const age = now - h.at;
+        if (age < 0 || age > 6000) continue;
+        const point = screen(h.fx.from, v),
+          length = Math.min(65, Math.max(36, v.h * 0.16));
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        ctx.globalAlpha = 0.85 * (1 - age / 7000);
+        ctx.strokeStyle = "#ffb66f";
+        ctx.fillStyle = "#ffcf9b";
+        ctx.lineWidth = 2;
+        ctx.rotate(h.fx.bearing);
+        ctx.beginPath();
+        ctx.moveTo(12, 0);
+        ctx.lineTo(length, 0);
+        ctx.moveTo(length - 9, -5);
+        ctx.lineTo(length, 0);
+        ctx.lineTo(length - 9, 5);
+        ctx.stroke();
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.moveTo(10, 0);
+        ctx.lineTo(
+          Math.cos(Math.PI / 8) * length,
+          Math.sin(Math.PI / 8) * length,
+        );
+        ctx.moveTo(10, 0);
+        ctx.lineTo(
+          Math.cos(-Math.PI / 8) * length,
+          Math.sin(-Math.PI / 8) * length,
+        );
+        ctx.stroke();
+        ctx.rotate(-h.fx.bearing);
+        ctx.font = "600 10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("총성 방향 · 미확인", 0, -18);
+        ctx.restore();
+      }
       for (const shot of shots.values()) {
         const age = now - shot.at;
         if (paused || age < 0 || age > 650) continue;
@@ -782,6 +821,18 @@
           animate = Math.max(animate, 2100);
       }
       for (const fx of next.battle?.effects || []) {
+        if (typeof fx.bearing === "number" && initialized && !next.paused) {
+          const key =
+            (fx.listenerId || "listener") +
+            ":" +
+            Math.round(fx.bearing / (Math.PI / 4));
+          if (bearings.get(key)?.fx.eventId !== fx.eventId)
+            bearings.set(key, { fx, at: now });
+          animate = Math.max(animate, 6000);
+        }
+        if (fx.sourceKnown)
+          for (const [key, h] of bearings)
+            if (h.fx.eventId === fx.eventId) bearings.delete(key);
         if (fx.kind === "heard") continue;
         if (shots.has(fx.eventId)) continue;
         const at =
@@ -801,6 +852,7 @@
         }
       }
       while (shots.size > 40) shots.delete(shots.keys().next().value);
+      while (bearings.size > 12) bearings.delete(bearings.keys().next().value);
       if (follow) {
         const visible = (
           focusId
@@ -957,6 +1009,13 @@
             pixels: positions.get(t.id)?.displaySize || 0,
           })),
           framesPending: raf === null ? 0 : 1,
+          heardDirections: [...bearings.values()]
+            .filter((h) => performance.now() - h.at < 6000)
+            .map((h) => ({
+              bearing: h.fx.bearing,
+              listenerId: h.fx.listenerId,
+              eventId: h.fx.eventId,
+            })),
           recentShots: [...shots.values()]
             .filter((s) => performance.now() - s.at < 650)
             .map((s) => ({
@@ -991,6 +1050,7 @@
         host.replaceChildren();
         positions.clear();
         shots.clear();
+        bearings.clear();
         spriteImages.clear();
         if (active === api) active = null;
       },

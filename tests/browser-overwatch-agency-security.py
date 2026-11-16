@@ -6,7 +6,7 @@ with sync_playwright() as p:
  b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
  q=b.new_page(ignore_https_errors=True,viewport={'width':1920,'height':1080});errors=[];q.on('dialog',lambda d:d.accept());q.on('pageerror',lambda e:errors.append(str(e)));q.goto(BASE,wait_until='networkidle')
  q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,P=OverwatchPersonnel;for(const call of ['ALPHA','BRAVO']){const h=r=>P.hire(s,s.market.candidates.find(x=>x.specialty===r).id,30);P.assign(s,call,h('observer').id,h('sniper').id);}const extra=P.hire(s,s.market.candidates.find(x=>x.specialty==='observer').id,30);P.start(s,{kind:'rest',memberIds:[extra.id],hours:6});const c=OverwatchStaff.hire(s,s.commandStaff.market.find(x=>x.duty==='controller').id);OverwatchStaff.assign(s,'controller',c.id);s.ui.tab='contracts';st.save(s,s.revision);}""")
- q.reload(wait_until='networkidle');assert q.locator('[data-live-accept]').count()==8
+ q.reload(wait_until='networkidle');assert q.locator('[data-live-accept]').count()==14
  for name in ['지정 표적 암살','대저격 작전','표적 이동 차단']:assert name in q.locator('#main').inner_text()
  id=q.evaluate("OverwatchStorage.create({storage:localStorage}).load().state.contracts.find(c=>c.key==='high-value-target').id")
  region=q.locator('[data-live-region="'+id+'"]')
@@ -24,7 +24,7 @@ with sync_playwright() as p:
  q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,e=s.commandExercise;for(let i=0;i<130;i++){for(const a of e.world.actors.filter(a=>a.side==='red'))a.weapon.nextFireAt=e.time+20;OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1);}e.world.actors=e.world.actors.filter(a=>a.taskDuty!=='security');delete e.mission.securityControl;s.operations.contentVersion=2;st.save(s,s.revision);}""")
  q.reload(wait_until='networkidle')
  state=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state')
- assert state['operations']['contentVersion']==4
+ assert state['operations']['contentVersion']==5
  assert len([a for a in state['commandExercise']['world']['actors'] if a.get('taskDuty')=='security'])==4
  assert all(c.get('agencyInfantry')==4 for c in state['contracts'] if c['status'] in ['offered','accepted','active'])
  q.locator('button[data-inspector=support]').click();assert '기관 보병 4명' in q.locator('[data-agency-control]').inner_text()

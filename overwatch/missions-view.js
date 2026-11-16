@@ -369,7 +369,27 @@
       esc(m.issuer) +
       " · <strong data-live-phase>" +
       esc(phases[m.phase] || m.phase) +
-      "</strong></p><p data-agency-control>기관 보병: 저격조 진지·관측 보고 대기</p><p data-live-objective></p><p data-live-transport-status></p><p>제공 수송 " +
+      '</strong></p><p data-agency-control>기관 보병: 현장 투입 대기</p><section class="agency-command-controls"><h3>기관 보병 지휘</h3><p>본부 지시 우선 · 엄폐·대응 사격은 현장 판단</p><div class="inline-actions">' +
+      [
+        ["auto", "자율 수색"],
+        ["hold", "엄폐·엄호"],
+        ["advance", "구역 진출"],
+        ["withdraw", "보병 철수"],
+      ]
+        .map(
+          ([mode, label]) =>
+            '<button data-agency-order="' +
+            mode +
+            '" aria-pressed="' +
+            (m.agencyDirective === mode) +
+            '"' +
+            (s.commandExercise.status !== "running" ? " disabled" : "") +
+            ">" +
+            label +
+            "</button>",
+        )
+        .join("") +
+      "</div><p data-agency-order-status></p></section><p data-live-objective></p><p data-live-transport-status></p><p>제공 수송 " +
       { foot: "도보", vehicle: "차량", helicopter: "헬기" }[m.transport] +
       " · 출격 소모품 예치 " +
       cash(m.escrow) +
@@ -473,6 +493,23 @@
     else if (agency && m.agencyControl)
       agency.textContent =
         "기관 보병: " + m.agencyControl.reason + " · 자체 수색·경계·교전";
+    for (const b of rootNode.querySelectorAll("[data-agency-order]")) {
+      b.setAttribute(
+        "aria-pressed",
+        String(b.dataset.agencyOrder === m.agencyDirective),
+      );
+      b.disabled = s.commandExercise.status !== "running" || m.returnRequested;
+    }
+    const directive = rootNode.querySelector("[data-agency-order-status]");
+    if (directive)
+      directive.textContent =
+        "수신 지시: " +
+        ({
+          auto: "현장 자율 수색",
+          hold: "분산 엄폐·엄호",
+          advance: "담당 구역 진출",
+          withdraw: "보병 회수 지점 철수",
+        }[m.agencyDirective] || "현장 자율 수색");
     const goal = rootNode.querySelector("[data-live-objective]");
     if (goal)
       goal.textContent =
@@ -601,6 +638,9 @@
         ),
       );
     each("[data-live-open-field]", () => navigate("field"));
+    each("[data-agency-order]", (b) =>
+      execute((next) => M.commandAgency(next, b.dataset.agencyOrder)),
+    );
     each("[data-live-support]", (b) =>
       execute((next) =>
         M.requestSupport(

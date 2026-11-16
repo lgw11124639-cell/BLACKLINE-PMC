@@ -127,6 +127,15 @@ test("actual observed armed contact halts unsafe approach and produces a causal 
 });
 test("actual shots debit real magazine rounds and every weapon conserves initial ammunition across reloads", () => {
   const s = make();
+  // Put an actual opponent in the approach corridor; attribute changes must not
+  // turn the ammunition audit into a test of whether a distant patrol happens to meet.
+  Object.assign(s.commandExercise.world.actors[0], {
+    x: 350,
+    y: 140,
+    route: [{ x: 350, y: 140 }],
+    waypoint: 0,
+    path: [],
+  });
   D.issue(s, "ALPHA", "move", { x: 220, y: 200 });
   D.issue(s, "ALPHA", "roe", null, "authorized");
   advance(s, 650);
