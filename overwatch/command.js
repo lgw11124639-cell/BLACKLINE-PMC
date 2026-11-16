@@ -474,7 +474,7 @@
   function receive(s, e, q, c) {
     if (c.status !== "queued") return;
     if (c.supportContact && e.time - c.supportContact.lastSeen < 25) {
-      const contact = { ...copy(c.supportContact), reportedAt: -100 };
+      const contact = { ...copy(c.supportContact), reportedAt: -100, reportedConfidence: 0 };
       const old = q.contacts.find((x) => x.id === contact.id);
       if (old) Object.assign(old, contact);
       else q.contacts.push(contact);
