@@ -13,7 +13,7 @@
             "'": "&#39;",
           })[c],
       );
-  function render(s, editable = true) {
+  function render(s, editable = true, options = {}) {
     const c = s.commandStaff || {},
       running = s.commandExercise?.status === "running";
     return (
@@ -71,7 +71,7 @@
       (c.autoSupport ? " checked" : "") +
       (!editable ? " disabled" : "") +
       '>통제관 지원 자동 배분</label></div><p class="muted">UAV·의료 회수·보급은 계약 제공분 안에서 운용합니다. 본부의 직접 요청은 계속 가능합니다.</p></section>' +
-      market(s, editable)
+      (options.market === false ? "" : market(s, editable))
     );
   }
   function market(s, editable) {
@@ -221,5 +221,5 @@
             });
         });
   }
-  root.OverwatchStaffUI = { render, field, refresh, bind };
+  root.OverwatchStaffUI = { render, market, field, refresh, bind };
 })(window);

@@ -530,6 +530,15 @@
       : frame.battle.objective
         ? "complete"
         : "pending";
+    // During insertion, delivered telemetry can still say "aboard" after physical
+    // disembarkation. Wait for the field handover before treating those reports as losses.
+    if (
+      e.mission?.fieldStartedAt != null &&
+      e.time - e.mission.fieldStartedAt < 90 &&
+      frame.friends.some((f) => f.waitingForDeployment && f.boardedBy) &&
+      objective === "pending"
+    )
+      return;
     if (
       objective === "complete" ||
       objective === "failed" ||
