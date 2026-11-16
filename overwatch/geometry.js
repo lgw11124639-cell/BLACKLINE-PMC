@@ -348,6 +348,162 @@
     }
     return compact;
   }
+  const tacticalCosts = new WeakMap();
+  function coverDistance(p) {
+    return Math.min(
+      Infinity,
+      ...MAP.buildings.map((b) =>
+        Math.hypot(
+          Math.max(b[0] - p.x, 0, p.x - b[2]),
+          Math.max(b[1] - p.y, 0, p.y - b[3]),
+        ),
+      ),
+    );
+  }
+  // Public geometry only. A* penalizes exposed ground and keeps infantry near
+  // building edges, while retaining real obstacle checks on every segment.
+  function tacticalPath(a, b) {
+    if (!MAP.urban || a.roofId || b.roofId || distance(a, b) < 30)
+      return path(a, b);
+    if (blocked(a) || blocked(b)) return [];
+    const g = MAP.grid,
+      cols = Math.floor(MAP.width / g) + 1,
+      rows = Math.floor(MAP.height / g) + 1,
+      position = (id) => ({ x: (id % cols) * g, y: Math.floor(id / cols) * g });
+    function cell(p) {
+      let best = -1,
+        d = Infinity;
+      const x = Math.round(p.x / g),
+        y = Math.round(p.y / g);
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++) {
+          const q = { x: (x + dx) * g, y: (y + dy) * g };
+          if (
+            x + dx < 0 ||
+            x + dx >= cols ||
+            y + dy < 0 ||
+            y + dy >= rows ||
+            blocked(q) ||
+            !clear(p, q, true)
+          )
+            continue;
+          const v = distance(p, q);
+          if (v < d) {
+            d = v;
+            best = (y + dy) * cols + x + dx;
+          }
+        }
+      return best;
+    }
+    const start = cell(a),
+      goal = cell(b);
+    if (start < 0 || goal < 0) return path(a, b);
+    let weights = tacticalCosts.get(MAP);
+    if (!weights) {
+      weights = new Map();
+      tacticalCosts.set(MAP, weights);
+    }
+    const weight = (id) => {
+      if (!weights.has(id)) {
+        const d = coverDistance(position(id)),
+          edge = MAP.width / 120;
+        weights.set(id, d <= edge ? 1 : d <= edge * 2.5 ? 1.6 : 3.2);
+      }
+      return weights.get(id);
+    };
+    const costs = new Float64Array(cols * rows).fill(Infinity),
+      parents = new Int32Array(cols * rows).fill(-1),
+      heap = [];
+    function push(item) {
+      heap.push(item);
+      let i = heap.length - 1;
+      while (i) {
+        const p = (i - 1) >> 1;
+        if (heap[p].score <= item.score) break;
+        heap[i] = heap[p];
+        i = p;
+      }
+      heap[i] = item;
+    }
+    function pop() {
+      const first = heap[0],
+        last = heap.pop();
+      if (heap.length) {
+        let i = 0;
+        while (i * 2 + 1 < heap.length) {
+          let c = i * 2 + 1;
+          if (c + 1 < heap.length && heap[c + 1].score < heap[c].score) c++;
+          if (heap[c].score >= last.score) break;
+          heap[i] = heap[c];
+          i = c;
+        }
+        heap[i] = last;
+      }
+      return first;
+    }
+    costs[start] = 0;
+    parents[start] = start;
+    push({
+      id: start,
+      cost: 0,
+      score: distance(position(start), position(goal)),
+    });
+    while (heap.length) {
+      const item = pop(),
+        id = item.id;
+      if (item.cost !== costs[id]) continue;
+      if (id === goal) break;
+      const p = position(id),
+        x = id % cols,
+        y = Math.floor(id / cols);
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+        [1, 1],
+        [1, -1],
+        [-1, 1],
+        [-1, -1],
+      ]) {
+        const xx = x + dx,
+          yy = y + dy;
+        if (xx < 0 || xx >= cols || yy < 0 || yy >= rows) continue;
+        const n = yy * cols + xx,
+          q = position(n);
+        if (blocked(q) || !clear(p, q, true)) continue;
+        const cost =
+          item.cost + (Math.hypot(dx, dy) * g * (weight(id) + weight(n))) / 2;
+        if (cost >= costs[n]) continue;
+        costs[n] = cost;
+        parents[n] = id;
+        push({ id: n, cost, score: cost + distance(q, position(goal)) });
+      }
+    }
+    if (parents[goal] < 0) return path(a, b);
+    const out = [{ x: b.x, y: b.y }];
+    let id = goal;
+    while (id !== start) {
+      out.push(position(id));
+      id = parents[id];
+    }
+    out.push(position(start));
+    out.reverse();
+    const compact = [];
+    for (const p of out) {
+      while (compact.length >= 2) {
+        const x = compact.at(-2),
+          y = compact.at(-1);
+        if (
+          Math.abs((y.x - x.x) * (p.y - y.y) - (y.y - x.y) * (p.x - y.x)) > 1e-7
+        )
+          break;
+        compact.pop();
+      }
+      compact.push(p);
+    }
+    return compact;
+  }
   const api = {
     get MAP() {
       return MAP;
@@ -364,6 +520,8 @@
     elevation,
     clear,
     path,
+    tacticalPath,
+    coverDistance,
   };
   root.OverwatchGeometry = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

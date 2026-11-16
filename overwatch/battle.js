@@ -139,6 +139,136 @@
   function untreated(u) {
     return u.health.wounds.some((w) => !w.treated);
   }
+  function performance(u) {
+    if (u.combatSkills) return u.combatSkills;
+    const base = Math.max(0, Math.min(100, u.skill ?? 55)),
+      regular = u.faction === "regular",
+      insurgent = u.faction === "insurgent",
+      allied = u.faction === "allied";
+    const condition = Math.max(
+      0.65,
+      1 - (u.fieldFatigue || 0) * 0.003 - (u.fieldStress || 0) * 0.003,
+    );
+    return Object.fromEntries(
+      Object.entries({
+        shooting: base,
+        observation: base,
+        fitness: base,
+        judgment: Math.max(
+          0,
+          Math.min(
+            100,
+            base + (regular ? 8 : insurgent ? -10 : allied ? 10 : 0),
+          ),
+        ),
+        composure: Math.max(
+          0,
+          Math.min(
+            100,
+            base + (regular ? 5 : insurgent ? -12 : allied ? 10 : 0),
+          ),
+        ),
+        teamwork: Math.max(
+          0,
+          Math.min(
+            100,
+            base + (regular ? 12 : insurgent ? -18 : allied ? 15 : 0),
+          ),
+        ),
+      }).map(([k, v]) => [k, Math.round(v * condition)]),
+    );
+  }
+  function refreshPerformance(s, e, u, elapsed = 0) {
+    const m = s.members.find((m) => m.id === u.id),
+      initial = m ? P.effectiveSkills(m) : performance(u);
+    const active =
+        !u.home && !u.boardedBy && !u.waitingForDeployment && healthy(u),
+      moving = active && (u.path?.length || u.motionActive),
+      threat = active && e.time - (u.lastThreatAt ?? -100) < 8;
+    if (elapsed > 0 && active) {
+      u.fieldFatigue = Math.max(
+        0,
+        Math.min(
+          30,
+          (u.fieldFatigue || 0) +
+            (moving ? 0.012 * (1.4 - initial.fitness / 140) : -0.003) * elapsed,
+        ),
+      );
+      u.fieldStress = Math.max(
+        0,
+        Math.min(
+          25,
+          (u.fieldStress || 0) +
+            (threat
+              ? 0.28 * (1.4 - initial.composure / 120)
+              : -0.018 * (0.5 + initial.composure / 100)) *
+              elapsed,
+        ),
+      );
+    }
+    if (m) {
+      const condition = Math.max(
+        0.65,
+        1 - (u.fieldFatigue || 0) * 0.003 - (u.fieldStress || 0) * 0.003,
+      );
+      u.combatSkills = Object.fromEntries(
+        P.SKILLS.map((k) => [
+          k,
+          Math.max(0, Math.round(initial[k] * condition)),
+        ]),
+      );
+      u.skill = u.combatSkills.shooting;
+      u.primaryProficiency = m.proficiency.primary;
+      const q = qOf(e, u.id);
+      u.pairCohesion = q ? P.relationship(s, q).cohesion : 50;
+    }
+    return performance(u);
+  }
+  function roofAdvantage(u) {
+    const active =
+      !!u.roofId &&
+      !u.roofTransit &&
+      !(u.path?.length || u.overwatchPath?.length || u.motionActive) &&
+      (u.roofHoldSeconds || 0) >= 3 &&
+      !!G.roofBuilding(u) &&
+      healthy(u);
+    return {
+      active,
+      height: active ? G.elevation(u) : 0,
+      dispersion: active && u.role === "sniper" ? 0.85 : 1,
+      angle: active ? (u.role === "sniper" ? 1.5 : 1.25) : 1,
+    };
+  }
+  function firingProfile(u) {
+    const v = performance(u),
+      roof = roofAdvantage(u),
+      proficiency = u.primaryProficiency ?? 60;
+    return {
+      aimSeconds: Math.max(
+        2,
+        Math.ceil(
+          (u.role === "sniper" || u.weapon.model === "SVD" ? 7 : 3) *
+            (1.3 -
+              v.shooting * 0.003 -
+              v.composure * 0.002 +
+              (60 - proficiency) / 500),
+        ) - (roof.active && u.role === "sniper" ? 1 : 0),
+      ),
+      suppressionSeconds: 8 + (100 - v.composure) * 0.175,
+      suppressionPenalty: 1.4 + (100 - v.composure) * 0.02,
+      reloadFactor: Math.max(
+        0.65,
+        1.2 -
+          v.shooting * 0.0015 -
+          v.teamwork * 0.001 +
+          (60 - proficiency) / 500,
+      ),
+      reactionSeconds: Math.max(
+        0,
+        Math.ceil(2.8 - v.judgment * 0.02 - v.composure * 0.015),
+      ),
+    };
+  }
   function moveFactor(u) {
     if (u.boardedBy || u.home) return 0;
     if (!u.health) return 1;
@@ -152,7 +282,12 @@
       return 0;
     const legs = u.health.wounds.filter((w) => /Leg/.test(w.part));
     if (legs.some((w) => w.severity === 3)) return 0;
-    return Math.max(0.35, 1 - legs.length * 0.25) * (u.carrying ? 0.5 : 1);
+    return (
+      Math.max(0.35, 1 - legs.length * 0.25) *
+      (u.carrying ? 0.5 : 1) *
+      (u.side ? 0.85 + performance(u).fitness * 0.0025 : 1) *
+      (1 - (u.fieldFatigue || 0) / 200)
+    );
   }
   function canCommand(u) {
     return !u.health || healthy(u);
@@ -197,6 +332,11 @@
       combatActive: !!u.combatActive,
       fireBlockReason: u.fireBlockReason || null,
       underFire: now !== null && now - (u.lastThreatAt ?? -100) < 8,
+      combatSkills: copy(performance(u)),
+      fieldFatigue: u.fieldFatigue || 0,
+      fieldStress: u.fieldStress || 0,
+      primaryProficiency: u.primaryProficiency ?? null,
+      roofAdvantage: roofAdvantage(u),
       peripheralRange: u.peripheralRange || null,
       peripheralHeading: u.peripheralHeading || 0,
       visionRange: u.visionRange || null,
@@ -601,7 +741,16 @@
     );
   }
   function beforeTick(s, e) {
-    for (const u of all(e)) protectionFor(u);
+    for (const u of all(e)) {
+      protectionFor(u);
+      u.roofHoldSeconds =
+        u.roofId &&
+        !u.roofTransit &&
+        !(u.path?.length || u.overwatchPath?.length || u.motionActive)
+          ? Math.min(3, (u.roofHoldSeconds || 0) + 1)
+          : 0;
+      refreshPerformance(s, e, u, 1);
+    }
     for (const u of all(e))
       u.combatActive =
         e.time - u.lastThreatAt < 8 ||
@@ -813,7 +962,7 @@
       (c) => G.distance(target, c) < Math.max(c.w, c.h) / 2 + 1.5,
     );
     let exposure =
-      (0.055 + (observer.skill || 55) / 1600) *
+      (0.055 + performance(observer).observation / 1600) *
       Math.max(0.15, 1 - (0.8 * d) / range) *
       conceal *
       (moving ? (prone ? 1.3 : 2.8) : 1) *
@@ -865,7 +1014,8 @@
               ? 350
               : 240) +
           G.elevation(u) * 3) *
-        e.battle.weather.visibility
+        e.battle.weather.visibility *
+        (0.85 + performance(u).observation / 400)
       );
     };
     const visible = targets.filter(
@@ -892,6 +1042,12 @@
         lastSeen: e.time,
         condition: snapshot(v).pose,
         roofId: v.roofId || null,
+        threatening: e.battle.shots.some(
+          (shot) =>
+            shot.actorId === v.id &&
+            e.time - shot.time < 5 &&
+            G.distance(shot.to, u) < 20,
+        ),
       });
     }
     return u.memory
@@ -899,7 +1055,13 @@
         (m) =>
           e.time - m.lastSeen < 8 && !["down", "dead"].includes(m.condition),
       )
-      .sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
+      .sort(
+        (a, b) =>
+          Number(!!b.threatening) * performance(u).judgment * 2 -
+          Number(!!a.threatening) * performance(u).judgment * 2 +
+          G.distance(u, a) -
+          G.distance(u, b),
+      )[0];
   }
   function coverPoint(e, u, threat) {
     const options = [];
@@ -913,20 +1075,26 @@
           if (
             G.blocked(p) ||
             G.distance(u, p) > 25 ||
-            e.world.units.some(
+            all(e).some(
               (v) =>
                 v.id !== u.id &&
                 healthy(v) &&
-                G.distance(v.goal || v, p) < (u.side ? 0.8 : 14),
+                (v.side || "blue") === (u.side || "blue") &&
+                G.distance(v.goal || v, p) <
+                  (u.side ? 2 + performance(u).teamwork * 0.04 : 14),
             )
           )
             continue;
           const route = G.path(u, p);
           if (!route.length && G.distance(u, p) > 1) continue;
           const score =
-            (G.clear({ ...p, stance: "standing" }, threat) ? 15 : -20) +
-            (!G.clear({ ...p, stance: "prone" }, threat) ? 25 : 0) -
-            G.distance(u, p);
+            (G.clear({ ...p, stance: "standing" }, threat)
+              ? 10 + performance(u).judgment * 0.08
+              : -20) +
+            (!G.clear({ ...p, stance: "prone" }, threat)
+              ? 15 + performance(u).judgment * 0.2
+              : 0) -
+            G.distance(u, p) * (1.4 - performance(u).judgment * 0.008);
           options.push({ ...p, coverId: c.id, score });
         }
     options.sort((a, b) => b.score - a.score);
@@ -1272,7 +1440,12 @@
   function reload(e, u) {
     const w = u.weapon;
     if (w.loaded === 0 && w.reloadUntil === null && w.magazines.length) {
-      w.reloadUntil = e.time + WEAPONS[w.model].reload;
+      w.reloadUntil =
+        e.time +
+        Math.max(
+          1,
+          Math.round(WEAPONS[w.model].reload * firingProfile(u).reloadFactor),
+        );
       w.aimSince = null;
       I().event(e, "reload-started", { actorId: u.id, until: w.reloadUntil });
     }
@@ -1334,6 +1507,15 @@
       return null;
     }
     G.activate(e.mapId || "command-range");
+    refreshPerformance(s, e, u);
+    const readiness = firingProfile(u);
+    if (e.time - (u.lastThreatAt ?? -100) < readiness.suppressionSeconds) {
+      u.reactionStartedAt ??= u.lastThreatAt;
+      if (e.time - u.reactionStartedAt < readiness.reactionSeconds) {
+        u.fireBlockReason = "recovering";
+        return null;
+      }
+    } else delete u.reactionStartedAt;
     if (
       u.weapon.loaded === 0 &&
       !u.weapon.magazines.length &&
@@ -1404,7 +1586,7 @@
     w.aimAnchorAt = e.time;
     // Aim at the observed position, never at the hidden truth position.
     u.heading = Math.atan2(known.y - u.y, known.x - u.x);
-    const aimSeconds = u.role === "sniper" || w.model === "SVD" ? 7 : 3;
+    const aimSeconds = readiness.aimSeconds;
     if (e.time - w.aimSince < aimSeconds || options.holdFire) {
       u.fireBlockReason = options.holdFire ? "holding-fire" : "aiming";
       return;
@@ -1417,11 +1599,14 @@
         0.035,
         stats.dispersion *
           d *
-          (1.55 - u.skill / 100) *
+          (1.55 - performance(u).shooting / 100) *
+          roofAdvantage(u).dispersion *
           movement *
           armPenalty *
           (1 + Math.min(1.5, w.trackingSpeed / 4)) *
-          (e.time - u.lastThreatAt < 15 ? 2.2 : 1) *
+          (e.time - u.lastThreatAt < readiness.suppressionSeconds
+            ? readiness.suppressionPenalty
+            : 1) *
           Math.max(1, 1.8 - (e.time - w.aimSince) / 12) *
           (stanceOf(u) === "prone"
             ? 0.7
@@ -2075,6 +2260,18 @@
       }
     }
   }
+  function soundBearing(shot, listener) {
+    const angle = Math.atan2(
+        shot.from.y - listener.y,
+        shot.from.x - listener.x,
+      ),
+      raw = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+    return {
+      bearing: Math.atan2(Math.sin(raw), Math.cos(raw)) || 0,
+      bearingUncertainty: Math.PI / 8,
+      listenerId: listener.id,
+    };
+  }
   function shotObservation(e, q, shot) {
     const shooterKnown =
         q.observerId === shot.actorId ||
@@ -2113,6 +2310,7 @@
         hit: false,
         impactVisible: false,
         audioDistance: distance < 150 ? 100 : distance < 450 ? 350 : 700,
+        ...soundBearing(shot, listener),
       };
     }
     if (!shooterKnown)
@@ -2129,6 +2327,10 @@
         to: copy(shot.to),
         hit: ownTarget && shot.hit,
         impactVisible: true,
+        ...soundBearing(
+          shot,
+          unit(e, ownTarget ? shot.targetId : q.observerId),
+        ),
       };
     const seenTarget =
       ownTarget ||
@@ -2182,7 +2384,36 @@
     const witness = own
       ? shooter
       : observers.find((u) => sees(u, shot.actorId));
-    if (!witness) return null;
+    if (!witness) {
+      const stats = WEAPONS[shot.model],
+        hearing = stats?.suppressed ? 350 : 850,
+        listener = observers
+          .filter((u) => G.distance(u, shot.from) < hearing)
+          .sort(
+            (a, b) =>
+              Number(b.id === shot.targetId) - Number(a.id === shot.targetId) ||
+              G.distance(a, shot.from) - G.distance(b, shot.from),
+          )[0];
+      if (!listener) return null;
+      const incoming = G.distance(listener, shot.to) < 20;
+      return {
+        eventId: shot.id,
+        time: shot.time,
+        kind: incoming ? "incoming" : "heard",
+        sourceKnown: false,
+        actorId: null,
+        targetId: listener.id === shot.targetId ? listener.id : null,
+        model: incoming ? "incoming" : "heard",
+        side: "unknown",
+        from: { x: listener.x, y: listener.y },
+        to: { x: listener.x, y: listener.y },
+        hit: shot.hit && listener.id === shot.targetId,
+        impactVisible: incoming,
+        source: "agency",
+        audioDistance: G.distance(listener, shot.from) < 150 ? 100 : 350,
+        ...soundBearing(shot, listener),
+      };
+    }
     const target = all(e).find((a) => a.id === shot.targetId),
       targetKnown = target?.side === "ally" || sees(witness, shot.targetId);
     return {
@@ -2245,7 +2476,14 @@
         const previous = b.knowledge.effects.find(
           (x) => x.eventId === f.eventId,
         );
-        if (previous && previous.kind !== "shot" && f.kind === "shot")
+        if (
+          previous &&
+          previous.kind !== "shot" &&
+          (f.kind === "shot" ||
+            (({ heard: 1, incoming: 2 }[f.kind] || 0) >=
+              ({ heard: 1, incoming: 2 }[previous.kind] || 0) &&
+              f.source === "agency"))
+        )
           Object.assign(previous, f, { receivedAt: e.time });
         if (!previous) {
           b.knowledge.effects.push({ ...f, receivedAt: e.time });
@@ -2601,6 +2839,13 @@
         u.lastShotAt === undefined || n(u.lastShotAt, 0, e.time),
         "사격 시각이 잘못되었습니다.",
       );
+      ok(
+        (u.combatSkills === undefined ||
+          P.SKILLS.every((k) => n(u.combatSkills[k], 0, 100))) &&
+          (u.fieldFatigue === undefined || n(u.fieldFatigue, 0, 30)) &&
+          (u.fieldStress === undefined || n(u.fieldStress, 0, 25)),
+        "전투 능력·피로 자료가 잘못되었습니다.",
+      );
       checkHealth(u.health);
       ok(
         !u.protection ||
@@ -2715,6 +2960,9 @@
     for (const effect of b.knowledge.effects)
       ok(
         typeof effect.eventId === "string" &&
+          (effect.bearing === undefined ||
+            (n(effect.bearing, -Math.PI, Math.PI) &&
+              n(effect.bearingUncertainty, 0, Math.PI))) &&
           n(effect.time, 0, e.time) &&
           n(effect.receivedAt, effect.time, e.time) &&
           [effect.from, effect.to].every(
@@ -2791,6 +3039,11 @@
     coverPoint,
     scanEnemy,
     visualAcquire,
+    performance,
+    refreshPerformance,
+    firingProfile,
+    roofAdvantage,
+    soundBearing,
   };
   root.OverwatchBattle = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

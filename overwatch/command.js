@@ -152,6 +152,8 @@
       for (const r of e.radio)
         if (r.route === "agency" && r.status === "queued")
           evidence.add(r.payload?.agencyLead?.sourceMessageId);
+      if (e.mission?.agencyDirective?.messageId)
+        evidence.add(e.mission.agencyDirective.messageId);
       const currentCommands = new Set(e.squads.map((q) => q.commandId));
       e.radio = e.radio.filter(
         (r) =>
@@ -746,6 +748,9 @@
       };
     }
     const own = leader(e, q),
+      decisionSkill = e.battle
+        ? Battle().performance(own).judgment
+        : (own.planningJudgment ?? 55),
       recent = q.contacts.filter(
         (v) =>
           e.time - v.lastSeen < 30 &&
@@ -886,11 +891,20 @@
         recent.filter((v) => G.clear(p, v) && G.distance(p, v) <= 1000).length *
         35;
       const score =
-        (visible ? 120 : -100) +
-        height * 2 +
+        (visible ? 80 + decisionSkill * 0.7 : -100) +
+        height * (1 + decisionSkill / 60) +
         allyView +
         separation * 0.3 +
-        overlap -
+        overlap * (0.6 + decisionSkill / 150) +
+        (p.roofId
+          ? 25 +
+            decisionSkill * 0.15 +
+            [-60, 0, 60].filter((dx) =>
+              G.clear(p, G.project({ x: sector.x + dx, y: sector.y })),
+            ).length *
+              6 -
+            (p.roofId === own.roofId ? 0 : height * 0.7)
+          : 0) -
         Math.abs(G.distance(p, sector) - 280) * 0.12 -
         G.distance(own, p) * (e.mission?.agencyControl ? 0.35 : 0.055);
       assessed.push({
@@ -1345,28 +1359,40 @@
       .filter((v) => obstructs(u, v))
       .sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
     if (!nearest) return false;
-    for (const r of G.MAP.urban || G.MAP.width < 500
-      ? [2.5, 4, 6, 10, 14]
-      : [18, 30, 50])
-      for (let i = 0; i < 24; i++) {
-        const a = (i * Math.PI) / 12,
-          p = {
-            ...(u.roofId ? { roofId: u.roofId } : {}),
-            x: nearest.x + Math.cos(a) * r,
-            y: nearest.y + Math.sin(a) * r,
-          };
-        if (
-          !G.blocked(p) &&
-          G.clear(u, p, true) &&
-          G.clear(p, next, true) &&
-          clearOfUnits(e, u, u, p) &&
-          clearOfUnits(e, u, p, next)
-        )
-          options.push({ p, d: G.distance(u, p) + G.distance(p, next) });
-      }
+    for (const [joinIndex, join] of u.path.slice(0, 5).entries()) {
+      if (
+        join.roofTransition ||
+        u.path.slice(0, joinIndex).some((p) => p.roofTransition)
+      )
+        continue;
+      for (const r of G.MAP.urban || G.MAP.width < 500
+        ? [2.5, 4, 6, 10, 14]
+        : [18, 30, 50])
+        for (let i = 0; i < 24; i++) {
+          const a = (i * Math.PI) / 12,
+            p = {
+              ...(u.roofId ? { roofId: u.roofId } : {}),
+              x: nearest.x + Math.cos(a) * r,
+              y: nearest.y + Math.sin(a) * r,
+            };
+          if (
+            !G.blocked(p) &&
+            G.clear(u, p, true) &&
+            G.clear(p, join, true) &&
+            clearOfUnits(e, u, u, p) &&
+            clearOfUnits(e, u, p, join)
+          )
+            options.push({
+              p,
+              joinIndex,
+              d: G.distance(u, p) + G.distance(p, join) + joinIndex * 0.2,
+            });
+        }
+    }
     options.sort((a, b) => a.d - b.d);
     if (!options.length) return false;
     if (u.path.length >= 250 || G.distance(u, options[0].p) < 0.1) return false;
+    u.path.splice(0, options[0].joinIndex);
     u.path.unshift(options[0].p);
     return true;
   }
@@ -1443,6 +1469,21 @@
         return;
       }
       if (!G.clear(u, p, true)) {
+        if (
+          u.goal &&
+          (u.routeRetries || 0) < 3 &&
+          e.time - (u.routeReplanAt ?? -100) > 5
+        ) {
+          const route = G.path(u, u.goal, 5);
+          if (route.length && G.clear(u, route[0], true)) {
+            u.path = route;
+            u.routeRetries = (u.routeRetries || 0) + 1;
+            u.routeReplanAt = e.time;
+            u.state = "rerouting";
+            event(e, "route-replanned", { actorId: u.id, goal: copy(u.goal) });
+            return;
+          }
+        }
         u.path = [];
         u.state = "blocked";
         return;
@@ -1652,7 +1693,10 @@
       if (tracked) look = tracked;
     }
     const m = member(s, u.id),
-      v = P.effectiveSkills(m),
+      v =
+        e.battle && u.combatSkills
+          ? Battle().performance(u)
+          : P.effectiveSkills(m),
       observerFactor = u.role === "observer" ? 1 : 0.65,
       radius = optics
         ? (u.role === "sniper"
@@ -1684,6 +1728,7 @@
           ? Math.PI * 0.1
           : Math.PI * 0.18
         : Math.PI * 0.42;
+      if (optics) u.visionHalfAngle *= Battle().roofAdvantage(u).angle;
     }
     u.peripheralRange =
       (u.role === "observer" ? 80 : 50) * e.battle?.weather?.visibility || 50;
@@ -2019,7 +2064,11 @@
           moveUnit(
             e,
             u,
-            (0.8 + P.effectiveSkills(member(s, id)).fitness / 150) *
+            (0.8 +
+              (e.battle
+                ? Battle().performance(u).fitness
+                : P.effectiveSkills(member(s, id)).fitness) /
+                150) *
               (e.battle ? Battle().moveFactor(u) : 1),
           );
       }
@@ -2056,6 +2105,15 @@
             (u) =>
               u.capable &&
               u.state === "blocked" &&
+              ![q.observerId, q.sniperId].some((id) => {
+                const other = unit(e, id);
+                return (
+                  other.id !== u.id &&
+                  other.capable &&
+                  other.roofTransit &&
+                  other.roofTransit.dueAt >= e.time
+                );
+              }) &&
               (!u.path.length || e.time - (u.blockedAt ?? e.time) >= 30),
           )
       ) {

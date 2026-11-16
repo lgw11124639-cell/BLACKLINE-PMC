@@ -13,6 +13,9 @@ for (const key of [
   "rescue-cover",
   "vip-cover",
   "quiet-watch",
+  "gwangju-rescue",
+  "seoul-watch",
+  "busan-escort",
 ])
   test(
     "delegated " +

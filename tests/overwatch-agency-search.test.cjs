@@ -208,7 +208,11 @@ test("infantry clear a blocked friendly firing lane before firing instead of rem
   locate(v, G.project({ x: 450, y: 775 }));
   v.health.conscious = true;
   v.deployment = null;
-  step(s, 100);
+  for (let i = 0; i < 100; i++) {
+    e.mission.securityControl.authorized = false;
+    e.mission.securityControl.lastAssessment = e.time;
+    step(s);
+  }
   assert.ok(
     e.mission.log.some((ev) => ev.type === "agency-fire-lane-reposition"),
   );

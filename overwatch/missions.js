@@ -41,7 +41,7 @@
       medical: false,
       supply: false,
       brief:
-        "순찰 증가 보고의 진위를 확인한다. 무장 인원 2개 접촉을 실제 관측·식별하고 복귀한다.",
+        "순찰 증가 보고의 진위를 확인한다. 여섯 담당 구역의 접근로와 위협을 실제 관측·식별하고 복귀한다.",
     },
     {
       key: "aid-cover",
@@ -113,7 +113,7 @@
       medical: false,
       supply: false,
       brief:
-        "도보로 출발해 능선 외곽에서 무장 접촉 2개를 식별한다. 별도 수송·의료 회수·공습 지원은 제공되지 않는다.",
+        "도보로 출발해 담당 여섯 구역을 실제 정찰한다. 별도 수송·의료 회수·공습 지원은 제공되지 않는다.",
     },
     {
       key: "high-value-target",
@@ -176,6 +176,87 @@
         "서로 다른 시각에 이동하는 무장 전달책 두 명을 신원 확인 후 저지한다. 실제 행동 불능 또는 사망을 관측해야 하며, 살아서 탈출 지점에 도착하면 실패한다. 비무장 인원은 표적이 아니다.",
     },
   ];
+  for (const [key, title, task, mapId, transport, risk] of [
+    [
+      "gwangju-rescue",
+      "광주 도심 고립 인원 수색·구출",
+      "rescue",
+      "city-gwangju",
+      "vehicle",
+      3,
+    ],
+    [
+      "seoul-watch",
+      "서울 고층 관측망 정찰",
+      "recon",
+      "city-seoul",
+      "helicopter",
+      3,
+    ],
+    [
+      "busan-escort",
+      "부산 도심 연락관 호송",
+      "escort",
+      "city-busan",
+      "vehicle",
+      3,
+    ],
+    [
+      "radar-watch",
+      "고원 레이더 기지 동향 정찰",
+      "recon",
+      "urban-radar",
+      "vehicle",
+      2,
+    ],
+    [
+      "hillside-rescue",
+      "산악 마을 인원 구출",
+      "rescue",
+      "urban-hillside",
+      "helicopter",
+      3,
+    ],
+    [
+      "depot-intercept",
+      "사막 보급 연락책 이동 차단",
+      "interdict",
+      "urban-depot",
+      "vehicle",
+      3,
+    ],
+  ])
+    TEMPLATES.push({
+      key,
+      title,
+      task,
+      mapId,
+      issuer: "합동 작전지원본부",
+      type: {
+        rescue: "수색·구출",
+        recon: "구역 정찰",
+        escort: "호송·엄호",
+        interdict: "이동 표적 차단",
+      }[task],
+      min: task === "rescue" ? 4 : 2,
+      recommended: task === "rescue" ? 6 : 4,
+      risk,
+      reward: risk * 3200000,
+      bonus: risk * 600000,
+      transport,
+      drone: true,
+      medical: true,
+      supply: task !== "recon",
+      ...(task === "interdict" ? { targetCount: 2, targetLabel: "DEPOT" } : {}),
+      brief:
+        task === "recon"
+          ? "여섯 담당 구역을 실제 관측하고 접근로·위협·미확인 구역을 보고한 뒤 복귀한다."
+          : task === "rescue"
+            ? "목표 위치를 미리 알지 못한 상태에서 구역을 수색한다. 저격조·UAV의 식별 보고를 기관 보병에 전달해 현장 확보 후 구출한다."
+            : task === "escort"
+              ? "기관 보병과 보호 대상을 호송한다. 옥상 관측·교대 엄호와 실제 접촉 보고를 바탕으로 경로를 조정한다."
+              : "무장 연락책 두 명을 실제 식별·차단한다. 일반 경계병과 구분하고 기관 보병이 현장을 확인·확보한 뒤 복귀한다.",
+    });
   const participant = (s, id) => s.activeMission?.memberIds.includes(id),
     member = (s, id) =>
       s.members.find((m) => m.id === id) ||
@@ -196,7 +277,7 @@
     s.schemaVersion = 5;
     s.operations = {
       sequence: 0,
-      contentVersion: 4,
+      contentVersion: 5,
       reports: [],
       nextRefreshAt: 0,
       inspection: null,
@@ -225,7 +306,8 @@
         ],
         original = { "aid-cover": 1, "rescue-cover": 2, "vip-cover": 0 }[t.key],
         baseMapId =
-          t.task === "eliminate" || t.task === "interdict"
+          t.mapId ||
+          (t.task === "eliminate" || t.task === "interdict"
             ? {
                 "high-value-target": "urban-embassy",
                 "counter-sniper": "urban-research",
@@ -237,7 +319,7 @@
                 : cityMaps[
                     (seq + (t.key === "quiet-watch" ? 2 : 0)) % cityMaps.length
                   ]
-              : cityMaps[(original + seq - 1) % cityMaps.length],
+              : cityMaps[(original + seq - 1) % cityMaps.length]),
         mapId = G.maps[baseMapId + "-operation"]
           ? baseMapId + "-operation"
           : baseMapId,
@@ -298,7 +380,7 @@
   const targeted = (m) =>
     ["eliminate", "interdict"].includes(m?.contract?.task);
   function upgrade(s) {
-    if (s.schemaVersion !== 5 || s.operations.contentVersion === 4)
+    if (s.schemaVersion !== 5 || s.operations.contentVersion === 5)
       return false;
     const missing = TEMPLATES.filter(
       (t) => !s.contracts.some((c) => c.key === t.key),
@@ -309,7 +391,7 @@
         c.agencyInfantry = 4;
     if (s.commandExercise?.status === "running" && s.commandExercise.mission)
       ensureSecurity(s, s.commandExercise);
-    s.operations.contentVersion = 4;
+    s.operations.contentVersion = 5;
     return true;
   }
   function updateOffers(s) {
@@ -343,7 +425,10 @@
     s.contracts = s.contracts.filter((c) =>
       ["offered", "accepted", "active"].includes(c.status),
     );
-    ok(s.contracts.length <= 10, "현재 제안을 처리한 뒤 다시 접수하세요.");
+    ok(
+      s.contracts.length <= Math.max(10, TEMPLATES.length + 2),
+      "현재 제안을 처리한 뒤 다시 접수하세요.",
+    );
     offers(s);
   }
   function regionsFor(contract) {
@@ -1900,17 +1985,67 @@
   }
   function moveGround(u, goal, speed, e) {
     if (
+      (u.agencyCoverGoal || u.agencyFireGoal) &&
+      u.taskMoveGoal &&
+      G.distance(u.taskMoveGoal, goal) > 1
+    ) {
+      u.path = [];
+      delete u.agencyBoundPath;
+    }
+    if (
       u.taskMoveGoal &&
       (G.distance(u.taskMoveGoal, goal) > Math.max(30, G.MAP.grid * 3) ||
         (u.taskMoveGoal.roofId || null) !== (goal.roofId || null))
-    )
+    ) {
       u.path = [];
+      delete u.agencyBoundPath;
+    }
     u.taskMoveGoal = {
       x: goal.x,
       y: goal.y,
       ...(goal.roofId ? { roofId: goal.roofId } : {}),
     };
-    if (!u.path?.length) u.path = G.path(u, goal);
+    const tactical =
+      u.side === "ally" &&
+      u.armed &&
+      e &&
+      G.MAP.urban &&
+      !u.agencyCoverGoal &&
+      !u.agencyFireGoal &&
+      G.distance(u, goal) > 30;
+    const exposed = tactical && G.coverDistance(u) > G.MAP.width / 60,
+      buddy =
+        exposed &&
+        e.world.actors.some(
+          (a) =>
+            a.id !== u.id &&
+            a.side === "ally" &&
+            a.armed &&
+            a.health.alive &&
+            a.health.conscious &&
+            G.distance(a, u) < 80,
+        );
+    if (
+      buddy &&
+      B().performance(u).teamwork >= 50 &&
+      (Number(u.id.split("-").at(-1)) || 0) % 2 !== Math.floor(e.time / 5) % 2
+    ) {
+      if (u.path?.length) u.agencyBoundPath = u.path;
+      u.path = [];
+      u.stance = "kneeling";
+      u.prone = false;
+      u.state = "crossing-overwatch";
+      return false;
+    }
+    if (u.agencyBoundPath) {
+      if (tactical) u.path = u.agencyBoundPath;
+      delete u.agencyBoundPath;
+    }
+    if (!u.path?.length)
+      u.path =
+        u.side === "ally" && u.armed && !u.agencyCoverGoal && !u.agencyFireGoal
+          ? G.tacticalPath(u, goal)
+          : G.path(u, goal);
     if (!u.path.length) return G.distance(u, goal) < 2;
     const next = u.path[0];
     if (next.roofTransition) {
@@ -3188,7 +3323,13 @@
     });
   }
   function agencyCover(s, e, u, enemies) {
-    if (!u.armed || B().moveFactor(u) <= 0) return false;
+    if (
+      !u.armed ||
+      B().moveFactor(u) <= 0 ||
+      u.agencyFireGoal ||
+      e.time < (u.agencyCoverPauseUntil || 0)
+    )
+      return false;
     const incoming = B().underFire(e, u),
       shot = e.battle.shots.findLast(
         (x) =>
@@ -3220,6 +3361,13 @@
         for (const b of G.MAP.buildings)
           for (const x of [b[0] - 1.2, b[2] + 1.2])
             for (const y of [b[1] - 1.2, b[3] + 1.2]) points.push({ x, y });
+        const direction = Math.atan2(u.y - threat.y, u.x - threat.x);
+        for (const radius of [8, 14, 22])
+          for (const angle of [0, Math.PI / 3, -Math.PI / 3])
+            points.push({
+              x: u.x + Math.cos(direction + angle) * radius,
+              y: u.y + Math.sin(direction + angle) * radius,
+            });
         const candidates = points
           .filter(
             (p) =>
@@ -3240,14 +3388,17 @@
             p,
             score:
               (!G.clear({ ...p, prone: true, stance: "prone" }, threat)
-                ? 100
-                : 0) - G.distance(u, p),
+                ? 60 + B().performance(u).judgment * 0.7
+                : 0) -
+              G.distance(u, p) * (1.4 - B().performance(u).judgment * 0.008),
           }))
           .sort((a, b) => b.score - a.score);
         if (candidates.length) {
           u.agencyCoverGoal = copy(candidates[0].p);
           u.agencyCoverUntil = e.time + 60;
           u.agencyCoverStartedAt = e.time;
+          delete u.coverBestDistance;
+          u.coverProgressAt = e.time;
           log(e, "agency-cover-selected", {
             actorId: u.id,
             position: u.agencyCoverGoal,
@@ -3264,6 +3415,54 @@
       return false;
     }
     if (G.distance(u, u.agencyCoverGoal) > 1) {
+      const slot = Number(u.id.split("-").at(-1)) || 0,
+        buddyMoving = e.world.actors.some(
+          (a) =>
+            a.id !== u.id &&
+            a.side === "ally" &&
+            a.armed &&
+            a.health.alive &&
+            a.health.conscious &&
+            a.agencyCoverGoal &&
+            a.path?.length &&
+            G.distance(a, u) < 60,
+        );
+      if (
+        slot % 2 === 1 &&
+        buddyMoving &&
+        e.time - u.agencyCoverStartedAt < 4 &&
+        enemies.length
+      ) {
+        u.path = [];
+        u.stance = "kneeling";
+        u.prone = false;
+        u.state = "covering";
+        const target = enemies[0];
+        u.heading = Math.atan2(target.y - u.y, target.x - u.x);
+        B().fire(s, e, u, {
+          id: target.id,
+          x: target.x,
+          y: target.y,
+          lastSeen: e.time,
+          condition: B().snapshot(target).pose,
+        });
+        return true;
+      }
+      const remaining = G.distance(u, u.agencyCoverGoal);
+      if (
+        u.coverBestDistance === undefined ||
+        remaining < u.coverBestDistance - 1
+      ) {
+        u.coverBestDistance = remaining;
+        u.coverProgressAt = e.time;
+      }
+      if (e.time - (u.coverProgressAt ?? e.time) > 10) {
+        u.lastAgencyCover = { ...u.agencyCoverGoal };
+        delete u.agencyCoverGoal;
+        u.path = [];
+        delete u.coverBestDistance;
+        return false;
+      }
       moveGround(u, u.agencyCoverGoal, 0.9 * B().moveFactor(u), e);
       u.prone = false;
       u.stance = "standing";
@@ -3284,8 +3483,21 @@
           x: target.x,
           y: target.y,
           lastSeen: e.time,
+          condition: B().snapshot(target).pose,
         });
+        if (["friendly-in-lane", "line-of-sight"].includes(u.fireBlockReason)) {
+          delete u.agencyCoverGoal;
+          clearAgencyFireLane(e, u, target);
+        }
       }
+    }
+    if (
+      e.mission.agencyDirective?.mode === "withdraw" &&
+      e.time - (u.agencyCoverStartedAt ?? e.time) >= 4
+    ) {
+      delete u.agencyCoverGoal;
+      u.agencyCoverPauseUntil = e.time + 6;
+      return false;
     }
     if (e.time >= u.agencyCoverUntil) {
       delete u.agencyCoverGoal;
@@ -3349,6 +3561,80 @@
       point: copy(choice.p),
     });
   }
+  function commandAgency(s, mode) {
+    const e = s.commandExercise,
+      m = e?.mission;
+    ok(
+      m && e.status === "running" && !m.returnRequested,
+      "진행 중인 기관 지원 작전이 필요합니다.",
+    );
+    ok(
+      ["auto", "hold", "advance", "withdraw"].includes(mode),
+      "기관 보병 명령이 잘못되었습니다.",
+    );
+    const anchors = Object.fromEntries(
+      (m.knowledge.actors || [])
+        .filter((a) => a.armed)
+        .map((a) => [a.id, { x: a.x, y: a.y }]),
+    );
+    const ev = log(e, "hq-agency-order", { mode });
+    I().radio(
+      s,
+      e,
+      e.squads[0],
+      "agency",
+      "HQ",
+      "AGENCY",
+      "tasking",
+      {
+        auto: "기관 보병, 현장 판단에 따라 구역 수색·엄호를 재개하라.",
+        hold: "기관 보병, 현 구역 분산 엄폐·사주 경계. 위협 식별 시 대응 사격하라.",
+        advance: "기관 보병, 확인 중인 구역으로 분대 엄호 아래 진출하라.",
+        withdraw: "기관 보병, 상호 엄호하며 회수 지점으로 철수하라.",
+      }[mode],
+      ev,
+      { agencyDirective: { mode, anchors } },
+    );
+  }
+  function agencyManualMove(e, u) {
+    const d = e.mission.agencyDirective;
+    if (!u.armed || !d || d.mode === "auto" || e.mission.returnRequested)
+      return false;
+    const m = e.mission,
+      slot = Number(u.id.split("-").at(-1)) || 0;
+    if (u.agencyDirectiveId !== d.messageId) {
+      u.agencyDirectiveId = d.messageId;
+      u.agencyHoldAnchor = copy(d.anchors[u.id] || { x: u.x, y: u.y });
+    }
+    let goal =
+      d.mode === "withdraw"
+        ? m.extractionPoint || m.contract.insertion
+        : d.mode === "hold"
+          ? u.agencyHoldAnchor
+          : m.groundSearch
+            ? searchPoint(e)
+            : m.contract.task === "recon"
+              ? m.reconPlan?.areas.find((a) => a.checkedAt == null)?.point ||
+                m.contract.insertion
+              : m.agencyControl?.waypoint || m.taskGoal;
+    goal = G.project({
+      x: goal.x + Math.cos((slot * Math.PI) / 2) * 3,
+      y: goal.y + Math.sin((slot * Math.PI) / 2) * 3,
+    });
+    moveGround(u, goal, 0.85 * B().moveFactor(u), e);
+    u.state =
+      d.mode === "withdraw"
+        ? "withdrawing"
+        : u.path.length
+          ? "securing"
+          : "all-round-guard";
+    if (!u.path.length) {
+      u.heading = (slot * Math.PI) / 2;
+      u.stance = "kneeling";
+      u.prone = false;
+    }
+    return true;
+  }
   function actorTaskTick(s, e, u) {
     if (u.waitingForDeployment) {
       if (e.mission.fieldStartedAt == null) return;
@@ -3374,7 +3660,14 @@
         B().visualAcquire(e, u, a, 200),
     );
     if (B().underFire(e, u) && e.time - (m.lastSupportAlertAt ?? -100) >= 20) {
-      const seen = enemies[0],
+      const incoming = e.battle.shots.findLast(
+          (shot) =>
+            shot.side === "red" &&
+            e.time - shot.time < 8 &&
+            G.distance(shot.to, u) < 12,
+        ),
+        direction = incoming ? B().soundBearing(incoming, u) : {},
+        seen = enemies[0],
         ev = log(e, "agency-under-fire", {
           actorId: u.id,
           attackerId: seen?.id || null,
@@ -3392,6 +3685,7 @@
             actorId: u.id,
             position: { x: u.x, y: u.y },
             observedAt: e.time,
+            ...direction,
             contact: seen
               ? {
                   id: seen.id,
@@ -3429,7 +3723,8 @@
               );
         if (medic) B().bandage(s, e, medic, u);
       }
-      return;
+      if (u.health.aid || B().moveFactor(u) <= 0 || !B().underFire(e, u))
+        return;
     }
     if (respondToCasualty(s, e, u, enemies)) return;
     if (u.agencyFireGoal) {
@@ -3444,12 +3739,24 @@
       }
       return;
     }
+    const doctrine = m.agencyDirective?.mode;
+    if (
+      ["advance", "withdraw"].includes(doctrine) &&
+      u.armed &&
+      (!enemies.length ||
+        Math.floor(e.time / 6) % 2 ===
+          (Number(u.id.split("-").at(-1)) || 0) % 2)
+    ) {
+      if (agencyManualMove(e, u)) return;
+    }
     if (
       u.armed &&
       enemies.length &&
       (u.weapon.loaded > 0 ||
         u.weapon.magazines.length ||
-        u.weapon.reloadUntil !== null)
+        u.weapon.reloadUntil !== null ||
+        (enemies.some((v) => G.distance(u, v) < 65) &&
+          (u.sidearm.loaded > 0 || u.sidearm.magazines.length)))
     ) {
       const v = enemies.sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
       u.memory = u.memory || [];
@@ -3472,6 +3779,7 @@
         clearAgencyFireLane(e, u, seen);
       return;
     }
+    if (agencyManualMove(e, u)) return;
     if (
       !securityOnly(m) &&
       m.agencyControl &&
@@ -3875,6 +4183,17 @@
     }
   }
   function applyPayload(e, r) {
+    if (r.route === "agency" && r.payload?.agencyDirective) {
+      e.mission.agencyDirective = {
+        ...copy(r.payload.agencyDirective),
+        messageId: r.id,
+        receivedAt: e.time,
+      };
+      log(e, "agency-order-received", {
+        mode: r.payload.agencyDirective.mode,
+        messageId: r.id,
+      });
+    }
     if (r.route === "agency" && r.payload?.agencyLead) {
       const g = groundSearch(e);
       if (g) {
@@ -4139,15 +4458,44 @@
         p.proficiency.primary +
           (m.fieldStartedAt === null ? 0 : success ? 2 : 1),
       );
+      if (row.disposition === "returned" && m.fieldStartedAt !== null) {
+        const primary = p.specialty === "sniper" ? "shooting" : "observation",
+          evidence =
+            p.specialty === "sniper"
+              ? Math.min(row.stats.shots, 30) * 0.012
+              : Math.min(row.stats.observations, 20) * 0.025;
+        P.learn(
+          p,
+          primary,
+          Math.min(0.8, evidence * (1 - p.skills[primary] / 125)),
+          { time: s.clock.elapsedSeconds, source: "field", eventId: m.id },
+        );
+        if (success)
+          P.learn(p, "judgment", 0.2, {
+            time: s.clock.elapsedSeconds,
+            source: "field",
+            eventId: m.id,
+          });
+        if (model.health.alive && (row.stats.shots || row.stats.observations))
+          P.learn(p, "composure", 0.15, {
+            time: s.clock.elapsedSeconds,
+            source: "field",
+            eventId: m.id,
+          });
+      }
       p.fatigue = Math.min(
         100,
-        p.fatigue + (e.time / P.HOUR) * 6 + row.stats.aid * 2,
+        p.fatigue +
+          (e.time / P.HOUR) * 6 +
+          row.stats.aid * 2 +
+          (model.fieldFatigue || 0),
       );
       p.stress = Math.min(
         100,
         p.stress +
           row.stats.shots * 0.15 +
-          (anyLoss ? 15 : (e.time / P.HOUR) * 1.5),
+          (anyLoss ? 15 : (e.time / P.HOUR) * 1.5) +
+          (model.fieldStress || 0),
       );
       if (row.disposition === "missing") {
         P.markMissing(s, p.id);
@@ -4249,6 +4597,7 @@
       battle: { ...f.battle, result: null },
       mission: {
         id: m.id,
+        agencyDirective: m.agencyDirective?.mode || "auto",
         agencyControl: m.agencyControl
           ? {
               phase: m.agencyControl.phase,
@@ -4485,6 +4834,22 @@
               r.payload.contact.observedAt === c.observedAt,
           ),
         "식별 목표의 수신 근거가 잘못되었습니다.",
+      );
+    if (m.agencyDirective)
+      ok(
+        ["auto", "hold", "advance", "withdraw"].includes(
+          m.agencyDirective.mode,
+        ) &&
+          n(m.agencyDirective.receivedAt, 0, e.time) &&
+          Object.values(m.agencyDirective.anchors || {}).every(point) &&
+          e.radio.some(
+            (r) =>
+              r.id === m.agencyDirective.messageId &&
+              r.route === "agency" &&
+              r.status === "delivered" &&
+              r.payload?.agencyDirective?.mode === m.agencyDirective.mode,
+          ),
+        "기관 보병 지시의 수신 기록이 잘못되었습니다.",
       );
     if (m.groundSearch) {
       const g = m.groundSearch;
@@ -4739,6 +5104,7 @@
     requestSupport,
     retaskDrone,
     actorTaskTick,
+    commandAgency,
     updateAgencyControl,
     searchPoint,
     updateSecurityControl,

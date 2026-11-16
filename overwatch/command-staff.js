@@ -342,6 +342,13 @@
     const m = e.mission,
       transport = m.knowledge.transports.find((t) => t.id === "primary");
     if (!transport || transport.manifest?.length) return;
+    const descent = Math.max(
+      60,
+      ...frame.friends
+        .filter((f) => f.roofId && !f.home)
+        .map((f) => (f.elevation || 0) * 2 + 30),
+    );
+    if (e.time - (c.lastPickupDecisionAt ?? -1000) < descent) return;
     const crewPresent = m.knowledge.crew.some((crew) =>
       crew.id.startsWith("primary"),
     );
@@ -461,6 +468,7 @@
         attempt: c.pickupAttempts,
       },
     );
+    c.lastPickupDecisionAt = e.time;
     if (crewPresent) c.pendingPickup = choices[0].p;
     else M().requestReturn(s, { pickup: choices[0].p, authority: a });
   }
@@ -687,8 +695,22 @@
         cost = 100000 * Math.ceil(count / 2),
         course = [...P().SKILLS].sort(
           (a, b) =>
-            cohort.reduce((n, m) => n + m.skills[a], 0) -
-            cohort.reduce((n, m) => n + m.skills[b], 0),
+            cohort.reduce(
+              (n, m) =>
+                n +
+                (P()
+                  .trainingPriorities(m)
+                  .find((x) => x.skill === b)?.need || 0),
+              0,
+            ) -
+            cohort.reduce(
+              (n, m) =>
+                n +
+                (P()
+                  .trainingPriorities(m)
+                  .find((x) => x.skill === a)?.need || 0),
+              0,
+            ),
         )[0];
       if (plan.spent + cost <= 500000 && s.headquarters.funds >= cost)
         request = {
@@ -699,7 +721,27 @@
         };
       else request = { kind: "rest", memberIds: [pool[0].id], hours: 6 };
     }
+    const pair = s.squads.find(
+      (q) =>
+        pool.some((m) => m.id === q.observerId) &&
+        pool.some((m) => m.id === q.sniperId) &&
+        P().relationship(s, q).cohesion < 75,
+    );
+    if (
+      request.kind === "training" &&
+      pair &&
+      (plan.sessions || 0) % 3 === 2 &&
+      plan.spent + 200000 <= 500000 &&
+      s.headquarters.funds >= 200000
+    )
+      request = {
+        kind: "pair",
+        callsign: pair.callsign,
+        memberIds: [pair.observerId, pair.sniperId],
+      };
     const activity = P().start(s, { ...request, instructorId: instructor.id });
+    if (["training", "pair"].includes(activity.kind))
+      plan.sessions = (plan.sessions || 0) + 1;
     plan.spent += activity.cost;
     plan.lastAt = s.clock.elapsedSeconds;
     activity.memberIds.forEach(
@@ -1228,7 +1270,15 @@
       e.time - alert.receivedAt < 30 &&
       c.handledSupportAlert !== alert.eventId
     ) {
-      const threatPoint = G().project(alert.contact || alert.position);
+      const threatPoint = G().project(
+        alert.contact ||
+          (typeof alert.bearing === "number"
+            ? {
+                x: alert.position.x + Math.cos(alert.bearing) * 120,
+                y: alert.position.y + Math.sin(alert.bearing) * 120,
+              }
+            : alert.position),
+      );
       const candidates = e.squads
         .filter(
           (q) =>
@@ -1304,9 +1354,11 @@
             : "controller-urgent-cover",
           alert.proactive
             ? "기관의 무장 위협 식별 보고 수신. 사격선과 사거리가 확보된 저격조를 우선 배정해 엄호한다."
-            : canShoot
-              ? "기관 피격 보고 수신. 저격조는 식별된 위협에 즉시 엄호 사격한다."
-              : "기관 피격 보고 수신. 사각·사거리 문제를 확인해 저격조를 대체 엄호 진지로 이동시킨다.",
+            : !alert.contact
+              ? "기관 피격 방향 보고 수신. 해당 방위를 관측하고 적을 실제 식별한 뒤 엄호한다."
+              : canShoot
+                ? "기관 피격 보고 수신. 저격조는 식별된 위협에 즉시 엄호 사격한다."
+                : "기관 피격 보고 수신. 사각·사거리 문제를 확인해 저격조를 대체 엄호 진지로 이동시킨다.",
           {
             callsign: choice.q.callsign,
             reportEventId: alert.eventId,
@@ -1365,7 +1417,7 @@
         const searchAgain =
           !target &&
           cmd?.status === "completed" &&
-          e.time - cmd.completedAt > 25;
+          e.time - cmd.completedAt > (q.tactical?.position?.roofId ? 150 : 25);
 
         if (
           !cmd ||
@@ -1445,6 +1497,16 @@
         continue;
       }
       if (!D().internals.leader(e, q)?.capable) continue;
+      const currentPost = e.commands.find(
+        (command) => command.id === q.commandId,
+      );
+      if (
+        q.tactical?.position?.roofId &&
+        currentPost?.status === "completed" &&
+        e.time - currentPost.completedAt < 120 &&
+        !identified.some((x) => x.current && x.combatActive)
+      )
+        continue;
       const staged = e.mission?.agencyControl && !reconTask;
       const alreadyRecon = e.commands.some(
         (x) =>
