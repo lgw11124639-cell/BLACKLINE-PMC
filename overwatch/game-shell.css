@@ -1770,3 +1770,99 @@ body[data-screen="headquarters"] .hq-dashboard > .panel {
   width: 100%;
   margin-top: 6px;
 }
+
+/* Headquarters uses one page scroll; preparation stays above optional recruitment. */
+body[data-screen="headquarters"] main {
+  display: block;
+  overflow-y: auto !important;
+}
+body[data-screen="headquarters"] .hq-dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  flex: none;
+}
+body[data-screen="headquarters"] .hq-dashboard > .panel {
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+  padding: 20px;
+}
+.hq-recruitment {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+.hq-recruitment > summary {
+  padding: 18px 20px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.hq-recruitment > summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 12px;
+}
+.hq-recruitment > .staff-market {
+  border: 0;
+  margin: 0;
+  padding: 20px;
+  overflow: visible;
+}
+.hq-team-summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+.hq-team-summary article {
+  display: flex;
+  gap: 20px;
+  padding: 12px;
+  background: #0b171d;
+  border-radius: 6px;
+}
+.hq-team-summary span {
+  color: var(--muted);
+}
+body[data-screen="headquarters"] .inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+body[data-screen="headquarters"] .inline-actions button {
+  flex: 1 1 130px;
+  padding: 12px;
+}
+@media (max-width: 1100px), (max-height: 650px) {
+  body[data-screen="headquarters"] .hq-dashboard {
+    grid-template-columns: 1fr;
+  }
+  body[data-screen="headquarters"] .hq-dashboard > .panel {
+    padding: 16px;
+  }
+}
+.sortie-teams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.sortie-teams label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #192c2d;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.sortie-teams input {
+  width: 18px;
+  height: 18px;
+}

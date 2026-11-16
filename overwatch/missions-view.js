@@ -173,8 +173,32 @@
           "명 / 권장 " +
           accepted.recommended +
           "명 · 현재 편성 " +
-          s.squads.length * 2 +
-          "명</p><p>출격 시 소모품 예치 " +
+          M.selectedSquads(s, accepted).length * 2 +
+          '명</p><fieldset class="sortie-teams" data-sortie-teams="' +
+          esc(accepted.id) +
+          '"><legend>투입 저격조 선택 · ' +
+          M.selectedSquads(s, accepted).length +
+          "개 조 / " +
+          M.selectedSquads(s, accepted).length * 2 +
+          "명</legend>" +
+          s.squads
+            .map(
+              (q) =>
+                '<label><input type="checkbox" value="' +
+                esc(q.callsign) +
+                '"' +
+                (M.selectedSquads(s, accepted).some(
+                  (t) => t.callsign === q.callsign,
+                )
+                  ? " checked"
+                  : "") +
+                (!editable || active ? " disabled" : "") +
+                ">" +
+                esc(q.callsign) +
+                "</label>",
+            )
+            .join("") +
+          "</fieldset><p>선택하지 않은 저격조는 본부에 대기합니다.</p><p>출격 시 소모품 예치 " +
           cash(M.reserveFor(s).total) +
           " · 실제 사용·손실만 차감하고 차액을 환급합니다. 제공 수송·지원의 추가 청구는 없습니다.</p><p>" +
           esc(M.ready(s, accepted) || "편성·계약·회복·예산 조건 충족") +
@@ -489,6 +513,15 @@
     });
     each("[data-live-inspect]", () => commit((next) => M.inspection(next)));
     each("[data-live-refresh]", () => commit((next) => M.refresh(next)));
+    rootNode.querySelectorAll("[data-sortie-teams] input").forEach((input) =>
+      input.addEventListener("change", () => {
+        const field = input.closest("[data-sortie-teams]"),
+          calls = [...field.querySelectorAll("input:checked")].map(
+            (i) => i.value,
+          );
+        commit((next) => M.setTeams(next, field.dataset.sortieTeams, calls));
+      }),
+    );
     rootNode
       .querySelectorAll("[data-live-region]")
       .forEach((select) =>

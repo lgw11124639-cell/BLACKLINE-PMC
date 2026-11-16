@@ -160,7 +160,10 @@
     s.commandArchive = [];
     return s;
   }
-  function begin(s, { mapId = "command-range", live = false } = {}) {
+  function begin(
+    s,
+    { mapId = "command-range", live = false, callsigns = null } = {},
+  ) {
     G.activate(mapId);
     ok(
       [3, 4, 5].includes(s.schemaVersion) &&
@@ -168,12 +171,27 @@
         s.commandExercise?.status !== "running",
       "현재 상태에서는 지휘 훈련을 시작할 수 없습니다.",
     );
-    ok(s.squads.length > 0, "먼저 관측수·저격수 저격조를 편성하세요.");
+    ok(
+      callsigns === null || Array.isArray(callsigns),
+      "출격 저격조 선택이 잘못되었습니다.",
+    );
+    const deploying =
+      callsigns === null
+        ? s.squads
+        : s.squads.filter((q) => callsigns.includes(q.callsign));
+    ok(
+      callsigns === null ||
+        (Array.isArray(callsigns) &&
+          new Set(callsigns).size === callsigns.length &&
+          deploying.length === callsigns.length),
+      "출격 저격조 선택이 잘못되었습니다.",
+    );
+    ok(deploying.length > 0, "먼저 관측수·저격수 저격조를 편성하세요.");
     ok(
       !s.activities.some((a) => a.status === "running"),
       "진행 중인 본부 활동을 마치거나 중단하세요.",
     );
-    for (const q of s.squads)
+    for (const q of deploying)
       for (const id of [q.observerId, q.sniperId])
         ok(
           P.readiness(s, member(s, id)) === null,
@@ -198,7 +216,7 @@
       knowledge: { friends: {}, contacts: {} },
     };
     s.commandExercise = e;
-    s.squads.forEach((q, i) => {
+    deploying.forEach((q, i) => {
       const ids = [q.observerId, q.sniperId];
       for (let j = 0; j < 2; j++) {
         const m = member(s, ids[j]);

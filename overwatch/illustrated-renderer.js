@@ -399,7 +399,7 @@
             m.to,
             motion.mode === "walk",
           ),
-          entityScale = Math.max(v.scale, 4),
+          entityScale = Math.max(v.scale, desktop ? 12 : 8),
           height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
@@ -499,8 +499,10 @@
         ctx.stroke();
         if (friendly) {
           ctx.font =
-            entityScale < 8
-              ? "600 8px -apple-system,sans-serif"
+            v.scale < 4
+              ? desktop
+                ? "600 10px -apple-system,sans-serif"
+                : "600 9px -apple-system,sans-serif"
               : "600 10px -apple-system,sans-serif";
           ctx.fillStyle = "#fff";
           ctx.shadowColor = "#16301a";
@@ -508,7 +510,7 @@
           ctx.textAlign = "center";
           const label =
               (u.name || u.callsign || "지원요원") +
-              (entityScale < 8
+              (v.scale < 4
                 ? ""
                 : " · " +
                   (u.role === "sniper"

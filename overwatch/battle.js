@@ -235,14 +235,20 @@
   }
   function begin(
     s,
-    { scenario = "recon", seed, mapId = "command-range", live = false } = {},
+    {
+      scenario = "recon",
+      seed,
+      mapId = "command-range",
+      live = false,
+      callsigns = null,
+    } = {},
   ) {
     ok([4, 5].includes(s.schemaVersion), "4단계 저장으로 전환해야 합니다.");
     ok(
       ["recon", "interdiction", "support"].includes(scenario),
       "전장 연습 유형이 잘못되었습니다.",
     );
-    const e = D().begin(s, { mapId, live });
+    const e = D().begin(s, { mapId, live, callsigns });
     const baseSeed =
       (seed ??
         (s.commandSequence * 2654435761) ^

@@ -5,6 +5,7 @@ BASE=os.environ.get('BLACKLINE_TEST_URL','http://127.0.0.1:8060')
 with sync_playwright() as p:
  b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);q=b.new_page(viewport={'width':844,'height':390});errors=[];q.on('pageerror',lambda e:errors.append(str(e)));q.on('dialog',lambda d:d.accept());q.goto(BASE,wait_until='networkidle')
  q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,P=OverwatchPersonnel,hire=role=>P.hire(s,s.market.candidates.find(x=>x.specialty===role).id,30),o=hire('observer'),n=hire('sniper');P.assign(s,'ALPHA',o.id,n.id);st.save(s,s.revision);}""");q.reload(wait_until='networkidle')
+ q.locator("[data-hq-recruitment] summary").click()
  ids={}
  for duty in ['controller','instructor']:
   candidate=q.evaluate("d=>OverwatchStorage.create({storage:localStorage}).load().state.commandStaff.market.find(x=>x.duty===d).id",duty)

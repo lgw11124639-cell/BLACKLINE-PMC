@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.03",
+  const VERSION = "2026.11.16.04",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -49,6 +49,7 @@
     error = "",
     stale = false,
     selectedPerson = null;
+  let hqRecruitmentOpen = false;
   let lastSaved = null,
     dirty = false;
   function rollbackRuntime(errorValue) {
@@ -335,6 +336,7 @@
   }
   function headquarters() {
     const active = state?.commandExercise?.status === "running",
+      training = active && !state.commandExercise.mission,
       ready = state.members.filter(
         (m) => P.readiness(state, m) === null,
       ).length;
@@ -356,18 +358,48 @@
         )
         .join("") +
       '</section><div class="hq-dashboard">' +
-      OverwatchStaffUI.render(state, source === "primary" && !stale) +
       '<section class="panel operation-brief"><span class="eyebrow">OPERATIONS</span><h2>' +
-      (active ? "전장 진행 중" : "다음 작전 준비") +
+      (active
+        ? training
+          ? "훈련 진행 중"
+          : "실전 작전 진행 중"
+        : "다음 작전 준비") +
       "</h2><p>" +
       (active
         ? "작전통제관의 판단과 무전, 대원 상태를 관전할 수 있습니다."
         : "현장 저격조 2~6명과 본부 작전통제관을 편성하세요. 훈련에는 교관을 따로 배정할 수 있습니다.") +
       '</p><div class="inline-actions"><button data-tab="personnel">인원·편제</button><button data-tab="contracts">작전 승인</button><button data-tab="' +
-      (active ? "field" : "command") +
+      (active && !training ? "field" : "command") +
       '">' +
-      (active ? "작전 관제" : "훈련장") +
-      '</button></div><div class="hq-terrain" aria-hidden="true"></div></section></div>'
+      (active && !training ? "작전 관제" : "훈련 관제") +
+      '</button></div><div class="hq-team-summary">' +
+      (state.squads.length
+        ? state.squads
+            .map(
+              (q) =>
+                "<article><strong>" +
+                esc(q.callsign) +
+                "</strong><span>" +
+                [q.observerId, q.sniperId]
+                  .map((id) =>
+                    esc(
+                      state.members.find((m) => m.id === id)?.name || "미편성",
+                    ),
+                  )
+                  .join(" · ") +
+                "</span></article>",
+            )
+            .join("")
+        : '<p class="muted">출격할 저격조를 편성하세요.</p>') +
+      "</div></section>" +
+      OverwatchStaffUI.render(state, source === "primary" && !stale, {
+        market: false,
+      }) +
+      '</div><details class="hq-recruitment" data-hq-recruitment' +
+      (hqRecruitmentOpen ? " open" : "") +
+      "><summary>지원 인력 채용·계약 관리 <span>작전통제관 · 훈련 교관</span></summary>" +
+      OverwatchStaffUI.market(state, source === "primary" && !stale) +
+      "</details>"
     );
   }
   function personnel() {
@@ -661,6 +693,11 @@
       (tab === "field") === !!state.commandExercise.mission
     )
       root.querySelector("#main")?.classList.add("battle-screen");
+    root
+      .querySelector("[data-hq-recruitment]")
+      ?.addEventListener("toggle", (event) => {
+        hqRecruitmentOpen = event.currentTarget.open;
+      });
     OverwatchStaffUI.bind(root, {
       state,
       editable: source === "primary" && !stale,

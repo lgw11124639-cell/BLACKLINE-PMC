@@ -321,10 +321,32 @@
       { contractId: id },
     );
   }
-  function reserveFor(s) {
+  function selectedSquads(s, c = null) {
+    c ||= s.contracts.find((c) => c.status === "accepted");
+    return c?.teamCallsigns
+      ? s.squads.filter((q) => c.teamCallsigns.includes(q.callsign))
+      : s.squads;
+  }
+  function setTeams(s, id, callsigns) {
+    const c = s.contracts.find((c) => c.id === id);
+    ok(
+      c?.status === "accepted" && !s.activeMission,
+      "출격 전 수락한 의뢰에서 저격조를 선택하세요.",
+    );
+    ok(
+      Array.isArray(callsigns) &&
+        callsigns.length <= 3 &&
+        new Set(callsigns).size === callsigns.length &&
+        callsigns.every((call) => s.squads.some((q) => q.callsign === call)),
+      "출격 저격조 선택이 잘못되었습니다.",
+    );
+    c.teamCallsigns = [...callsigns];
+    return c.teamCallsigns;
+  }
+  function reserveFor(s, c = null) {
     const ammo = {};
     let medical = 0;
-    for (const q of s.squads)
+    for (const q of selectedSquads(s, c))
       for (const id of [q.observerId, q.sniperId]) {
         const model = member(s, id).specialty === "sniper" ? "AXMC" : "HK416",
           w = B().WEAPONS[model];
@@ -355,7 +377,10 @@
       return "귀환 후 점검·재정비가 필요합니다.";
     if (s.activities.some((a) => a.status === "running"))
       return "진행 중인 본부 활동을 마치거나 중단하세요.";
-    const ids = s.squads.flatMap((q) => [q.observerId, q.sniperId]);
+    const teams = selectedSquads(s, c);
+    if (c.teamCallsigns && teams.length !== c.teamCallsigns.length)
+      return "선택한 저격조의 본부 편성이 변경되었습니다. 투입 조를 다시 선택하세요.";
+    const ids = teams.flatMap((q) => [q.observerId, q.sniperId]);
     if (ids.length < c.min || ids.length > 6)
       return "이 계약은 " + c.min + "~6명의 적정 저격조가 필요합니다.";
     for (const id of ids) {
@@ -365,7 +390,7 @@
       if (m.contract.endsAt - s.clock.elapsedSeconds < P.DAY)
         return m.name + " · 계약 잔여 24시간 이상이 필요합니다.";
     }
-    if (s.headquarters.funds < reserveFor(s).total)
+    if (s.headquarters.funds < reserveFor(s, c).total)
       return "출격 소모품 예치금이 부족합니다.";
     return null;
   }
@@ -429,7 +454,7 @@
       c.extraction = copy(c.insertion);
       G.activate(old);
     }
-    const budget = reserveFor(s);
+    const budget = reserveFor(s, c);
     const seed = [...(c.id + ":" + s.clock.elapsedSeconds)].reduce(
       (n, ch) => Math.imul(n ^ ch.charCodeAt(0), 16777619) >>> 0,
       2166136261,
@@ -438,6 +463,7 @@
         scenario: "recon",
         seed,
         live: true,
+        callsigns: selectedSquads(s, c).map((q) => q.callsign),
         mapId: c.mapId || "command-range",
       }),
       mid =
@@ -2936,6 +2962,16 @@
     );
     const ids = new Set();
     for (const c of s.contracts) {
+      if (c.teamCallsigns !== undefined)
+        ok(
+          Array.isArray(c.teamCallsigns) &&
+            c.teamCallsigns.length <= 3 &&
+            new Set(c.teamCallsigns).size === c.teamCallsigns.length &&
+            c.teamCallsigns.every((call) =>
+              ["ALPHA", "BRAVO", "CHARLIE"].includes(call),
+            ),
+          "계약 투입 저격조 저장이 잘못되었습니다.",
+        );
       ok(
         typeof c.id === "string" &&
           !ids.has(c.id) &&
@@ -3161,6 +3197,8 @@
     accept,
     cancel,
     reserveFor,
+    selectedSquads,
+    setTeams,
     ready,
     launch,
     beforeTick,
