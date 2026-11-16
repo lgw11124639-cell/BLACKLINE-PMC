@@ -29,7 +29,7 @@ with sync_playwright() as p:
   q.locator('[data-field-tools]').click();assert q.locator('[data-field-view-select]').is_visible();q.keyboard.press('Escape');assert not q.locator('[data-field-view-select]').is_visible()
   before=vp.evaluate('e=>e.clientWidth');q.locator('[data-field-panel-toggle]').click();assert not q.locator('.field-layout>aside').is_visible();assert vp.evaluate('e=>e.clientWidth')>before+150
   q.locator('[data-field-panel-toggle]').click();assert q.locator('button[data-inspector=radio]').is_visible()
-  q.locator('[data-field-overview]').click();start=q.evaluate('OverwatchIllustratedRenderer.get().stats()');session=ctx.new_cdp_session(q)
+  q.locator('[data-field-tools]').click();q.locator('[data-field-overview]').click();q.keyboard.press('Escape');start=q.evaluate('OverwatchIllustratedRenderer.get().stats()');session=ctx.new_cdp_session(q)
   pinch(session,vp.bounding_box());q.wait_for_timeout(200);zoomed=q.evaluate('OverwatchIllustratedRenderer.get().stats()');assert zoomed['viewSpan']<start['viewSpan']*.6,(w,h,start,zoomed)
   assert not q.locator('[data-field-target]').inner_text().startswith('관심 구역 지정됨')
   before=q.evaluate('OverwatchIllustratedRenderer.get().stats().viewCenter');pan(session,vp.bounding_box(),h>w);after=q.evaluate('OverwatchIllustratedRenderer.get().stats().viewCenter');assert math.hypot(before['x']-after['x'],before['y']-after['y'])>1,(w,h,before,after)

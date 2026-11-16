@@ -17,6 +17,9 @@
         ? initial.map.height
         : Math.min(initial.map.height, Math.max(90, initial.map.height * 0.4)),
       follow = !desktop,
+      fitting =
+        document.body.classList.contains("mobile-ui") &&
+        !!host.closest(".field-fullscreen"),
       target = { x: initial.map.width / 2, y: initial.map.height / 2 },
       pick = () => {},
       rangeIds = new Set(),
@@ -92,6 +95,11 @@
       handlers.push(() => canvas.removeEventListener(n, fn, opts));
     };
     function size() {
+      if (fitting && host.clientWidth && host.clientHeight)
+        span = Math.min(
+          frame.map.height,
+          (frame.map.width * host.clientHeight) / host.clientWidth,
+        );
       const dpr = Math.min(devicePixelRatio || 1, 1.25);
       canvas.width = Math.max(1, Math.round(host.clientWidth * dpr));
       canvas.height = Math.max(1, Math.round(host.clientHeight * dpr));
@@ -290,23 +298,8 @@
         m.drawn = p;
         const q = screen(p, v),
           size =
-            t.type === "drone"
-              ? Math.max(7, 2.5 * v.scale)
-              : Math.max(
-                  (t.type === "helicopter" ? 14 : 5) * v.scale,
-                  Math.min(
-                    ((t.type === "helicopter"
-                      ? desktop
-                        ? 72
-                        : 48
-                      : desktop
-                        ? 40
-                        : 28) *
-                      frame.map.height) /
-                      span,
-                    host.clientHeight * (t.type === "helicopter" ? 0.25 : 0.18),
-                  ),
-                );
+            root.OverwatchSprites.mapScale(frame.map, v.scale) *
+            (t.type === "helicopter" ? 7 : t.type === "drone" ? 1 : 3);
         m.displaySize = size;
         ctx.save();
         ctx.translate(q.x, q.y);
@@ -449,14 +442,7 @@
             m.to,
             motion.mode === "walk",
           ),
-          entityScale = Math.max(
-            v.scale,
-            Math.min(
-              ((desktop ? 12 : 8) * v.scale) /
-                (host.clientHeight / frame.map.height),
-              host.clientHeight * 0.1,
-            ),
-          ),
+          entityScale = root.OverwatchSprites.mapScale(frame.map, v.scale),
           height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
@@ -828,6 +814,7 @@
         pan(dx, dy) {
           const v = view();
           follow = false;
+          fitting = false;
           target.x -= dx / v.scale;
           target.y -= dy / v.scale;
           invalidate();
@@ -839,6 +826,7 @@
               y: v.top + from.y / v.scale,
             };
           follow = false;
+          fitting = false;
           span = Math.max(18, Math.min(frame.map.height * 1.05, span * factor));
           const next = view();
           target.x += world.x - (next.left + to.x / next.scale);
@@ -855,6 +843,7 @@
       "wheel",
       (e) => {
         e.preventDefault();
+        fitting = false;
         span = Math.max(
           18,
           Math.min(frame.map.height * 1.05, span * Math.exp(e.deltaY * 0.001)),
@@ -871,6 +860,7 @@
       id: initial.id,
       update,
       zoom(f) {
+        fitting = false;
         span = Math.max(18, Math.min(frame.map.height * 1.05, span * f));
         invalidate();
       },
@@ -882,13 +872,26 @@
         update(frame);
         return follow;
       },
+      fit(onlyIfNeeded = false) {
+        const maxSpan = Math.min(
+          frame.map.height,
+          (frame.map.width * host.clientHeight) / Math.max(1, host.clientWidth),
+        );
+        span = onlyIfNeeded ? Math.min(span, maxSpan) : maxSpan;
+        fitting = span === maxSpan;
+        follow = false;
+        focusId = null;
+        invalidate();
+      },
       overview() {
+        fitting = false;
         follow = false;
         target = { x: frame.map.width / 2, y: frame.map.height / 2 };
         span = frame.map.height;
         invalidate();
       },
       focus(id) {
+        fitting = false;
         focusId = id;
         follow = true;
         const u = [

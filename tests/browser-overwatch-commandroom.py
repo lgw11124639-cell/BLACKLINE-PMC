@@ -33,7 +33,7 @@ with sync_playwright() as p:
  q.locator('[data-field-fullscreen]').click();assert not q.locator('.field-fullscreen').count()
  q.set_viewport_size({'width':390,'height':844});q.wait_for_timeout(300);assert not q.locator('.rotate-hint').is_visible();assert q.locator('.workspace').is_visible();assert q.evaluate('document.querySelector("#overwatch-root").clientWidth')==844;assert q.evaluate('document.querySelector("#overwatch-root").clientHeight')==390;assert q.evaluate('document.documentElement.scrollWidth<=innerWidth');q.screenshot(path='/tmp/overwatch-commandroom-portrait.png',full_page=True)
  # In the rotated portrait viewport, actual map picks must use rotated local coordinates.
- q.locator('[data-field-overview]').click();q.wait_for_timeout(300)
+ q.locator('[data-field-tools]').click();q.locator('[data-field-overview]').click();q.keyboard.press('Escape');q.wait_for_timeout(300)
  canvas=q.locator('.field-viewport canvas');rect=canvas.bounding_box()
  q.mouse.click(rect['x']+rect['width']/2,rect['y']+rect['height']/2)
  point=q.evaluate('OverwatchFieldUI.selectedPoint()');assert point is not None

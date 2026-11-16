@@ -640,6 +640,16 @@
         invalidate();
         return follow;
       },
+      fit(onlyIfNeeded = false) {
+        const maxSpan = Math.min(
+          frame.map.height,
+          (frame.map.width * host.clientHeight) / Math.max(1, host.clientWidth),
+        );
+        span = onlyIfNeeded ? Math.min(span, maxSpan) : maxSpan;
+        follow = false;
+        focusId = null;
+        size();
+      },
       overview() {
         follow = false;
         target.set(frame.map.width / 2, 0, frame.map.height / 2);
