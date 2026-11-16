@@ -253,6 +253,7 @@
                 : "") +
               " <small>" +
               esc(u.callsign) +
+              (u.assignmentLabel ? " · " + esc(u.assignmentLabel) : "") +
               "</small></strong><p>" +
               (u.role === "observer" ? "관측수" : "저격수") +
               " · " +

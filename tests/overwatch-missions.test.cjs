@@ -143,16 +143,24 @@ test("no phantom casualty support, contract limits and physical drone preparatio
 });
 
 test("rescue requires actual link and escorted arrival, then physical extraction pays once", () => {
-  const s = launch("rescue-cover", 2),
-    e = s.commandExercise;
+  const { s, c } = make("rescue-cover", 2),
+    Staff = require("../overwatch/command-staff");
+  Staff.upgrade(s);
+  const controller = Staff.hire(
+    s,
+    s.commandStaff.market.find((c) => c.duty === "controller").id,
+  );
+  Staff.assign(s, "controller", controller.id);
+  M.launch(s, c.id);
+  const e = s.commandExercise;
   for (const u of e.world.actors.filter((a) => a.side === "red"))
     u.health.conscious = false;
-  for (let i = 0; i < 800 && !e.mission.objective; i++) advance(s, 1);
+  for (let i = 0; i < 12000 && !e.mission.objective; i++) advance(s, 1);
   assert.equal(e.mission.taskLinked, true);
   assert.equal(e.mission.objective, true);
   assert.equal(s.operations.reports.length, 0);
   M.requestReturn(s);
-  advance(s, 800);
+  advance(s, 5000);
   assert.equal(e.status, "ended");
   const r = s.operations.reports[0];
   assert.equal(r.success, true);

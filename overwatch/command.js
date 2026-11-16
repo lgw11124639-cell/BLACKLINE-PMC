@@ -208,13 +208,14 @@
           role: m.specialty,
           callsign: q.callsign,
           x:
-            G.MAP.width >= 500
+            G.MAP.width >= 500 && !G.MAP.urban
               ? 80 + i * 45 + j * 16
-              : 12 + ((i * 2 + j) % 3) * 12,
+              : (G.MAP.urban ? G.MAP.base.x : 12) + ((i * 2 + j) % 3) * 12,
           y:
-            G.MAP.width >= 500
+            G.MAP.width >= 500 && !G.MAP.urban
               ? 700 + i * 18
-              : G.MAP.height - 16 - Math.floor((i * 2 + j) / 3) * 12,
+              : (G.MAP.urban ? G.MAP.base.y : G.MAP.height - 16) -
+                Math.floor((i * 2 + j) / 3) * 12,
           capable: true,
           state: "holding",
           heading: -Math.PI / 2,
@@ -293,11 +294,13 @@
         kind: "unarmed-target",
       },
     ];
-    if (G.MAP.width < 500) {
+    if (G.MAP.urban || G.MAP.width < 500) {
       e.world.units.forEach((u, i) => {
         const p = G.project({
-          x: 12 + (i % 3) * 12,
-          y: G.MAP.height - 16 - Math.floor(i / 3) * 12,
+          x: (G.MAP.urban ? G.MAP.base.x : 12) + (i % 3) * 12,
+          y:
+            (G.MAP.urban ? G.MAP.base.y : G.MAP.height - 16) -
+            Math.floor(i / 3) * 12,
         });
         u.x = p.x;
         u.y = p.y;
@@ -423,6 +426,7 @@
         name: u.name,
         role: u.role,
         callsign: q.callsign,
+        assignmentLabel: q.assignment?.label || null,
         x: u.x,
         y: u.y,
         state: u.state,
@@ -528,14 +532,15 @@
     for (let i = 0; i < 8; i++) {
       const angle = (i * Math.PI) / 4,
         r = assembly
-          ? G.MAP.width < 500
+          ? G.MAP.urban || G.MAP.width < 500
             ? role === "observer"
               ? 3
               : 6
             : role === "observer"
               ? 12
               : 24
-          : G.MAP.width < 500 && G.distance(target, G.MAP.base) < 1
+          : (G.MAP.urban || G.MAP.width < 500) &&
+              G.distance(target, G.MAP.base) < 1
             ? 9
             : role === "observer"
               ? 12
@@ -587,6 +592,26 @@
   }
   // Uses only this pair's observations and delivered allied positions; no hidden enemy lookup.
   function tacticalPosition(e, q, c) {
+    if (
+      c.kind === "cover" &&
+      !c.reposition &&
+      e.mission?.agencyControl &&
+      q.tactical?.position &&
+      e.commands.some(
+        (old) =>
+          old.callsign === q.callsign &&
+          old.kind === "recon" &&
+          old.status === "completed",
+      )
+    ) {
+      return {
+        position: { ...q.tactical.position },
+        sector: { ...(c.target || q.sector) },
+        protectedPoint: q.tactical.protectedPoint,
+        score: 200,
+        reason: "정찰을 마친 외곽 진지를 유지하고 기관 보병의 진출로를 엄호",
+      };
+    }
     const own = leader(e, q),
       recent = q.contacts.filter(
         (v) =>
@@ -656,6 +681,24 @@
     const assessed = [];
     for (const p of points) {
       if (
+        e.mission?.agencyControl &&
+        (G.MAP.urban || G.MAP.width < 500) &&
+        !(
+          (e.mission.agencyControl.everAuthorized ||
+            G.distance(p, G.MAP.base) < G.MAP.width * 0.58) &&
+          (p.x < G.MAP.width * 0.23 ||
+            p.y > G.MAP.height * 0.7 ||
+            (e.mission.agencyControl.everAuthorized &&
+              (p.x > G.MAP.width * 0.8 || p.y < G.MAP.height * 0.2)))
+        )
+      )
+        continue;
+      if (
+        c.reposition &&
+        !G.clear({ ...p, stance: "kneeling", prone: false }, sector)
+      )
+        continue;
+      if (
         p.roofId &&
         e.squads.some(
           (v) =>
@@ -667,7 +710,8 @@
       if (
         !point(p) ||
         G.blocked(p) ||
-        G.distance(p, sector) < Math.min(55, G.MAP.width * 0.12)
+        G.distance(p, sector) <
+          (e.mission?.agencyControl ? 12 : Math.min(55, G.MAP.width * 0.12))
       )
         continue;
       if (
@@ -697,7 +741,7 @@
         allyView +
         overlap -
         Math.abs(G.distance(p, sector) - 280) * 0.12 -
-        G.distance(own, p) * 0.055;
+        G.distance(own, p) * (e.mission?.agencyControl ? 0.65 : 0.055);
       assessed.push({
         position: { x: p.x, y: p.y, ...(p.roofId ? { roofId: p.roofId } : {}) },
         sector,
@@ -883,6 +927,7 @@
         return;
       }
       u.goal = copy(p.p);
+      u.blockedAt = null;
       if (e.battle && Battle().commandReady(u)) u.prone = false;
       plans.push({ id, path: p.route, goal: p.p });
     }
@@ -1049,6 +1094,7 @@
         if (q.commandId === c?.id && c.status === "executing") {
           const u = unit(e, r.to.id);
           u.path = copy(r.payload.path);
+          u.blockedAt = null;
           u.goal = copy(r.payload.goal);
           u.state = "moving";
         }
@@ -1085,7 +1131,7 @@
     }
   }
   function separation() {
-    return G.MAP.width < 500 ? 1.5 : 8;
+    return G.MAP.urban || G.MAP.width < 500 ? 1.5 : 8;
   }
   function obstructs(u, v) {
     return (
@@ -1101,6 +1147,7 @@
   function clearOfUnits(e, u, a, b) {
     return e.world.units.every((v) => {
       if (
+        !obstructs(u, v) ||
         v.id === u.id ||
         v.boardedBy ||
         v.home ||
@@ -1125,22 +1172,18 @@
     });
   }
   function detour(e, u, next) {
-    const obstacle = e.world.units.find(
-      (v) => obstructs(u, v) && G.distance(v, next) < separation(),
-    );
-    if (obstacle && u.path.length > 1) {
-      u.path.shift();
-      return true;
-    }
     const options = [];
     const nearest = e.world.units
       .filter((v) => obstructs(u, v))
       .sort((a, b) => G.distance(u, a) - G.distance(u, b))[0];
     if (!nearest) return false;
-    for (const r of G.MAP.width < 500 ? [2.5, 4, 6] : [18, 30, 50])
+    for (const r of G.MAP.urban || G.MAP.width < 500
+      ? [2.5, 4, 6, 10, 14]
+      : [18, 30, 50])
       for (let i = 0; i < 24; i++) {
         const a = (i * Math.PI) / 12,
           p = {
+            ...(u.roofId ? { roofId: u.roofId } : {}),
             x: nearest.x + Math.cos(a) * r,
             y: nearest.y + Math.sin(a) * r,
           };
@@ -1161,7 +1204,16 @@
   }
   function moveUnit(e, u, amount) {
     if (!u.capable || u.carriedBy || !u.path.length) return;
-    let left = amount;
+    const task = e.commands.find(
+      (c) =>
+        c.id === e.squads.find((q) => q.callsign === u.callsign)?.commandId,
+    );
+    const crawl = !!(
+      u.roofId &&
+      e.mission?.agencyControl &&
+      ["recon", "cover"].includes(task?.kind)
+    );
+    let left = amount * (crawl ? 0.4 : 1);
     while (left > 0 && u.path.length) {
       const next = u.path[0],
         d = G.distance(u, next);
@@ -1232,8 +1284,8 @@
       u.x = p.x;
       u.y = p.y;
       if (e.battle && step > 0) {
-        u.prone = false;
-        u.stance = "standing";
+        u.prone = crawl;
+        u.stance = crawl ? "prone" : "standing";
       }
       left -= step;
       if (step === d) u.path.shift();
@@ -1268,8 +1320,11 @@
     if (!q.bound && people.some((u) => u.path.length)) {
       q.bound = {
         commandId: c.id,
-        activeId: q.observerId,
-        origin: { x: people[0].x, y: people[0].y },
+        activeId: e.mission?.agencyControl ? q.sniperId : q.observerId,
+        origin: {
+          x: people[e.mission?.agencyControl ? 1 : 0].x,
+          y: people[e.mission?.agencyControl ? 1 : 0].y,
+        },
       };
       const ev = event(e, "bound-overwatch-started", {
         callsign: q.callsign,
@@ -1285,7 +1340,9 @@
         q.leaderId,
         q.sniperId,
         "instruction",
-        "사수는 정지 관측·엄호 유지. 관측수가 선행한 뒤 엄호를 교대한다.",
+        e.mission?.agencyControl
+          ? "사수가 저격 진지로 선행한다. 관측수는 후방 관측·엄호, 구간별 엄호 교대."
+          : "사수는 정지 관측·엄호 유지. 관측수가 선행한 뒤 엄호를 교대한다.",
         ev,
         { commandId: c.id },
       );
@@ -1321,8 +1378,14 @@
           u.path = [];
         }
         u.state = "observing";
-        u.prone = u.role === "sniper";
-        u.stance = u.role === "sniper" ? "prone" : "kneeling";
+        const prone =
+          (e.mission?.agencyControl &&
+            u.roofId &&
+            G.distance(u, u.goal || u) > 1) ||
+          (u.role === "sniper" &&
+            G.clear({ ...u, stance: "prone", prone: true }, q.sector));
+        u.prone = prone;
+        u.stance = prone ? "prone" : "kneeling";
       }
     }
   }
@@ -1579,6 +1642,7 @@
       const c = e.commands.find((c) => c.id === q.commandId);
       if (c?.status === "thinking" && e.time >= q.thinkAt) decide(s, e, q, c);
       if (
+        !e.mission?.agencyControl &&
         c?.kind === "cover" &&
         c.status === "completed" &&
         q.tactical &&
@@ -1657,7 +1721,8 @@
         }
         if (
           u.capable &&
-          (!other.capable ||
+          (q.bound?.activeId === u.id ||
+            !other.capable ||
             G.distance(u, other) < 70 ||
             G.distance(u, u.goal || u) > G.distance(other, other.goal || other))
         )
@@ -1953,6 +2018,7 @@
       commands,
       squads: e.squads.map((q) => ({
         callsign: q.callsign,
+        assignment: q.assignment ? copy(q.assignment) : null,
         roe:
           commands
             .filter(
@@ -2120,6 +2186,18 @@
               q.tactical.reportedContactIds.every(text))),
         "관측수 지휘 상태가 잘못되었습니다.",
       );
+      if (q.assignment)
+        ok(
+          [
+            "overwatch",
+            "counter-sniper",
+            "corridor-cover",
+            "flank-security",
+          ].includes(q.assignment.kind) &&
+            text(q.assignment.label) &&
+            num(q.assignment.assignedAt, 0, e.time),
+          "저격조 임무 배정 저장이 잘못되었습니다.",
+        );
       for (const id of [q.observerId, q.sniperId]) {
         ok(!assigned.has(id), "훈련 인원 중복 편성입니다.");
         assigned.add(id);
