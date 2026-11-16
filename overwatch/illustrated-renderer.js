@@ -13,14 +13,15 @@
       lastDraw = 0,
       until = 0,
       dirty = true,
-      span = desktop ? initial.map.height : 60,
+      span = desktop
+        ? initial.map.height
+        : Math.min(initial.map.height, Math.max(90, initial.map.height * 0.4)),
       follow = !desktop,
       target = { x: initial.map.width / 2, y: initial.map.height / 2 },
       pick = () => {},
       rangeIds = new Set(),
       focusId = null,
       selected = null,
-      drag = null,
       frameAt = performance.now();
     const canvas = document.createElement("canvas"),
       ctx = canvas.getContext("2d", { alpha: false });
@@ -822,46 +823,34 @@
           : Math.max(until, now + animate);
       invalidate();
     }
-    listen("pointerdown", (e) => {
-      const p = root.OverwatchViewport.point(canvas, e);
-      if (e.button !== 0) return;
-      drag = {
-        x: p.x,
-        y: p.y,
-        startX: p.x,
-        startY: p.y,
-        moved: false,
-      };
-      canvas.setPointerCapture(e.pointerId);
-    });
-    listen("pointermove", (e) => {
-      const p = root.OverwatchViewport.point(canvas, e);
-      if (!drag) return;
-      if (Math.hypot(p.x - drag.startX, p.y - drag.startY) > 6)
-        drag.moved = true;
-      if (drag.moved) {
-        const v = view();
-        follow = false;
-        target.x -= (p.x - drag.x) / v.scale;
-        target.y -= (p.y - drag.y) / v.scale;
-        invalidate();
-      }
-      drag.x = p.x;
-      drag.y = p.y;
-    });
-    listen("pointerup", (e) => {
-      const p = root.OverwatchViewport.point(canvas, e);
-      if (drag && !drag.moved) {
-        const rect = canvas.getBoundingClientRect(),
-          v = view();
-        pick({
-          x: v.left + p.x / v.scale,
-          y: v.top + p.y / v.scale,
-        });
-      }
-      drag = null;
-    });
-    listen("pointercancel", () => (drag = null));
+    handlers.push(
+      root.OverwatchViewport.bindMap(canvas, {
+        pan(dx, dy) {
+          const v = view();
+          follow = false;
+          target.x -= dx / v.scale;
+          target.y -= dy / v.scale;
+          invalidate();
+        },
+        zoom(factor, from, to) {
+          const v = view(),
+            world = {
+              x: v.left + from.x / v.scale,
+              y: v.top + from.y / v.scale,
+            };
+          follow = false;
+          span = Math.max(18, Math.min(frame.map.height * 1.05, span * factor));
+          const next = view();
+          target.x += world.x - (next.left + to.x / next.scale);
+          target.y += world.y - (next.top + to.y / next.scale);
+          invalidate();
+        },
+        tap(p) {
+          const v = view();
+          pick({ x: v.left + p.x / v.scale, y: v.top + p.y / v.scale });
+        },
+      }),
+    );
     listen(
       "wheel",
       (e) => {
@@ -931,6 +920,7 @@
         return {
           rangeIds: [...rangeIds],
           viewSpan: span,
+          viewCenter: { x: target.x, y: target.y },
           pixelsPerMetre: host.clientHeight / span,
           worldExtent: { width: frame.map.width, height: frame.map.height },
           knownIds: [...positions.keys()],

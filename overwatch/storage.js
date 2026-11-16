@@ -24,6 +24,7 @@
     primary: "blackline_overwatch_v1",
     backup: "blackline_overwatch_v1_backup",
     beforeImport: "blackline_overwatch_v1_before_import",
+    previous: "blackline_overwatch_v1_previous",
     beforeReset: "blackline_overwatch_v1_before_reset",
     beforeMissionMigration: "blackline_overwatch_v1_before_migration_v5",
     beforeFieldMigration: "blackline_overwatch_v1_before_migration_v4",
@@ -38,6 +39,7 @@
     clock = () => new Date().toISOString(),
   } = {}) {
     if (!storage) throw Error("브라우저 저장소를 사용할 수 없습니다.");
+    let recoveryWarning = "";
     const raw = (key) =>
       storage === root.localStorage && codec?.rawGet
         ? codec.rawGet(key)
@@ -92,7 +94,8 @@
         written = [];
       try {
         for (const [key, value] of rows) {
-          storage.setItem(key, value);
+          if (value === null) storage.removeItem(key);
+          else storage.setItem(key, value);
           written.push(key);
         }
       } catch (error) {
@@ -105,7 +108,7 @@
           } catch (e) {
             restored = false;
           }
-        throw Error(
+        const failure = Error(
           "저장하지 못했습니다. " +
             (restored
               ? "이전 저장을 복원했습니다."
@@ -113,6 +116,9 @@
             " " +
             error.message,
         );
+        failure.cause = error;
+        failure.restored = restored;
+        throw failure;
       }
     }
     function encode(s) {
@@ -131,6 +137,53 @@
       }
       const packed = codec?.pack ? codec.pack(json) : json;
       return packed.length < json.length ? packed : json;
+    }
+    function compactArchives() {
+      let freed = 0;
+      for (const key of [
+        KEYS.beforeImport,
+        KEYS.beforeReset,
+        KEYS.beforeMigration,
+        KEYS.beforeCommandMigration,
+        KEYS.beforeFieldMigration,
+        KEYS.beforeMissionMigration,
+      ]) {
+        try {
+          const value = raw(key);
+          if (!value || value.startsWith(gzipPrefix)) continue;
+          const packed = encode(JSON.parse(decode(value)));
+          if (packed.length >= value.length) continue;
+          storage.setItem(key, packed);
+          freed += value.length - packed.length;
+        } catch {}
+      }
+      return freed;
+    }
+    function status() {
+      const loaded = load();
+      let previous = null,
+        bytes = 0;
+      try {
+        previous = parse(raw(KEYS.previous));
+      } catch {}
+      for (const [name, key] of Object.entries(KEYS))
+        if (!name.startsWith("legacy"))
+          try {
+            bytes += (raw(key)?.length || 0) * 2;
+          } catch {}
+      return {
+        source: loaded.source,
+        updatedAt: loaded.state?.updatedAt || null,
+        previous: previous
+          ? {
+              updatedAt: previous.updatedAt,
+              elapsedSeconds: previous.clock.elapsedSeconds,
+              campaignId: previous.campaignId,
+            }
+          : null,
+        bytes,
+        recoveryWarning,
+      };
     }
     function persist(
       state,
@@ -177,15 +230,75 @@
           }),
         ]);
       rows.push([KEYS.primary, data], [KEYS.backup, data]);
-      transaction(rows);
+      try {
+        transaction(rows);
+      } catch (error) {
+        if (
+          !error.restored ||
+          !(
+            error.cause?.name === "QuotaExceededError" ||
+            /quota (?:has been )?exceeded|용량.*초과|공간.*부족/i.test(
+              error.message,
+            )
+          )
+        )
+          throw error;
+        const freed = compactArchives();
+        // Compress recovery envelopes and release old oversized main copies first.
+        // All replaced keys are still rolled back together if the retry fails.
+        const retry = rows.map(([key, value]) => [
+          key,
+          key === archiveKey ? encode(JSON.parse(value)) : value,
+        ]);
+        const compressedBytes = rows.reduce(
+          (n, row, i) => n + Math.max(0, row[1].length - retry[i][1].length),
+          0,
+        );
+        if (
+          !freed &&
+          !compressedBytes &&
+          Math.max(0, (before?.length || 0) - data.length) +
+            Math.max(0, (backup?.length || 0) - data.length) <
+            1024
+        )
+          throw error;
+        retry.sort(
+          (a, b) => Number(a[0] === archiveKey) - Number(b[0] === archiveKey),
+        );
+        transaction(retry);
+      }
+      recoveryWarning = "";
+      if (
+        !allowRecovery &&
+        current.source === "primary" &&
+        current.state?.campaignId === next.campaignId
+      ) {
+        try {
+          let previous = null;
+          try {
+            previous = parse(raw(KEYS.previous));
+          } catch {}
+          if (
+            !previous ||
+            previous.campaignId !== next.campaignId ||
+            current.state.clock.elapsedSeconds -
+              previous.clock.elapsedSeconds >=
+              300
+          )
+            storage.setItem(KEYS.previous, encode(current.state));
+        } catch {
+          recoveryWarning =
+            "현재 진행 저장은 완료했습니다. 이전 시점 보관 공간이 부족하니 백업 파일을 내려받으세요.";
+        }
+      }
       return next;
     }
     function parseImport(fileText) {
       if (
         typeof fileText !== "string" ||
-        new TextEncoder().encode(fileText).length > 8 * 1024 * 1024
+        new TextEncoder().encode(fileText).length > 32 * 1024 * 1024
       )
-        throw Error("백업은 8MiB 이하의 텍스트 파일이어야 합니다.");
+        throw Error("백업은 32MiB 이하의 텍스트 파일이어야 합니다.");
       const data = JSON.parse(decode(fileText));
       if (data?.game === "BLACKLINE_OVERWATCH_RECOVERY") {
         for (const value of [data.primary, data.backup])
@@ -200,6 +313,14 @@
     function importSave(fileText) {
       const state = Core.upgrade(parseImport(fileText));
       return persist(state, {
+        archiveKey: KEYS.beforeImport,
+        allowRecovery: true,
+      });
+    }
+    function recoverPrevious() {
+      const state = parse(raw(KEYS.previous));
+      if (!state) throw Error("복원할 이전 자동 저장이 없습니다.");
+      return persist(Core.upgrade(state), {
         archiveKey: KEYS.beforeImport,
         allowRecovery: true,
       });
@@ -223,10 +344,33 @@
       });
     }
     function reset(state) {
-      return persist(state, {
-        archiveKey: KEYS.beforeReset,
-        allowRecovery: true,
-      });
+      Core.validate(state);
+      const current = load(),
+        next = Core.clone(state);
+      next.revision =
+        Math.max(state.revision, current.state?.revision || 0) + 1;
+      next.updatedAt = clock();
+      Core.validate(next);
+      const owned = new Set(
+        Object.entries(KEYS)
+          .filter(([name]) => !name.startsWith("legacy"))
+          .map(([, key]) => key),
+      );
+      if (typeof storage.key === "function")
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i);
+          if (key?.startsWith("blackline_overwatch_")) owned.add(key);
+        }
+      owned.delete(KEYS.primary);
+      owned.delete(KEYS.backup);
+      const data = encode(next);
+      transaction([
+        ...Array.from(owned, (key) => [key, null]),
+        [KEYS.primary, data],
+        [KEYS.backup, data],
+      ]);
+      recoveryWarning = "";
+      return next;
     }
     function inspectLegacy() {
       return [KEYS.legacy, KEYS.legacyBackup].map((key) => {
@@ -262,17 +406,14 @@
         }
       });
     }
-    function exportSave(state) {
-      return JSON.stringify(
-        {
-          game: Core.GAME,
-          schemaVersion: state.schemaVersion,
-          exportedAt: clock(),
-          state: Core.validate(Core.clone(state)),
-        },
-        null,
-        2,
-      );
+    function exportSave(state, { compressed = false } = {}) {
+      const envelope = {
+        game: Core.GAME,
+        schemaVersion: state.schemaVersion,
+        exportedAt: clock(),
+        state: Core.validate(Core.clone(state)),
+      };
+      return compressed ? encode(envelope) : JSON.stringify(envelope, null, 2);
     }
     return {
       load,
@@ -282,6 +423,9 @@
       importSave,
       parseImport,
       recoverBackup,
+      recoverPrevious,
+      compactArchives,
+      status,
       inspectLegacy,
       exportSave,
       raw,

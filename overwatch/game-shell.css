@@ -1916,7 +1916,343 @@ body[data-screen="headquarters"] .inline-actions button {
   background: #315b63;
   border: 2px solid #55ddff;
 }
-.field-range-tools:not([hidden]) { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
-.field-range-tools[hidden] { display: none; }
-.field-range-tools button { font-size: 11px; padding: 5px; white-space: nowrap; }
-.field-range-tools .field-range-summary { flex: 1; padding: 3px 6px; font-size: 11px; }
+.field-range-tools:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.field-range-tools[hidden] {
+  display: none;
+}
+.field-range-tools button {
+  font-size: 11px;
+  padding: 5px;
+  white-space: nowrap;
+}
+.field-range-tools .field-range-summary {
+  flex: 1;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+/* Compact command room: one toolbar row and a usable map on phone screens. */
+.mobile-menu-button,
+.mobile-nav-backdrop,
+.mobile-map-control {
+  display: none;
+}
+.field-map-settings {
+  display: contents;
+}
+body.mobile-ui .topbar {
+  height: 40px;
+  min-height: 40px;
+  padding: 2px 8px;
+  gap: 8px;
+}
+body.mobile-ui .mobile-menu-button {
+  display: block;
+  min-width: 48px;
+  min-height: 36px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+body.mobile-ui .brand {
+  margin-right: auto;
+  font-size: 12px;
+}
+body.mobile-ui .brand small,
+body.mobile-ui .topbar-status .status-dot,
+body.mobile-ui #version-check {
+  display: none;
+}
+body.mobile-ui .topbar-status > [data-live-clock] {
+  display: inline;
+  font-size: 11px;
+}
+body.mobile-ui .topbar-status button {
+  min-height: 36px;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+body.mobile-ui .workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+body.mobile-ui .sidebar {
+  display: none;
+}
+body.mobile-ui[data-mobile-menu="open"] .sidebar {
+  display: block;
+  position: fixed;
+  top: 40px;
+  left: 0;
+  bottom: 0;
+  z-index: 102;
+  width: 180px;
+  padding: 8px;
+  box-shadow: 8px 0 24px #0008;
+}
+body.mobile-ui[data-mobile-menu="open"] .mobile-nav-backdrop {
+  display: block;
+  position: fixed;
+  inset: 40px 0 0;
+  z-index: 101;
+  background: #0007;
+  border: 0;
+  border-radius: 0;
+}
+body.mobile-ui .sidebar nav button {
+  min-height: 40px;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+body.mobile-ui .workspace > main {
+  padding: 10px;
+}
+body.mobile-ui .battle-screen {
+  padding: 4px !important;
+}
+body.mobile-ui .battle-screen > .page-title {
+  display: none;
+}
+body.mobile-ui .field-layout,
+body.mobile-ui .field-layout.field-fullscreen {
+  grid-template-columns: minmax(0, 1fr) clamp(205px, 29%, 260px);
+  gap: 5px;
+}
+body.mobile-ui .field-layout.field-inspector-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+body.mobile-ui .field-inspector-collapsed > aside {
+  display: none;
+}
+body.mobile-ui .field-layout .field-stage {
+  position: relative;
+  padding: 4px;
+}
+body.mobile-ui .field-stage-toolbar {
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 38px;
+  margin: 0 0 3px;
+}
+body.mobile-ui .field-stage-toolbar > span {
+  font-size: 11px;
+}
+body.mobile-ui .field-stage-toolbar .field-map-actions {
+  flex-wrap: nowrap;
+  flex-basis: auto;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 4px;
+}
+body.mobile-ui .field-stage-toolbar button,
+body.mobile-ui .field-stage-toolbar select {
+  height: 36px;
+  min-height: 36px;
+  padding: 5px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+body.mobile-ui [data-field-zoom] {
+  min-width: 36px;
+  font-size: 18px;
+}
+body.mobile-ui .mobile-map-control {
+  display: block;
+}
+body.mobile-ui .field-map-settings {
+  display: none;
+  position: absolute;
+  z-index: 6;
+  top: 46px;
+  right: 5px;
+  width: 190px;
+  max-height: calc(100% - 55px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid #526b62;
+  border-radius: 8px;
+  background: #12232af5;
+  box-shadow: 0 8px 24px #0008;
+}
+body.mobile-ui .map-tools-open .field-map-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+body.mobile-ui .field-map-settings > * {
+  width: 100%;
+  min-height: 40px;
+  height: 40px;
+  text-align: center;
+  font-size: 13px !important;
+}
+body.mobile-ui .field-panel-tabs {
+  top: -5px;
+}
+body.mobile-ui .field-panel-tabs button {
+  min-height: 36px;
+  font-size: 12px;
+}
+body.mobile-ui .field-layout > aside {
+  padding: 5px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+body.mobile-ui .field-comms .personnel-section-title h2 {
+  display: none;
+}
+body.mobile-ui .field-radio li {
+  padding: 8px;
+}
+body.mobile-ui .field-radio li p {
+  font-size: 12px;
+  line-height: 1.65;
+}
+body.mobile-ui .field-radio li > small {
+  font-size: 10px;
+}
+body.mobile-ui .field-person h3 {
+  font-size: 14px;
+}
+body.mobile-ui .field-person p,
+body.mobile-ui .field-person small {
+  font-size: 11px;
+}
+body.mobile-ui .field-person button,
+body.mobile-ui .live-field-panel button {
+  min-height: 36px;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+body.mobile-ui .field-quick-orders {
+  flex-wrap: nowrap;
+  gap: 5px;
+  margin-top: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+body.mobile-ui .field-quick-orders select,
+body.mobile-ui .field-quick-orders button {
+  min-height: 34px;
+  height: 34px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+body.mobile-ui .field-quick-orders .delegated-label {
+  white-space: nowrap;
+  font-size: 11px;
+}
+body.mobile-ui .field-controls button {
+  min-height: 34px;
+  font-size: 11px;
+  padding: 5px 8px;
+}
+body.mobile-ui .field-layout > section > section.panel {
+  min-height: 38px;
+  padding: 2px 4px;
+}
+body.mobile-ui .field-layout > section > section.panel > p[data-field-status] {
+  font-size: 10px;
+}
+body.mobile-ui .field-range-tools .field-range-summary {
+  font-size: 10px;
+  max-height: 46px;
+  overflow-y: auto;
+}
+body.mobile-ui .staff-assignments {
+  grid-template-columns: 1fr;
+}
+body.mobile-ui .staff-assignments select,
+body.mobile-ui .staff-assignments button,
+body.mobile-ui .personnel-subnav button {
+  min-height: 40px;
+}
+body.mobile-ui .personnel-dossier {
+  inset: 6px;
+  height: calc(100% - 12px);
+  max-height: calc(100% - 12px);
+}
+body.mobile-ui .dossier-content {
+  overscroll-behavior: contain;
+}
+@media (orientation: portrait) {
+  #overwatch-root,
+  .field-layout.field-fullscreen {
+    padding: env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left) env(safe-area-inset-top) !important;
+  }
+}
+body.mobile-ui.mobile-ui-narrow .field-stage-toolbar > span {
+  position: absolute;
+  top: 49px;
+  left: 10px;
+  z-index: 2;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #0b171ddb;
+  pointer-events: none;
+}
+body.mobile-ui.mobile-ui-short .topbar {
+  height: 32px;
+  min-height: 32px;
+}
+body.mobile-ui.mobile-ui-short .topbar button {
+  min-height: 28px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+body.mobile-ui.mobile-ui-short .sidebar {
+  top: 32px;
+}
+body.mobile-ui.mobile-ui-short .mobile-nav-backdrop {
+  top: 32px;
+}
+body.mobile-ui.mobile-ui-short .field-stage-toolbar {
+  min-height: 32px;
+  margin-bottom: 2px;
+}
+body.mobile-ui.mobile-ui-short .field-stage-toolbar button {
+  min-height: 32px;
+  height: 32px;
+}
+body.mobile-ui.mobile-ui-short .field-quick-orders select,
+body.mobile-ui.mobile-ui-short .field-quick-orders button {
+  min-height: 28px;
+  height: 28px;
+}
+body.mobile-ui.mobile-ui-short .field-quick-orders .delegated-label {
+  display: none;
+}
+body.mobile-ui.mobile-ui-short .field-controls button {
+  min-height: 30px;
+}
+body.mobile-ui.mobile-ui-short .field-layout > section > section.panel {
+  min-height: 32px;
+}
+body.mobile-ui.mobile-ui-short .field-stage-toolbar > span {
+  top: 43px;
+}
+.save-checkpoints .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body.mobile-ui .save-checkpoints button,
+body.mobile-ui .actions > button,
+body.mobile-ui .file-button {
+  min-height: 40px;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.field-map-save {
+  display: none;
+}
+body.mobile-ui .field-map-save,
+.field-fullscreen .field-map-save {
+  display: block;
+}

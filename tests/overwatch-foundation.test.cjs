@@ -75,8 +75,9 @@ test("headquarters capacity, pair roles, duplicate personnel and secondary speci
   repeated.squads.push({ callsign: "BRAVO", observerId: "O", sniperId: "S" });
   assert.throws(() => Core.validate(repeated));
   const oversized = fresh();
-  oversized.members = Array.from({ length: Core.LIMITS.headquarters + 1 }, (_, i) =>
-    member("m" + i, "sniper"),
+  oversized.members = Array.from(
+    { length: Core.LIMITS.headquarters + 1 },
+    (_, i) => member("m" + i, "sniper"),
   );
   assert.throws(() => Core.validate(oversized));
   s.members[0].secondarySpecialties.push("reconnaissance");
@@ -191,14 +192,29 @@ test("import validates before mutating and preserves prior primary and backup", 
   assert.equal(imported.campaignId, "SECOND");
   assert.equal(JSON.parse(store.raw(Store.KEYS.beforeImport)).primary, before);
 });
-test("new-campaign archive can be imported directly to restore the original campaign", () => {
-  const { store } = fixture();
-  store.save(fresh(), null);
-  store.reset(fresh("SECOND"));
-  const archive = store.raw(Store.KEYS.beforeReset);
-  store.importSave(archive);
-  assert.equal(store.load().state.campaignId, "HQ-ONE");
-  assert.ok(store.raw(Store.KEYS.beforeImport));
+test("new campaign removes all prior OVERWATCH recovery copies and starts fresh", () => {
+  const { store, memory } = fixture();
+  let saved = store.save(fresh(), null);
+  saved = store.save(saved, saved.revision);
+  memory.setItem(
+    Store.KEYS.beforeImport,
+    JSON.stringify({
+      game: "BLACKLINE_OVERWATCH_RECOVERY",
+      primary: store.raw(Store.KEYS.primary),
+      backup: null,
+    }),
+  );
+  const next = store.reset(fresh("SECOND"));
+  assert.equal(next.campaignId, "SECOND");
+  for (const key of [
+    Store.KEYS.previous,
+    Store.KEYS.beforeReset,
+    Store.KEYS.beforeImport,
+    Store.KEYS.beforeMissionMigration,
+  ])
+    assert.equal(store.raw(key), null);
+  assert.equal(store.status().previous, null);
+  assert.equal(store.load().state.campaignId, "SECOND");
 });
 test("compressed new saves round-trip Unicode and preserve real event IDs", () => {
   const { store } = fixture(),
@@ -215,13 +231,15 @@ test("compressed new saves round-trip Unicode and preserve real event IDs", () =
   const imported = store.importSave(store.raw(Store.KEYS.primary));
   assert.equal(imported.records[29].id, "real-29");
 });
-test("failure while archiving a reset cannot destroy the current campaign", () => {
+test("a failed reset write restores the former campaign and its recovery records together", () => {
   const { store, memory } = fixture();
   store.save(fresh(), null);
+  memory.setItem(Store.KEYS.beforeReset, "previous recovery bytes");
   const before = store.raw(Store.KEYS.primary);
-  memory.fail = Store.KEYS.beforeReset;
+  memory.fail = Store.KEYS.backup;
   assert.throws(() => store.reset(fresh("SECOND")));
   assert.equal(store.raw(Store.KEYS.primary), before);
+  assert.equal(store.raw(Store.KEYS.beforeReset), "previous recovery bytes");
   assert.equal(store.load().state.campaignId, "HQ-ONE");
 });
 

@@ -558,7 +558,7 @@
       (battle
         ? '<div class="field-layout"><section><div class="panel field-stage" data-field-stage><div class="field-stage-toolbar"><span data-field-clock>' +
           stamp(f.time) +
-          '</span><div><select data-field-view-select aria-label="지도 표현"><option value="illustrated">입체 지도</option><option value="2d">전술도</option><option value="3d">3D 보기</option></select><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button data-field-overview>전체 지역</button><button data-field-fullscreen>지도 전체화면</button></div></div><div class="field-viewport" data-field-id="' +
+          '</span><div class="field-map-actions"><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-field-overview aria-label="지도 전체 지역 보기">전체</button><button data-field-fullscreen aria-label="지도 전체화면 전환">전체화면</button><button class="mobile-map-control" data-field-tools aria-expanded="false" aria-controls="field-map-settings" aria-label="지도 설정 열기">설정</button><button class="mobile-map-control" data-field-panel-toggle aria-expanded="true" aria-label="옆 무전·대원 패널 접기">패널</button><div class="field-map-settings" id="field-map-settings"><select data-field-view-select aria-label="지도 표현"><option value="illustrated">입체 지도</option><option value="2d">전술도</option><option value="3d">3D 보기</option></select><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button class="field-map-save" data-save-now>지금 저장</button></div></div></div><div class="field-viewport" data-field-id="' +
           esc(s.campaignId + ":" + f.id) +
           '"></div><div class="field-range-tools"><span class="field-range-summary" data-range-summary></span><button data-field-range-clear>범위 해제</button></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단</div>' +
           (active
@@ -979,15 +979,90 @@
     const viewport = rootNode.querySelector(".field-viewport");
     if (viewport && !viewport.dataset.pickBound) {
       viewport.dataset.pickBound = "1";
-      viewport.addEventListener("click", (event) => {
-        const svg = event.target.closest("svg");
-        if (!svg || !svg.getScreenCTM()) return;
-        const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(
-          svg.getScreenCTM().inverse(),
-        );
-        pick(p);
+      const box = () => viewport.querySelector("svg");
+      root.OverwatchViewport.bindMap(viewport, {
+        accept: () => !!box(),
+        pan(dx, dy) {
+          const svg = box();
+          if (!svg) return;
+          const v = svg.viewBox.baseVal,
+            scale = Math.min(
+              svg.clientWidth / v.width,
+              svg.clientHeight / v.height,
+            );
+          follow2D = false;
+          svg.setAttribute(
+            "viewBox",
+            [v.x - dx / scale, v.y - dy / scale, v.width, v.height].join(" "),
+          );
+        },
+        zoom(factor, from, to) {
+          const svg = box();
+          if (!svg) return;
+          const v = svg.viewBox.baseVal,
+            w = svg.clientWidth,
+            h = svg.clientHeight,
+            scale = Math.min(w / v.width, h / v.height);
+          const world = {
+            x: v.x + (from.x - (w - v.width * scale) / 2) / scale,
+            y: v.y + (from.y - (h - v.height * scale) / 2) / scale,
+          };
+          const height = Math.max(
+              18,
+              Math.min(lastFrame.map.height * 1.05, v.height * factor),
+            ),
+            width = (v.width * height) / v.height,
+            next = Math.min(w / width, h / height);
+          follow2D = false;
+          svg.setAttribute(
+            "viewBox",
+            [
+              world.x - (to.x - (w - width * next) / 2) / next,
+              world.y - (to.y - (h - height * next) / 2) / next,
+              width,
+              height,
+            ].join(" "),
+          );
+        },
+        tap(p, event) {
+          const svg = box();
+          if (!svg?.getScreenCTM()) return;
+          const point = new DOMPoint(
+            event.clientX,
+            event.clientY,
+          ).matrixTransform(svg.getScreenCTM().inverse());
+          pick(point);
+        },
       });
     }
+    on("[data-field-tools]", () => {
+      const stage = rootNode.querySelector(".field-stage"),
+        button = rootNode.querySelector("[data-field-tools]");
+      const open = stage.classList.toggle("map-tools-open");
+      button.setAttribute("aria-expanded", String(open));
+    });
+    on("[data-field-panel-toggle]", () => {
+      const layout = rootNode.querySelector(".field-layout"),
+        button = rootNode.querySelector("[data-field-panel-toggle]");
+      const collapsed = layout.classList.toggle("field-inspector-collapsed");
+      button.setAttribute("aria-expanded", String(!collapsed));
+      button.textContent = collapsed ? "무전·대원" : "패널";
+      button.setAttribute(
+        "aria-label",
+        collapsed ? "옆 무전·대원 패널 열기" : "옆 무전·대원 패널 접기",
+      );
+      currentRenderer()?.resize?.();
+    });
+    rootNode
+      .querySelector(".field-viewport")
+      ?.addEventListener("pointerdown", () => {
+        rootNode
+          .querySelector(".field-stage")
+          ?.classList.remove("map-tools-open");
+        rootNode
+          .querySelector("[data-field-tools]")
+          ?.setAttribute("aria-expanded", "false");
+      });
     on("[data-field-range-clear]", () => {
       rangeIds.clear();
       syncRanges(rootNode);
@@ -1037,8 +1112,8 @@
         full = !stage.classList.contains("field-fullscreen");
       stage.classList.toggle("field-fullscreen", full);
       rootNode.querySelector("[data-field-fullscreen]").textContent = full
-        ? "전체화면 닫기"
-        : "지도 전체화면";
+        ? "닫기"
+        : "전체화면";
       if (full) {
         try {
           await document.documentElement.requestFullscreen?.();
