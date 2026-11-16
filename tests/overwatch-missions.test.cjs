@@ -503,3 +503,32 @@ test("medical recovery reaches an actually injured rooftop member through stairs
   );
   C.validate(s);
 });
+
+test("expanded forces can all be actually observed without exceeding the former twelve-contact save limit", () => {
+  const s = launch("rescue-cover", 2),
+    e = s.commandExercise;
+  for (const a of e.world.actors.filter((a) => a.side === "red"))
+    a.health.conscious = false;
+  advance(s, 120);
+  for (let i = 0; i < 4; i++) {
+    const a = C.clone(e.world.actors.find((a) => a.side === "red"));
+    a.id = "reserve-test-" + i;
+    e.world.actors.push(a);
+  }
+  const origin = { ...G.MAP.base },
+    seen = G.project({ x: origin.x + 3, y: origin.y });
+  for (const a of e.world.actors) a.health.conscious = false;
+  for (const u of e.world.units)
+    Object.assign(u, { ...origin, path: [], goal: null });
+  for (const q of e.squads) D.issue(s, q.callsign, "observe", seen);
+  advance(s, 25);
+  for (const a of e.world.actors) {
+    const saved = { x: a.x, y: a.y },
+      p = { ...seen };
+    Object.assign(a, p, { path: [], goal: null, route: [p], waypoint: 0 });
+    advance(s, 8);
+    Object.assign(a, saved, { route: [saved] });
+  }
+  assert.ok(e.squads.some((q) => q.contacts.length > 12));
+  C.validate(s);
+});

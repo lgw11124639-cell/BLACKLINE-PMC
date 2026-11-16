@@ -2106,7 +2106,7 @@
           unit(e, q.sniperId).role === "sniper" &&
           point(q.sector) &&
           Array.isArray(q.contacts) &&
-          q.contacts.length <= 12 &&
+          q.contacts.length <= 32 &&
           num(q.lastHeartbeat, -30, e.time) &&
           num(q.lastCriticalAt, -100, e.time) &&
           ["hold", "selfDefense", "authorized"].includes(q.roe) &&
