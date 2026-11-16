@@ -19,11 +19,13 @@
       lastDraw = 0,
       frame = initial,
       follow = true,
-      span = 60,
+      span = Math.min(
+        initial.map.height,
+        Math.max(90, initial.map.height * 0.4),
+      ),
       yaw = Math.PI / 5,
       pitch = 0.85,
       target = new T.Vector3(initial.map.base.x, 0, initial.map.base.y),
-      drag = null,
       resize,
       groundMesh,
       pickHandler = () => {},
@@ -140,7 +142,10 @@
       };
     }
     function pose(m, u) {
-      const p = u.medicalCondition === "dead" || u.health?.alive === false ? "dead" : u.pose || "standing";
+      const p =
+        u.medicalCondition === "dead" || u.health?.alive === false
+          ? "dead"
+          : u.pose || "standing";
       m.group.rotation.z = 0;
       m.group.rotation.x = 0;
       if (p === "dead" || p === "down" || p === "carried")
@@ -567,48 +572,33 @@
         dispose();
         onFallback("3D 그래픽 연결이 끊겨 2D 상황도로 전환했습니다.");
       });
-      listen(renderer.domElement, "pointerdown", (e) => {
-        const p = root.OverwatchViewport.point(renderer.domElement, e);
-        if (e.button !== 0) return;
-        drag = {
-          x: p.x,
-          y: p.y,
-          startX: p.x,
-          startY: p.y,
-          moved: false,
-        };
-        renderer.domElement.setPointerCapture(e.pointerId);
-      });
-      listen(renderer.domElement, "pointermove", (e) => {
-        const p = root.OverwatchViewport.point(renderer.domElement, e);
-        if (!drag) return;
-        if (Math.hypot(p.x - drag.startX, p.y - drag.startY) > 6)
-          drag.moved = true;
-        if (!drag.moved) return;
-        yaw += (p.x - drag.x) * 0.007;
-        pitch = Math.max(0.35, Math.min(1.4, pitch + (p.y - drag.y) * 0.005));
-        drag.x = p.x;
-        drag.y = p.y;
-        invalidate();
-      });
-      listen(renderer.domElement, "pointerup", (e) => {
-        const p = root.OverwatchViewport.point(renderer.domElement, e);
-        if (drag && !drag.moved) {
-          const rect = renderer.domElement.getBoundingClientRect(),
-            caster = new T.Raycaster();
-          caster.setFromCamera(
-            new T.Vector2(
-              (p.x / renderer.domElement.clientWidth) * 2 - 1,
-              (-p.y / renderer.domElement.clientHeight) * 2 + 1,
-            ),
-            camera,
-          );
-          const hit = caster.intersectObject(groundMesh)[0];
-          if (hit) pickHandler({ x: hit.point.x, y: hit.point.z });
-        }
-        drag = null;
-      });
-      listen(renderer.domElement, "pointercancel", () => (drag = null));
+      const detachGestures = root.OverwatchViewport.bindMap(
+        renderer.domElement,
+        {
+          pan(dx, dy) {
+            yaw += dx * 0.007;
+            pitch = Math.max(0.35, Math.min(1.4, pitch + dy * 0.005));
+            invalidate();
+          },
+          zoom(factor) {
+            span = Math.max(35, Math.min(1400, span * factor));
+            size();
+          },
+          tap(p) {
+            const caster = new T.Raycaster();
+            caster.setFromCamera(
+              new T.Vector2(
+                (p.x / renderer.domElement.clientWidth) * 2 - 1,
+                (-p.y / renderer.domElement.clientHeight) * 2 + 1,
+              ),
+              camera,
+            );
+            const hit = caster.intersectObject(groundMesh)[0];
+            if (hit) pickHandler({ x: hit.point.x, y: hit.point.z });
+          },
+        },
+      );
+      listeners.push(detachGestures);
       listen(
         renderer.domElement,
         "wheel",

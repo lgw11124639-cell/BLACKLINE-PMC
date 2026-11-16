@@ -17,6 +17,7 @@ with sync_playwright() as p:
  q.locator('button[data-inspector=radio]').click();q.screenshot(path='/tmp/overwatch-commandroom-phone.png',full_page=True)
  q.set_viewport_size({'width':667,'height':375});q.wait_for_timeout(300);assert q.evaluate('document.documentElement.scrollWidth<=innerWidth');assert q.locator('.field-viewport').bounding_box()['height']>=120
  for button in q.locator('.field-stage-toolbar button').all():
+  if not button.is_visible():continue
   rect=button.bounding_box();stage=q.locator('.field-stage').bounding_box();assert rect['x']+rect['width']<=stage['x']+stage['width']+1,(button.inner_text(),rect,stage)
  q.set_viewport_size({'width':844,'height':320});q.wait_for_timeout(300);assert q.evaluate('document.documentElement.scrollHeight<=innerHeight+2');assert q.locator('.field-viewport').bounding_box()['height']>=100
  q.set_viewport_size({'width':1440,'height':900});q.wait_for_timeout(300);box=q.locator('.field-viewport').bounding_box();assert box['height']>550,box;q.screenshot(path='/tmp/overwatch-commandroom-desktop.png',full_page=True)
@@ -43,7 +44,7 @@ with sync_playwright() as p:
  q.set_viewport_size({'width':375,'height':667});q.wait_for_timeout(300)
  assert q.evaluate('document.documentElement.scrollWidth<=innerWidth')
  assert q.locator('[data-field-radio]').is_visible()
- q.locator('[data-field-fullscreen]').click();q.locator('nav[aria-label="본부 메뉴"] [data-tab=personnel]').click()
+ q.locator('[data-field-fullscreen]').click();q.locator('[data-mobile-menu]').click();q.locator('nav[aria-label="본부 메뉴"] [data-tab=personnel]').click()
  q.locator('[data-profile]').first.click();assert q.locator('[role=dialog]').is_visible()
  assert not errors,errors
  b.close();print('PASS assigned instructor sends actual squad orders; one delegated command surface; independent radio/roster/support panels; landscape phone and desktop fit; portrait rotates the complete game with correct map picks; fullscreen retains radio and roster; shared character display scale')

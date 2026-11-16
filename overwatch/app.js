@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.10",
+  const VERSION = "2026.11.16.11",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -51,8 +51,15 @@
     selectedPerson = null;
   let hqRecruitmentOpen = false;
   let lastSaved = null,
-    dirty = false;
+    dirty = false,
+    unsavedRecovery = null;
   function rollbackRuntime(errorValue) {
+    try {
+      if (state) {
+        Core.validate(state);
+        unsavedRecovery = Core.clone(state);
+      }
+    } catch {}
     runtime.stop();
     OverwatchAudio.stop();
     root
@@ -77,6 +84,9 @@
     state = store.save(state, state.revision);
     lastSaved = Core.clone(state);
     dirty = false;
+    for (const b of root.querySelectorAll("[data-save-now]"))
+      b.title =
+        "최근 저장: " + new Date(state.updatedAt).toLocaleString("ko-KR");
   }
   const runtime = OverwatchRealtime.create({
     baseRate: OverwatchRealtime.GAME_RATE,
@@ -123,6 +133,12 @@
       try {
         saveRuntime();
         FieldUI.refresh(root, state, { playing: false });
+      } catch (e) {
+        rollbackRuntime(e);
+      }
+    } else if (dirty && source === "primary" && !stale) {
+      try {
+        saveRuntime();
       } catch (e) {
         rollbackRuntime(e);
       }
@@ -516,15 +532,22 @@
   }
   function storagePage() {
     const enabled = !!state;
+    const savedInfo = store?.status();
+    const savedTime = state?.updatedAt
+      ? new Date(state.updatedAt).toLocaleString("ko-KR")
+      : "저장 전";
     return (
-      '<section class="page-title"><span class="eyebrow">SAVE & RECOVERY</span><h1>본부 기록 관리</h1><p>백업 파일을 내려받아 기기와 브라우저 사이에 진행을 옮길 수 있습니다.</p></section><section class="panel storage-summary"><div><span class="eyebrow">CURRENT RECORD</span><h2>' +
+      '<section class="page-title"><span class="eyebrow">SAVE & RECOVERY</span><h1>본부 기록 관리</h1><p>자동으로 저장하며 화면을 닫았다 열면 저장한 지점에서 이어집니다. 다른 기기에서는 백업 파일을 가져오세요.</p></section><section class="panel storage-summary"><div><span class="eyebrow">CURRENT RECORD</span><h2>' +
       esc(state?.headquarters.name || "복구 필요") +
       "</h2><p>" +
-      esc(state?.campaignId || "읽을 수 있는 본부 기록 없음") +
-      "</p><small>저장 revision " +
-      (state?.revision ?? "—") +
-      " · " +
-      esc(state?.updatedAt || "저장 전") +
+      (state
+        ? "본부 " + PersonnelUI.timestamp(state.clock.elapsedSeconds)
+        : "읽을 수 있는 본부 기록 없음") +
+      "</p><small>최근 저장 " +
+      esc(savedTime) +
+      " · 저장 공간 약 " +
+      Math.ceil((savedInfo?.bytes || 0) / 1024).toLocaleString() +
+      "KB" +
       '</small></div><span class="status-pill">' +
       {
         primary: "주 저장 정상",
@@ -533,9 +556,26 @@
         empty: "저장 없음",
         migration: "저장 전환 필요",
       }[source] +
-      '</span></section><div class="two-column"><section class="panel"><h2>백업과 복원</h2><div class="actions"><button id="export-save" ' +
+      '</span></section><section class="panel save-checkpoints"><h2>자동 저장과 복구</h2><p>기록은 이 브라우저에 저장됩니다. 주 저장과 백업을 함께 갱신하고, 이전 시점도 별도로 보관합니다.</p><div class="actions"><button data-save-now ' +
+      (!enabled || source !== "primary" || stale ? "disabled" : "") +
+      '>지금 저장</button><button id="recover-previous" ' +
+      (!savedInfo?.previous ? "disabled" : "") +
+      ">이전 자동 저장 복원</button>" +
+      (navigator.storage?.persist
+        ? '<button id="protect-storage">브라우저 저장 보호 요청</button>'
+        : "") +
+      "</div><p data-save-checkpoint>" +
+      (savedInfo?.previous
+        ? "복원 가능한 시점: 본부 " +
+          PersonnelUI.timestamp(savedInfo.previous.elapsedSeconds)
+        : "진행이 저장되면 이전 시점도 자동으로 보관합니다.") +
+      "</p>" +
+      (savedInfo?.recoveryWarning
+        ? '<p class="notice">' + esc(savedInfo.recoveryWarning) + "</p>"
+        : "") +
+      '</section><div class="two-column"><section class="panel"><h2>기기 이동·파일 백업</h2><div class="actions"><button id="export-save" ' +
       (!enabled ? "disabled" : "") +
-      '>OVERWATCH 백업 내보내기</button><label class="file-button">백업 파일 가져오기<input id="import-save" type="file" accept=".json,.blz,application/json,text/plain"></label><button id="reload-save">저장 다시 불러오기</button>' +
+      '>압축 백업 파일 받기</button><label class="file-button">백업 파일 가져오기<input id="import-save" type="file" accept=".json,.blz,application/json,text/plain"></label><button id="reload-save">저장 다시 불러오기</button>' +
       (source === "backup"
         ? '<button id="recover-backup">확인한 백업으로 주 저장 복구</button>'
         : "") +
@@ -543,6 +583,7 @@
       [
         store?.keys.primary,
         store?.keys.backup,
+        store?.keys.previous,
         store?.keys.beforeImport,
         store?.keys.beforeReset,
         store?.keys.beforeMigration,
@@ -563,6 +604,7 @@
                 {
                   [store.keys.primary]: "주 저장 원본",
                   [store.keys.backup]: "백업 원본",
+                  [store.keys.previous]: "이전 자동 저장",
                   [store.keys.beforeImport]: "가져오기 전 보관본",
                   [store.keys.beforeReset]: "새 본부 개설 전 보관본",
                   [store.keys.beforeMigration]: "2단계 전환 전 원본",
@@ -578,7 +620,7 @@
       (state?.settings.reducedMotion ? "checked" : "") +
       " " +
       (!enabled || source !== "primary" || stale ? "disabled" : "") +
-      '> 화면 효과 줄이기</label><p class="muted">본부 활동을 진행하면 모든 활동과 계약 시간이 함께 흐릅니다. 재접속만으로 시간이 흐르지 않습니다. 모의 전장은 1·2·4배속을 지원하며 재접속·백그라운드 전환 시 정지합니다.</p></section><section class="panel caution"><h2>새 본부 기록 개설</h2><p>현재 OVERWATCH 기록은 개설 전 보관본으로 남깁니다. 기존 PMC 주 저장과 백업은 변경하지 않습니다.</p><button id="new-campaign" ' +
+      '> 화면 효과 줄이기</label><p class="muted">본부 활동을 진행하면 모든 활동과 계약 시간이 함께 흐릅니다. 재접속만으로 시간이 흐르지 않습니다. 모의 전장은 1·2·4배속을 지원하며 화면을 다시 열면 저장한 지점에서 이어집니다.</p></section><section class="panel caution"><h2>새 본부 기록 개설</h2><p>현재 본부·자동 백업·이전 복원 기록을 모두 삭제하고 처음부터 시작합니다. 필요한 진행은 먼저 백업 파일로 받아두세요.</p><button id="new-campaign" ' +
       (!store ? "disabled" : "") +
       ">새 본부 기록 개설</button></section>"
     );
@@ -590,7 +632,10 @@
         : null,
       oldFieldScroll = scrollY;
     const retainedViewport = root.querySelector(".field-viewport"),
-      wasFullscreen = !!root.querySelector(".field-fullscreen");
+      wasFullscreen = !!root.querySelector(".field-fullscreen"),
+      wasInspectorCollapsed = !!root.querySelector(
+        ".field-inspector-collapsed",
+      );
     const radioScroll =
         root.querySelector(".command-radio-list")?.scrollTop || 0,
       showInternal = !!root.querySelector("[data-range-internal]")?.checked;
@@ -606,11 +651,11 @@
     );
     document.body.dataset.screen = tab;
     root.innerHTML =
-      '<header class="topbar"><a class="brand" href="#" data-tab="headquarters"><span class="brand-emblem" aria-hidden="true">B</span><span>BLACKLINE<small>OVERWATCH</small></span></a><div class="topbar-status"><span class="status-dot"></span><span data-live-clock>본부 ' +
+      '<header class="topbar"><button class="mobile-menu-button" data-mobile-menu aria-label="본부 메뉴 열기" aria-expanded="false">메뉴</button><a class="brand" href="#" data-tab="headquarters"><span class="brand-emblem" aria-hidden="true">B</span><span>BLACKLINE<small>OVERWATCH</small></span></a><div class="topbar-status"><span class="status-dot"></span><span data-live-clock>본부 ' +
       PersonnelUI.timestamp(state?.clock.elapsedSeconds || 0) +
       ' / 본부</span><button id="version-check" class="quiet">' +
       VERSION +
-      '</button><button data-game-fullscreen aria-label="게임 전체화면">전체화면</button></div></header><div class="rotate-hint"><span>가로 화면 전용 · 기기를 옆으로 돌려주세요.</span><button data-game-fullscreen>전체화면</button></div><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
+      '</button><button data-save-now aria-label="현재 진행 저장" title="현재 진행을 저장합니다.">저장</button><button data-game-fullscreen aria-label="게임 전체화면">전체화면</button></div></header><button class="mobile-nav-backdrop" data-mobile-menu-close aria-label="본부 메뉴 닫기"></button><div class="rotate-hint"><span>가로 화면 전용 · 기기를 옆으로 돌려주세요.</span><button data-game-fullscreen>전체화면</button></div><div class="workspace"><aside class="sidebar"><span class="eyebrow">COMMAND WORKSPACE</span><nav aria-label="본부 메뉴">' +
       tabs
         .map(
           ([key, label, n]) =>
@@ -629,7 +674,12 @@
       tabs.find((t) => t[0] === tab)?.[1] +
       "</div>" +
       (error
-        ? '<div role="alert" class="notice error">' + esc(error) + "</div>"
+        ? '<div role="alert" class="notice error">' +
+          esc(error) +
+          (unsavedRecovery
+            ? '<button id="export-unsaved">저장 실패 직전 진행 파일 받기</button>'
+            : "") +
+          "</div>"
         : "") +
       (notice
         ? '<div role="status" class="notice">' + esc(notice) + "</div>"
@@ -768,10 +818,21 @@
           window.scrollTo(0, oldFieldScroll);
         }
       }
+      if (wasInspectorCollapsed) {
+        root
+          .querySelector(".field-layout")
+          ?.classList.add("field-inspector-collapsed");
+        const b = root.querySelector("[data-field-panel-toggle]");
+        if (b) {
+          b.setAttribute("aria-expanded", "false");
+          b.textContent = "무전·대원";
+          b.setAttribute("aria-label", "옆 무전·대원 패널 열기");
+        }
+      }
       if (wasFullscreen) {
         root.querySelector(".field-layout")?.classList.add("field-fullscreen");
         const button = root.querySelector("[data-field-fullscreen]");
-        if (button) button.textContent = "전체화면 닫기";
+        if (button) button.textContent = "닫기";
       }
     }
     FieldUI.mount(root, state, {
@@ -844,11 +905,72 @@
     on("#export-save", () => {
       try {
         download(
-          "BLACKLINE-OVERWATCH-" + state.campaignId + ".json",
-          store.exportSave(state),
+          "BLACKLINE-OVERWATCH-" + state.campaignId + ".blz",
+          store.exportSave(state, { compressed: true }),
         );
       } catch (e) {
         error = e.message;
+        render();
+      }
+    });
+    for (const button of root.querySelectorAll("[data-save-now]")) {
+      button.disabled = !state || source !== "primary" || stale;
+      button.title =
+        "최근 저장: " +
+        (state?.updatedAt
+          ? new Date(state.updatedAt).toLocaleString("ko-KR")
+          : "저장 전");
+      button.addEventListener("click", () => {
+        notice = "현재 진행을 저장했습니다.";
+        commit(() => {});
+      });
+    }
+    on("#export-unsaved", () => {
+      try {
+        download(
+          "BLACKLINE-OVERWATCH-미저장-" + unsavedRecovery.campaignId + ".blz",
+          store.exportSave(unsavedRecovery, { compressed: true }),
+        );
+      } catch (e) {
+        error = e.message;
+        render();
+      }
+    });
+    on("#recover-previous", () => {
+      if (
+        !confirm(
+          "표시된 이전 자동 저장으로 돌아갈까요? 현재 기록도 복원 전 보관본으로 남깁니다.",
+        )
+      )
+        return;
+      try {
+        runtime.stop();
+        state = store.recoverPrevious();
+        lastSaved = Core.clone(state);
+        dirty = false;
+        runtime.reset();
+        source = "primary";
+        stale = false;
+        tab = "storage";
+        notice =
+          "이전 자동 저장을 복원했습니다. 복원 직전 기록도 보관했습니다.";
+        error = "";
+        render();
+        toggleField();
+      } catch (e) {
+        error = e.message;
+        render();
+      }
+    });
+    on("#protect-storage", async () => {
+      try {
+        const granted = await navigator.storage.persist();
+        notice = granted
+          ? "브라우저 저장 보호가 허용되었습니다. 기기 이동을 위해 파일 백업도 보관하세요."
+          : "브라우저에서 저장 보호를 허용하지 않았습니다. 진행은 계속 저장되며 파일 백업을 보관할 수 있습니다.";
+        render();
+      } catch (e) {
+        error = "저장 보호 요청을 처리하지 못했습니다. " + e.message;
         render();
       }
     });
@@ -890,12 +1012,20 @@
     on("#new-campaign", () => {
       if (
         !confirm(
-          "기존 OVERWATCH 저장을 보관하고 새 본부를 개설할까요? PMC 저장은 그대로 유지합니다.",
+          "현재 본부와 이 브라우저에 보관한 OVERWATCH 백업·복원 기록을 모두 삭제하고 처음부터 시작할까요?",
         )
       )
         return;
       try {
-        state = store.reset(Core.createCampaign({ id: id() }));
+        const fresh = Core.createCampaign({ id: id() });
+        OverwatchStaff.upgrade(fresh);
+        fresh.fieldPreferences.presentation = 2;
+        fresh.fieldPreferences.view = "illustrated";
+        state = store.reset(fresh);
+        unsavedRecovery = null;
+        hqRecruitmentOpen = false;
+        hqDirtyTicks = 0;
+        hqAutomationFailed = false;
         lastSaved = Core.clone(state);
         dirty = false;
         runtime.reset();
@@ -904,7 +1034,7 @@
         tab = "headquarters";
         stale = false;
         notice =
-          "새 본부를 개설했습니다. 이전 진행은 개설 전 보관본에 있습니다.";
+          "기존 본부와 보관 기록을 초기화했습니다. 새 본부에서 처음부터 시작합니다.";
         error = "";
         render();
       } catch (e) {
@@ -917,8 +1047,8 @@
       ?.addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        if (file.size > 8 * 1024 * 1024) {
-          error = "백업 파일은 8MiB 이하여야 합니다.";
+        if (file.size > 32 * 1024 * 1024) {
+          error = "백업 파일은 32MiB 이하여야 합니다.";
           render();
           return;
         }

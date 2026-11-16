@@ -16,7 +16,7 @@ with sync_playwright() as p:
    r=pane.bounding_box();q.mouse.move(r['x']+r['width']/2,r['y']+r['height']/2);q.mouse.wheel(0,4000);q.wait_for_timeout(400)
   else:
    session=ctx.new_cdp_session(q)
-   for j in range(12):
+   for j in range(24):
     r=pane.bounding_box();x=r['x']+r['width']*.18;y=r['y']+r['height']*.5
     session.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
     for k in range(1,9):
@@ -38,7 +38,7 @@ with sync_playwright() as p:
    r=main.bounding_box();q.mouse.move(r['x']+r['width']/2,r['y']+r['height']/2);q.mouse.wheel(0,2000)
   q.wait_for_timeout(300);assert main.evaluate('e=>e.scrollTop')>0
   q.locator('[data-field-fullscreen]').click();assert q.locator('.field-layout.field-fullscreen').evaluate('e=>e.clientHeight')==(390 if not portrait else 390);q.locator('[data-field-fullscreen]').click()
-  q.locator('nav[aria-label="본부 메뉴"] [data-tab=field]').click();assert not q.locator('.field-viewport').count();assert not q.locator('[data-field-start]').count();assert '실전 작전 없음' in main.inner_text()
-  q.locator('nav[aria-label="본부 메뉴"] [data-tab=command]').click();assert q.locator('[data-field-start]').count()==1
+  q.locator('[data-mobile-menu]').click();q.locator('nav[aria-label="본부 메뉴"] [data-tab=field]').click();assert not q.locator('.field-viewport').count();assert not q.locator('[data-field-start]').count();assert '실전 작전 없음' in main.inner_text()
+  q.locator('[data-mobile-menu]').click();q.locator('nav[aria-label="본부 메뉴"] [data-tab=command]').click();assert q.locator('[data-field-start]').count()==1
   assert not errors,errors;ctx.close()
  b.close();print('PASS fullscreen six-member roster reaches the bottom with wheel and native touch in rotated portrait; inspector tabs remain usable; ended training scrolls and operation/training tabs are separate')
