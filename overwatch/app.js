@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.16.08",
+  const VERSION = "2026.11.16.09",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -268,7 +268,7 @@
       if (
         source === "primary" &&
         state?.schemaVersion === 5 &&
-        state.operations.contentVersion !== 2
+        state.operations.contentVersion !== 3
       ) {
         const next = Core.clone(state);
         OverwatchMissions.upgrade(next);

@@ -141,7 +141,19 @@
             "</p></article>",
         )
         .join("") +
-      "</div><p>기관 신뢰 " +
+      "</div>" +
+      (r.agencySecurity
+        ? "<p>기관 보병 보안조 " +
+          r.agencySecurity.length +
+          "명 · 생존 " +
+          r.agencySecurity.filter((a) => a.alive).length +
+          "명 · 사망 " +
+          r.agencySecurity.filter((a) => !a.alive).length +
+          "명 · 실제 사격 " +
+          r.agencySecurity.reduce((n, a) => n + a.shots, 0) +
+          "발</p>"
+        : "") +
+      "<p>기관 신뢰 " +
       r.clientTrust +
       "/100 · 지원 사용: 드론 " +
       r.supports.drone +
@@ -254,7 +266,9 @@
             c.recommended +
             "명</p><p>" +
             esc(c.brief) +
-            "</p>" +
+            "</p><p>기관 보병 보안조 " +
+            (c.agencyInfantry || 4) +
+            "명 제공 · 저격조 접근로·철수로 경계 / 엄폐·대응 사격</p>" +
             (c.status === "offered"
               ? '<label class="contract-region">작전 지역<select data-live-region="' +
                 esc(c.id) +
@@ -349,7 +363,7 @@
       esc(m.title) +
       "</h2><p>" +
       (m.targetLabel
-        ? "BLACKLINE 저격조: 계약 표적 신원 식별·정밀 사격·실제 철수 / 일반 경계병 사살은 목표 달성에 포함하지 않습니다."
+        ? "BLACKLINE 저격조: 계약 표적 식별·정밀 사격 / 기관 보병: 접근로·철수로 경계·엄호. 일반 경계병 사살은 계약 목표에 포함하지 않습니다."
         : "BLACKLINE 저격조: 원거리 관측·정밀 엄호 / 기관 보병·구출조: 현장 접근·구출·호송") +
       "</p><p>" +
       esc(m.issuer) +
@@ -446,7 +460,18 @@
     if (agency && m.targetLabel)
       agency.textContent =
         "지정 표적 " + m.targetLabel + " · 저격조 자율 관측·신원 식별";
-    if (agency && m.agencyControl)
+    if (
+      agency &&
+      m.securityControl &&
+      ["eliminate", "interdict", "recon"].includes(m.task)
+    )
+      agency.textContent =
+        (m.targetLabel ? "지정 표적 " + m.targetLabel + " · " : "") +
+        "기관 보병 " +
+        m.agencyInfantry +
+        "명 · " +
+        m.securityControl.reason;
+    else if (agency && m.agencyControl)
       agency.textContent =
         "기관 보병: " +
         m.agencyControl.reason +
