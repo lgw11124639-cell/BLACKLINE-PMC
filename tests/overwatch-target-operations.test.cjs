@@ -163,7 +163,9 @@ for (const key of ["high-value-target", "counter-sniper", "courier-intercept"])
           control: e.control,
         }),
       );
-      assert.ok(e.events.some((ev) => ev.type === "mission-target-identified"));
+      assert.ok(
+        e.mission.log.some((ev) => ev.type === "mission-target-identified"),
+      );
       assert.ok(
         e.mission.targetProgress.confirmed.length ===
           e.mission.targetIds.length,
