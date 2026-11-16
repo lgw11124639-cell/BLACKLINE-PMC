@@ -220,7 +220,28 @@
             c.recommended +
             "명</p><p>" +
             esc(c.brief) +
-            "</p><p>기본 " +
+            "</p>" +
+            (c.status === "offered"
+              ? '<label class="contract-region">작전 지역<select data-live-region="' +
+                esc(c.id) +
+                '"' +
+                (!editable || active ? " disabled" : "") +
+                ">" +
+                M.regionsFor(c)
+                  .map(
+                    (map) =>
+                      '<option value="' +
+                      esc(map.id) +
+                      '"' +
+                      (map.id === c.mapId ? " selected" : "") +
+                      ">" +
+                      esc(map.name) +
+                      "</option>",
+                  )
+                  .join("") +
+                "</select></label>"
+              : "") +
+            "<p>기본 " +
             cash(c.reward) +
             " / 성과 " +
             cash(c.bonus) +
@@ -468,6 +489,15 @@
     });
     each("[data-live-inspect]", () => commit((next) => M.inspection(next)));
     each("[data-live-refresh]", () => commit((next) => M.refresh(next)));
+    rootNode
+      .querySelectorAll("[data-live-region]")
+      .forEach((select) =>
+        select.addEventListener("change", () =>
+          commit((next) =>
+            M.selectRegion(next, select.dataset.liveRegion, select.value),
+          ),
+        ),
+      );
     each("[data-live-open-field]", () => navigate("field"));
     each("[data-live-support]", (b) =>
       execute((next) =>

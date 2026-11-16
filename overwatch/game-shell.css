@@ -1679,3 +1679,94 @@ body[data-screen="headquarters"] .hq-dashboard > .panel {
     touch-action: none;
   }
 }
+
+/* Desktop command desk: persistent radio plus a separate personnel/support pane. */
+@media (min-width: 1366px) and (min-height: 650px) and (orientation: landscape) {
+  .workspace {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+  .sidebar nav button {
+    font-size: 13px;
+    padding: 12px;
+  }
+  .field-layout,
+  .field-layout.field-fullscreen {
+    grid-template-columns: minmax(0, 1fr) 390px;
+    gap: 12px;
+  }
+  .field-layout > aside {
+    overflow: hidden;
+    padding: 10px;
+    gap: 10px;
+  }
+  .field-layout[data-inspector]
+    > aside
+    > .field-comms[data-inspector-panel="radio"] {
+    display: flex !important;
+    flex-direction: column;
+    flex: 0 0 36%;
+    min-height: 160px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--line);
+  }
+  .field-layout > aside .field-radio {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+  }
+  .field-layout[data-inspector="radio"]
+    > aside
+    > .panel[data-inspector-panel="roster"] {
+    display: block !important;
+  }
+  .field-layout > aside > [data-inspector-panel="roster"],
+  .field-layout > aside > [data-inspector-panel="support"] {
+    min-height: 0;
+    overflow-y: auto;
+    flex: 1 1 0;
+  }
+  .field-layout
+    > aside
+    > [data-inspector-panel="roster"]:has([data-field-contacts]) {
+    flex: 0 1 100px;
+  }
+  .field-person h3 {
+    font-size: 15px;
+  }
+  .field-person p,
+  .field-person small,
+  .field-radio li p {
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .field-layout > aside h2 {
+    font-size: 15px;
+  }
+  .field-stage-toolbar button,
+  .field-panel-tabs button {
+    font-size: 12px;
+    min-height: 34px;
+    height: auto;
+  }
+  .field-stage-toolbar select {
+    width: 125px;
+    font-size: 12px;
+    height: 34px;
+  }
+}
+@media (min-width: 1800px) and (min-height: 650px) and (orientation: landscape) {
+  .field-layout,
+  .field-layout.field-fullscreen {
+    grid-template-columns: minmax(0, 1fr) 460px;
+  }
+}
+.contract-region {
+  display: block;
+  margin: 12px 0;
+}
+.contract-region select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}

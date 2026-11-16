@@ -152,13 +152,21 @@
   function offers(s) {
     const seq = ++s.operations.sequence;
     for (const t of TEMPLATES) {
-      const baseMapId = {
-          "ridge-watch": "ridge-field",
-          "aid-cover": "urban-quarter",
-          "rescue-cover": "urban-port",
-          "vip-cover": "urban-modern",
-          "quiet-watch": "ridge-field",
-        }[t.key],
+      const cityMaps = [
+          "urban-modern",
+          "urban-quarter",
+          "urban-port",
+          "urban-market",
+        ],
+        original = { "aid-cover": 1, "rescue-cover": 2, "vip-cover": 0 }[t.key],
+        baseMapId =
+          original === undefined
+            ? seq % 3 === 1
+              ? "ridge-field"
+              : cityMaps[
+                  (seq + (t.key === "quiet-watch" ? 2 : 0)) % cityMaps.length
+                ]
+            : cityMaps[(original + seq - 1) % cityMaps.length],
         mapId = G.maps[baseMapId + "-operation"]
           ? baseMapId + "-operation"
           : baseMapId,
@@ -173,7 +181,23 @@
       G.activate(previous);
       const c = {
         ...copy(t),
+        title: map.name + " · " + t.type,
         mapId,
+        interest:
+          seq === 1
+            ? map.sector
+              ? copy(map.sector)
+              : null
+            : (() => {
+                const old = G.MAP.id;
+                G.activate(mapId);
+                const p = G.project(
+                  map.spawnPoints?.[(seq - 2) % map.spawnPoints.length] ||
+                    map.sector || { x: 500, y: 150 },
+                );
+                G.activate(old);
+                return p;
+              })(),
         region: map.name,
         id: "offer-" + seq + "-" + t.key,
         status: "offered",
@@ -232,6 +256,38 @@
     );
     ok(s.contracts.length <= 10, "현재 제안을 처리한 뒤 다시 접수하세요.");
     offers(s);
+  }
+  function regionsFor(contract) {
+    return Object.values(G.maps).filter(
+      (map) =>
+        map.id.endsWith("-operation") ||
+        (contract.task === "recon" && map.id === "ridge-field"),
+    );
+  }
+  function selectRegion(s, id, mapId) {
+    const c = s.contracts.find((c) => c.id === id);
+    ok(
+      c?.status === "offered" && !s.activeMission,
+      "출격 전 접수된 의뢰만 지역을 변경할 수 있습니다.",
+    );
+    const map = regionsFor(c).find((map) => map.id === mapId);
+    ok(map, "이 의뢰에 사용할 수 없는 작전 지역입니다.");
+    const previous = G.MAP.id;
+    G.activate(mapId);
+    c.mapId = mapId;
+    c.region = map.name;
+    c.title = map.name + " · " + c.type;
+    c.interest = G.project(map.sector || { x: 500, y: 150 });
+    c.insertion = G.project(
+      map.urban ? { x: map.base.x + 12, y: map.base.y } : { x: 220, y: 550 },
+    );
+    c.extraction = copy(c.insertion);
+    G.activate(previous);
+    event(s, "mission-region-selected", c.region + " 작전 정보 수신.", {
+      contractId: c.id,
+      mapId,
+    });
+    return c;
   }
   function accept(s, id) {
     updateOffers(s);
@@ -468,7 +524,10 @@
     }
     setupTask(e);
     setupForces(e);
-    for (const q of e.squads) q.roe = "selfDefense";
+    for (const q of e.squads) {
+      q.roe = "selfDefense";
+      if (c.interest) q.sector = copy(c.interest);
+    }
     primary.state = c.transport === "foot" ? "unused" : "boarding";
     primary.trip = "insertion";
     e.pauseReason =
@@ -558,6 +617,33 @@
       });
       e.world.actors.push(a);
     }
+    for (const [i, a] of e.world.actors
+      .filter((a) => a.side === "red")
+      .entries()) {
+      const destination = copy(a.route[0]),
+        regular = i < Math.ceil(wanted / 2),
+        group = Math.floor(i / 2);
+      const start = G.project({
+        x: G.MAP.width - 30 - (i % 3) * 8,
+        y: regular ? 24 + group * 18 : G.MAP.height * 0.3 + (i % 4) * 14,
+      });
+      Object.assign(a, start, {
+        faction: regular ? "regular" : "insurgent",
+        state: "assembling",
+        path: [],
+        memory: [],
+      });
+      a.deployment = {
+        phase: "approach",
+        startedAt: e.time,
+        releaseAt: e.time + 45 + group * 20,
+        destination,
+        group,
+        index: i % 2,
+        doctrine: regular ? "bounding-overwatch" : "loose-advance",
+      };
+      a.heading = Math.atan2(destination.y - a.y, destination.x - a.x);
+    }
     if (m.contract.task !== "recon")
       for (let i = 0; i < 3; i++) {
         const p = G.project({
@@ -632,7 +718,7 @@
           e,
           "agency-protected",
           "억류 의료인",
-          at({ x: 620, y: 445 }, G.MAP.sector),
+          at({ x: 620, y: 445 }, m.contract.interest || G.MAP.sector),
           false,
         );
       h.health.kit = 0;
@@ -899,6 +985,11 @@
       if (!u) continue;
       u.x = t.x;
       u.y = t.y;
+      delete u.roofId;
+      delete u.roofTransit;
+      delete u.overwatchPath;
+      u.path = [];
+      u.goal = null;
       u.altitude = t.altitude;
       u.boardedBy = t.id;
       u.state = "aboard";
@@ -1013,6 +1104,27 @@
       }
     }
     for (const t of m.transports) {
+      if (
+        t.type === "vehicle" &&
+        (t.target?.roofId ||
+          t.path.some((p) => p.roofId || p.roofTransition) ||
+          G.blocked(t))
+      ) {
+        const oldPosition = { x: t.x, y: t.y },
+          roof = G.roofs().find((r) => r.id === t.target?.roofId);
+        const destination =
+          roof?.access || G.project({ x: t.target.x, y: t.target.y });
+        const ground = G.project({ x: t.x, y: t.y });
+        t.x = ground.x;
+        t.y = ground.y;
+        delete t.roofId;
+        beginTravel(e, t, destination, t.arrival);
+        log(e, "transport-ground-route-recovered", {
+          transportId: t.id,
+          previousPosition: oldPosition,
+          target: destination,
+        });
+      }
       travel(e, t);
       if (
         t.id === "primary" &&
@@ -3040,6 +3152,8 @@
   }
   const api = {
     TEMPLATES,
+    regionsFor,
+    selectRegion,
     PRICES,
     initialize,
     updateOffers,

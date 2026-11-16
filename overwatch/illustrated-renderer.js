@@ -3,14 +3,18 @@
   "use strict";
   let active = null;
   function create(host, initial) {
+    const desktop =
+      root.innerWidth >= 1366 &&
+      root.innerHeight >= 650 &&
+      root.innerWidth > root.innerHeight;
     let frame = initial,
       disposed = false,
       raf = null,
       lastDraw = 0,
       until = 0,
       dirty = true,
-      span = 60,
-      follow = true,
+      span = desktop ? initial.map.height : 60,
+      follow = !desktop,
       target = { x: initial.map.width / 2, y: initial.map.height / 2 },
       pick = () => {},
       rangeId = null,
