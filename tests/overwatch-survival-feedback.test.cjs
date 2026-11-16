@@ -298,3 +298,58 @@ test("heard gunfire reports reference an actual shot without leaking an unseen f
   assert.ok(!report.body.includes("200"));
   C.validate(s);
 });
+
+test("a physically audible unseen shot produces audio-only evidence without exposing shooter identity, location or weapon", () => {
+  const { s, e, u } = setup(),
+    enemy = e.world.actors[0],
+    target = e.world.actors[1];
+  Object.assign(u, { x: 100, y: 700 });
+  Object.assign(e.world.units[1], { x: 80, y: 700 });
+  Object.assign(enemy, { x: 500, y: 700 });
+  Object.assign(target, { x: 600, y: 700, side: "ally", faction: "allied" });
+  e.time = 30;
+  s.clock.elapsedSeconds = 30;
+  Object.assign(enemy.weapon, {
+    targetId: target.id,
+    aimSince: 0,
+    aimAnchor: { x: target.x, y: target.y },
+    aimOrigin: { x: enemy.x, y: enemy.y },
+  });
+  const shot = B.fire(s, e, enemy, {
+    id: target.id,
+    x: target.x,
+    y: target.y,
+    condition: "standing",
+  });
+  assert.ok(shot);
+  const fx = B.shotObservation(e, e.squads[0], shot);
+  assert.equal(fx.kind, "heard");
+  assert.equal(fx.model, "heard");
+  assert.equal(fx.side, "unknown");
+  assert.equal(fx.actorId, null);
+  assert.equal(fx.impactVisible, false);
+  assert.notDeepEqual(fx.from, shot.from);
+  assert.deepEqual(fx.from, { x: u.x, y: u.y });
+  assert.ok(e.radio.some((r) => r.body.includes("총성 청취")));
+  C.validate(s);
+});
+test("distant sounds outside the actual acoustic range create neither visual nor auditory evidence", () => {
+  const { e, u } = setup();
+  Object.assign(u, { x: 100, y: 700 });
+  Object.assign(e.world.units[1], { x: 80, y: 700 });
+  const shot = {
+    id: "far-shot",
+    time: e.time,
+    actorId: e.world.actors[0].id,
+    targetId: "unseen",
+    model: "AKM",
+    side: "red",
+    from: { x: 1100, y: 700 },
+    to: { x: 1190, y: 700 },
+    hit: false,
+  };
+  assert.equal(B.shotObservation(e, e.squads[0], shot), null);
+  shot.from.x = 500;
+  shot.model = "HK416";
+  assert.equal(B.shotObservation(e, e.squads[0], shot), null);
+});

@@ -417,6 +417,133 @@
     if (crewPresent) c.pendingPickup = choices[0].p;
     else M().requestReturn(s, { pickup: choices[0].p, authority: a });
   }
+  function missionProgress(s, e, a, c, frame) {
+    const m = e.mission;
+    if (
+      !m?.agencyControl?.everAuthorized ||
+      m.contract.task === "recon" ||
+      m.returnRequested ||
+      m.knowledge.objective !== "pending"
+    )
+      return false;
+    const phase =
+        m.contract.task === "rescue" && !m.taskLinked ? "approach" : "escort",
+      actors = m.knowledge.actors || [],
+      anchor = actors.find(
+        (x) =>
+          x.id ===
+          (phase === "escort"
+            ? "agency-protected"
+            : m.taskLeaderId || "agency-rescuer"),
+      );
+    if (!anchor || e.time - anchor.observedAt > 30) return false;
+    const goal =
+      phase === "escort"
+        ? m.taskGoal
+        : m.contract.interest || G().MAP.sector || e.squads[0].sector;
+    let last = anchor,
+      remaining = 0;
+    const route = G().path(anchor, goal);
+    for (const p of route) {
+      remaining += G().distance(last, p);
+      last = p;
+    }
+    if (!route.length && G().distance(anchor, goal) > 2)
+      remaining = G().MAP.width * 3;
+    let w = c.progressWatch;
+    if (!w || w.phase !== phase)
+      w = c.progressWatch = {
+        phase,
+        bestRemaining: remaining,
+        lastUsefulAt: e.time,
+        visited: [],
+        replanAt: null,
+      };
+    let useful = remaining < w.bestRemaining - 5;
+    if (useful) w.bestRemaining = remaining;
+    for (const f of [
+      ...frame.friends.filter((f) => f.age < 20 && !f.home && !f.boardedBy),
+      anchor,
+    ]) {
+      const key =
+        f.id +
+        ":" +
+        Math.floor(f.x / 20) +
+        ":" +
+        Math.floor(f.y / 20) +
+        ":" +
+        (f.roofId || "ground");
+      if (!w.visited.includes(key)) {
+        w.visited.push(key);
+        useful = true;
+      }
+    }
+    w.goalDistances ||= {};
+    for (const f of frame.friends.filter(
+      (f) => f.age < 20 && !f.home && !f.boardedBy,
+    )) {
+      const target = e.squads.find((q) => q.callsign === f.callsign)?.tactical
+        ?.position;
+      if (!target) continue;
+      const key =
+          f.id +
+          ":" +
+          Math.round(target.x / 10) +
+          ":" +
+          Math.round(target.y / 10) +
+          ":" +
+          (target.roofId || "ground"),
+        distance = G().distance(f, target);
+      const old = w.goalDistances[key];
+      if (old !== undefined && distance < old - 5) useful = true;
+      if (old === undefined || distance < old - 5)
+        w.goalDistances[key] = distance;
+    }
+    w.visited = w.visited.slice(-256);
+    if (useful) {
+      w.lastUsefulAt = e.time;
+      return false;
+    }
+    const stalled = e.time - w.lastUsefulAt;
+    if (stalled >= 600 && w.replanAt !== null) {
+      note(
+        s,
+        e,
+        a,
+        "controller-progress-abort",
+        "기관 구출·호송 경로가 같은 구역에서 반복되고 재전개 후에도 목표 진전이 없다. 수행 불가로 판단해 조 전체 철수·회수를 지시한다.",
+        { lastProgressAt: w.lastUsefulAt, remaining: w.bestRemaining },
+      );
+      M().requestReturn(s, { abort: true, authority: a });
+      return true;
+    }
+    if (stalled >= 300 && w.replanAt === null) {
+      const q =
+        e.squads.find((q) => q.assignment?.kind === "corridor-cover") ||
+        e.squads[0];
+      note(
+        s,
+        e,
+        a,
+        "controller-route-stalled",
+        "기관 이동이 같은 구역에서 반복된다. 보병을 정지시키고 엄호조 한 조의 관측 진지·진출로를 다시 검토한다.",
+        { lastProgressAt: w.lastUsefulAt, remaining: w.bestRemaining },
+      );
+      const command = order(
+        s,
+        e,
+        a,
+        q,
+        "cover",
+        G().project({ x: anchor.x, y: anchor.y }),
+      );
+      command.reposition = true;
+      m.agencyControl.authorized = false;
+      m.agencyControl.scanCommandId = command.id;
+      w.replanAt = e.time;
+    }
+    return false;
+  }
   function tick(s, e) {
     if (!s.commandStaff?.delegated || !e.battle || e.status !== "running")
       return;
@@ -582,6 +709,7 @@
     }
     if (e.mission?.returnRequested || e.battle.objective.returnRequested)
       return;
+    if (missionProgress(s, e, a, c, frame)) return;
     const sectors = regions(e),
       reconTask = e.mission
         ? e.mission.contract.task === "recon"
@@ -898,6 +1026,7 @@
     ready,
     authority,
     tick,
+    missionProgress,
     validate,
     release,
     delegate,

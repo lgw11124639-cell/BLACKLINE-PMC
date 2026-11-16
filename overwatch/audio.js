@@ -9,7 +9,9 @@
     volume = 0.35,
     lastFrame = null,
     id = null,
-    played = 0;
+    played = 0,
+    lastSound = null;
+  const playedBySide = { blue: 0, ally: 0, red: 0, unknown: 0 };
   const buffers = new Map(),
     seen = new Set(),
     voices = new Set(),
@@ -19,7 +21,8 @@
       AKM: "ak",
       SVD: "precision",
       G19: "pistol",
-      incoming: "rifle-a",
+      incoming: "ak",
+      heard: "ak",
     };
   try {
     const n = Number(
@@ -112,7 +115,9 @@
             y: own.reduce((n, v) => n + v.y, 0) / own.length,
           }
         : fx.from;
-    const distance = Math.hypot(fx.from.x - listener.x, fx.from.y - listener.y),
+    const distance =
+        fx.audioDistance ??
+        Math.hypot(fx.from.x - listener.x, fx.from.y - listener.y),
       suppressed = root.OverwatchBattle.WEAPONS[model]?.suppressed === true;
     const source = context.createBufferSource(),
       filter = context.createBiquadFilter(),
@@ -124,10 +129,35 @@
       wet = context.createGain();
     source.buffer = buffer;
     filter.type = "lowpass";
-    filter.frequency.value = suppressed
-      ? 2600
-      : Math.max(2400, 14000 - distance * 8);
-    gain.gain.value = (suppressed ? 0.32 : 0.7) / (1 + distance / 260);
+    filter.frequency.value =
+      fx.kind === "heard"
+        ? Math.max(700, 2200 - distance * 2)
+        : suppressed
+          ? 2600
+          : Math.max(2400, 14000 - distance * 8);
+    gain.gain.value =
+      fx.kind === "heard"
+        ? Math.max(0.12, 0.45 / (1 + distance / 260))
+        : (suppressed ? 0.4 : 0.8) / (1 + distance / 260);
+    source.playbackRate.value =
+      model === "AXMC"
+        ? 0.86
+        : model === "SVD"
+          ? 1.12
+          : model === "HK416"
+            ? 1.06
+            : 0.96;
+    const side = ["blue", "ally", "red"].includes(fx.side)
+      ? fx.side
+      : "unknown";
+    lastSound = {
+      side,
+      model,
+      kind: fx.kind,
+      profile: profiles[model],
+      rate: source.playbackRate.value,
+      filter: filter.frequency.value,
+    };
     if (pan.pan)
       pan.pan.value = Math.max(
         -0.8,
@@ -163,6 +193,7 @@
     };
     source.start();
     played++;
+    playedBySide[side]++;
   }
   function sync(f, { active = true } = {}) {
     lastFrame = f;
@@ -189,7 +220,7 @@
     for (const fx of f.battle?.effects || []) {
       if (seen.has(fx.eventId)) continue;
       seen.add(fx.eventId);
-      if (count++ < 8 && f.time - fx.receivedAt <= 2) play(fx, f);
+      if (count++ < 8 && f.time - fx.receivedAt <= 5) play(fx, f);
     }
     while (seen.size > 200) seen.delete(seen.values().next().value);
   }
@@ -227,6 +258,8 @@
         voices: voices.size,
         contexts: context ? 1 : 0,
         played,
+        playedBySide: { ...playedBySide },
+        lastSound,
       };
     },
   };

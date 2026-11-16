@@ -16,4 +16,6 @@ with sync_playwright() as p:
  assert result=={'actual':2,'teams':['BRAVO'],'hq':3,'roster':6},result
  q.evaluate('''()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state;for(let i=0;i<160;i++){OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1);}OverwatchCore.validate(s);st.save(s,s.revision);}''');q.reload(wait_until='networkidle');q.evaluate('OverwatchIllustratedRenderer.get().overview()');q.wait_for_timeout(500)
  scales=q.evaluate('OverwatchIllustratedRenderer.get().stats().motions.map(m=>m.entityScale).filter(Boolean)');assert len(scales)>=2 and min(scales)>=12,scales
+ q.evaluate('OverwatchIllustratedRenderer.get().follow();OverwatchIllustratedRenderer.get().zoom(0.5)');q.wait_for_timeout(300)
+ enlarged=q.evaluate('OverwatchIllustratedRenderer.get().stats().motions.map(m=>m.entityScale).filter(Boolean)');assert max(enlarged)>max(scales), (scales,enlarged)
  q.screenshot(path='/tmp/overwatch-sortie-readable.png',full_page=True);assert not errors,errors;b.close();print('PASS persisted one-pair sortie selection through actual UI, two physical operators, three HQ formations retained, readable shared display scale')

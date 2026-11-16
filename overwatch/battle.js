@@ -1530,7 +1530,9 @@
         q.callsign +
           ". " +
           (identified
-            ? "관측 중인 인원의 사격 확인. 엄폐하며 위협 평가한다."
+            ? u.side === "red"
+              ? "식별된 적 사격 확인. 엄폐하며 위협 평가한다."
+              : "식별된 아군 지원 사격 확인. 엄호 유지."
             : "총성 청취. 발사원·소속 미확인. 엄폐하며 확인한다."),
         ev,
       );
@@ -1896,7 +1898,32 @@
       near = [q.observerId, q.sniperId].some(
         (id) => G.distance(unit(e, id), shot.to) < 20,
       );
-    if (!shooterKnown && !near && !ownTarget) return null;
+    if (!shooterKnown && !near && !ownTarget) {
+      const listener = I().leader(e, q),
+        source = all(e).find((u) => u.id === shot.actorId),
+        distance = G.distance(listener, shot.from),
+        range = WEAPONS[shot.model]?.suppressed
+          ? source?.role === "sniper"
+            ? 350
+            : 180
+          : 850;
+      if (!listener?.capable || distance > range) return null;
+      return {
+        eventId: shot.id,
+        time: shot.time,
+        kind: "heard",
+        sourceKnown: false,
+        actorId: null,
+        targetId: null,
+        model: "heard",
+        side: "unknown",
+        from: { x: listener.x, y: listener.y },
+        to: { x: listener.x, y: listener.y },
+        hit: false,
+        impactVisible: false,
+        audioDistance: distance < 150 ? 100 : distance < 450 ? 350 : 700,
+      };
+    }
     if (!shooterKnown)
       return {
         eventId: shot.id,
@@ -1961,8 +1988,13 @@
       if (!I().linked(e, q)) continue;
       I().applyKnowledge(e, { payload: { friends: p.friends } });
       b.delivered.push({ ...p, receivedAt: e.time });
-      for (const f of p.effects)
-        if (!b.knowledge.effects.some((x) => x.eventId === f.eventId)) {
+      for (const f of p.effects) {
+        const previous = b.knowledge.effects.find(
+          (x) => x.eventId === f.eventId,
+        );
+        if (previous && previous.kind !== "shot" && f.kind === "shot")
+          Object.assign(previous, f, { receivedAt: e.time });
+        if (!previous) {
           b.knowledge.effects.push({ ...f, receivedAt: e.time });
           if (f.hit || f.impactVisible) {
             b.knowledge.decals = b.knowledge.decals || [];
@@ -1976,6 +2008,7 @@
             b.knowledge.decals = b.knowledge.decals.slice(-100);
           }
         }
+      }
     }
     // Keep the actual source packet for frozen HQ positions during long signal loss.
     const evidence = Object.values(e.knowledge.friends)

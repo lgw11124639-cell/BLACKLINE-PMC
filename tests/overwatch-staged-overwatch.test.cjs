@@ -195,3 +195,61 @@ test("agency infantry actually replace an incapacitated rescue leader; a lost re
   assert.ok(e.events.some((ev) => ev.type === "agency-team-incapacitated"));
   C.validate(s);
 });
+
+test("agency infantry starts actual self-aid instead of remaining immobilized forever after an untreated wound", () => {
+  const { s, e } = launch(2);
+  for (let i = 0; i < 150; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  const patient = e.world.actors.find((a) => a.side === "ally" && a.armed);
+  B.injure(s, e, patient, {
+    eventId: "agency-leg-hit",
+    part: "leftLeg",
+    severity: 2,
+  });
+  assert.ok(patient.health.wounds.some((w) => !w.treated));
+  M.actorTaskTick(s, e, patient);
+  assert.equal(patient.health.aid?.targetId, patient.id);
+  assert.ok(
+    e.events.some(
+      (ev) => ev.type === "aid-started" && ev.actorId === patient.id,
+    ),
+  );
+  C.validate(s);
+});
+test("reported repeated movement receives one real route reassessment, then an abort and physical recovery request rather than endless objective waiting", () => {
+  const { s, e } = launch(2);
+  for (let i = 0; i < 150; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  e.mission.agencyControl.everAuthorized = true;
+  const a = e.commandAuthority,
+    c = e.control,
+    frame = D.frame(s),
+    anchor = e.mission.knowledge.actors.find((a) => a.id === "agency-rescuer");
+  function assess(t) {
+    e.time = t;
+    s.clock.elapsedSeconds = e.startedAt + t;
+    anchor.observedAt = t;
+    frame.time = t;
+    frame.friends.forEach((f) => {
+      f.age = 0;
+      f.observedAt = t;
+    });
+    return Staff.missionProgress(s, e, a, c, frame);
+  }
+  assess(200);
+  assess(510);
+  assert.ok(e.events.some((ev) => ev.type === "controller-route-stalled"));
+  assert.equal(e.mission.returnRequested, false);
+  assess(810);
+  assert.equal(e.mission.returnRequested, true);
+  assert.equal(e.mission.abortRequested, true);
+  assert.equal(e.mission.objective, false);
+  assert.equal(e.status, "running");
+  assert.equal(s.operations.reports.length, 0);
+  assert.ok(e.events.some((ev) => ev.type === "controller-progress-abort"));
+  assert.ok(e.commands.some((command) => command.kind === "withdraw"));
+});

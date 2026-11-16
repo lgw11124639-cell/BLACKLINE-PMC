@@ -4,9 +4,13 @@
   function create({
     tick,
     checkpoint,
+    baseRate = 1,
+    afterPump = () => {},
     onError = () => {},
     now = () => performance.now(),
   } = {}) {
+    if (!Number.isFinite(baseRate) || baseRate <= 0 || baseRate > 4)
+      throw Error("잘못된 기본 진행 속도");
     let running = false,
       last = 0,
       accumulator = 0,
@@ -38,7 +42,7 @@
           accumulator = 0;
           return 0;
         }
-        accumulator += elapsed * speed;
+        accumulator += elapsed * speed * baseRate;
         let steps = 0;
         try {
           while (accumulator >= 1 - 1e-9 && running) {
@@ -46,7 +50,7 @@
             const proceed = tick();
             steps++;
             dirtySteps++;
-            if (dirtySteps >= 5 || proceed === false) {
+            if (dirtySteps >= 5 * baseRate || proceed === false) {
               checkpoint();
               dirtySteps = 0;
             }
@@ -55,6 +59,7 @@
               accumulator = 0;
             }
           }
+          if (steps) afterPump();
         } catch (error) {
           running = false;
           accumulator = 0;
@@ -73,7 +78,7 @@
       },
     };
   }
-  const api = { create };
+  const api = { create, GAME_RATE: 4 };
   root.OverwatchRealtime = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window === "undefined" ? globalThis : window);

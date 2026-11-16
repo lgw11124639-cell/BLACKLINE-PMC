@@ -562,3 +562,38 @@ test("reported impact traces are causal, delayed, deduplicated and survive save 
   assert.equal(D.frame(s).battle.decals[1].kind, "blood");
   C.validate(s);
 });
+
+test("game baseline advances four simulation seconds per real second at 1x and batches UI updates without changing step size", () => {
+  let now = 0,
+    ticks = 0,
+    paints = 0,
+    saves = 0;
+  const rt = RT.create({
+    baseRate: RT.GAME_RATE,
+    now: () => now,
+    tick: () => {
+      ticks++;
+      return true;
+    },
+    checkpoint: () => saves++,
+    afterPump: () => paints++,
+  });
+  rt.start(1);
+  for (let i = 0; i < 10; i++) {
+    now += 100;
+    rt.pump();
+  }
+  assert.equal(ticks, 4);
+  rt.setSpeed(4);
+  for (let i = 0; i < 10; i++) {
+    now += 100;
+    rt.pump();
+  }
+  assert.equal(ticks, 20);
+  assert.equal(saves, 1);
+  assert.ok(paints < ticks);
+  const before = ticks;
+  now += 600000;
+  rt.pump(false);
+  assert.equal(ticks, before);
+});

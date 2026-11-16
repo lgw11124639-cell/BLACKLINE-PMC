@@ -2211,7 +2211,26 @@
       u.health.aid
     )
       return;
-    if (u.health.wounds.some((w) => !w.treated)) return;
+    if (u.health.wounds.some((w) => !w.treated)) {
+      if (!B().underFire(e, u)) {
+        const medic =
+          u.armed && u.health.kit > 0
+            ? u
+            : e.world.actors.find(
+                (a) =>
+                  a.side === "ally" &&
+                  a.armed &&
+                  a.health.alive &&
+                  a.health.conscious &&
+                  !a.health.aid &&
+                  a.health.kit > 0 &&
+                  G.distance(a, u) < 4 &&
+                  (a.roofId || null) === (u.roofId || null),
+              );
+        if (medic) B().bandage(s, e, medic, u);
+      }
+      return;
+    }
     if (
       m.agencyControl &&
       (!m.agencyControl.authorized ||
@@ -2376,7 +2395,14 @@
       m.taskLeaderId ||=
         m.contract.task === "rescue" ? "agency-rescuer" : "agency-guide";
       const old = e.world.actors.find((a) => a.id === m.taskLeaderId);
-      if (old && (!old.health.alive || !old.health.conscious)) {
+      if (
+        old &&
+        (!old.health.alive ||
+          !old.health.conscious ||
+          (!old.health.aid &&
+            B().moveFactor(old) === 0 &&
+            old.health.wounds.some((w) => !w.treated)))
+      ) {
         const successor = e.world.actors
           .filter(
             (a) =>
