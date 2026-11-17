@@ -194,7 +194,10 @@
         ctx.fill();
       }
       let rangeRow = 0;
-      for (const rangeUnit of frame.friends.filter((u) => rangeIds.has(u.id))) {
+      for (const rangeUnit of [
+        ...frame.friends,
+        ...(frame.supportActors || []).filter((u) => u.hqMemberId),
+      ].filter((u) => rangeIds.has(u.id))) {
         const color = [
           "#55ddff",
           "#ffd166",
@@ -753,6 +756,53 @@
       ctx.stroke();
       ctx.font = "10px sans-serif";
       ctx.textAlign = "right";
+      for (const smoke of frame.battle?.ordnance?.smokes || []) {
+        const point = screen(smoke, v),
+          r = smoke.radius * v.scale,
+          g = ctx.createRadialGradient(
+            point.x,
+            point.y,
+            0,
+            point.x,
+            point.y,
+            r,
+          );
+        g.addColorStop(0, "rgba(205,211,208,.85)");
+        g.addColorStop(1, "rgba(200,208,203,.1)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      for (const fx of frame.battle?.ordnance?.effects || [])
+        if (fx.kind === "frag") {
+          const point = screen(fx, v);
+          ctx.strokeStyle = "#f6be64";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 12 * v.scale, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      for (const p of frame.battle?.ordnance?.projectiles || []) {
+        const t = Math.max(
+            0,
+            Math.min(
+              1,
+              (frame.time - p.thrownAt) / Math.max(1, p.dueAt - p.thrownAt),
+            ),
+          ),
+          point = screen(
+            {
+              x: p.from.x + (p.point.x - p.from.x) * t,
+              y: p.from.y + (p.point.y - p.from.y) * t,
+            },
+            v,
+          );
+        ctx.fillStyle = p.kind === "frag" ? "#f2a54a" : "#d7e6d9";
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.fillStyle = "#e0eadc";
       ctx.fillText(metres + " m", v.w - 16, v.h - 20);
       ctx.restore();
@@ -975,7 +1025,10 @@
           ...(frame.supportActors || []),
           ...(frame.transports || []),
         ].find((u) => u.id === id);
-        span = Math.min(frame.map.height, u?.type === "drone" ? 520 : 28);
+        span = Math.min(
+          frame.map.height,
+          u?.type === "drone" ? 520 : Math.max(28, frame.map.height * 0.2),
+        );
         if (u) target = { x: u.x, y: u.y };
         update(frame);
       },
@@ -997,6 +1050,13 @@
       resize: size,
       stats() {
         return {
+          ordnance: {
+            smokes: frame.battle?.ordnance?.smokes?.length || 0,
+            projectiles: frame.battle?.ordnance?.projectiles?.length || 0,
+            blasts:
+              frame.battle?.ordnance?.effects?.filter((f) => f.kind === "frag")
+                .length || 0,
+          },
           rangeIds: [...rangeIds],
           viewSpan: span,
           viewCenter: { x: target.x, y: target.y },

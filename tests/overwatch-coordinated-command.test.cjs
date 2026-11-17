@@ -98,48 +98,19 @@ test("three target-search teams receive distinct public sectors and actually cho
       assert.ok(G.distance(posts[i], posts[j]) > 28);
   C.validate(C.clone(s));
 });
-test("controller reacts to fresh received infantry pressure through delayed real radio, resumes after clear reports and preserves a manual HQ order", () => {
+test("headquarters controller never commandeers the independent agency force after delivered infantry pressure", () => {
   const { s, e, step, assess } = make();
-  e.mission.knowledge.actors = [];
-  for (const u of e.world.actors.filter((a) => a.side === "ally" && a.armed))
-    u.lastThreatAt = e.time;
+  agencyReports(e, true);
   assess();
-  assert.equal(
-    e.radio.some((r) => r.payload?.agencyDirective),
-    false,
-    "unreported actual pressure cannot reach HQ",
-  );
   step(5);
   agencyReports(e, true);
   assess();
-  const hold = e.radio.findLast((r) => r.payload?.agencyDirective);
-  assert.equal(hold.payload.agencyDirective.mode, "hold");
-  assert.equal(hold.status, "queued");
-  step(5);
-  assert.equal(e.mission.agencyDirective.source, "controller");
-  assert.equal(D.frame(s).mission.agencyDirectiveSource, "controller");
-  assert.equal(e.mission.agencyDirective.mode, "hold");
-  agencyReports(e, false);
-  assess();
-  step(21);
-  agencyReports(e, false);
-  assess();
-  step(5);
-  assert.equal(e.mission.agencyDirective.mode, "auto");
-  M.commandAgency(s, "advance");
-  step(5);
-  agencyReports(e, true);
-  assess();
-  assert.equal(e.mission.agencyDirective.mode, "advance");
-  assert.equal(
-    e.radio.filter((r) => r.payload?.agencyDirective && r.status === "queued")
-      .length,
-    0,
+  assert.ok(
+    !e.radio.some((r) => r.payload?.agencyDirective?.source === "controller"),
   );
+  const latest = e.mission.agencyDirective;
+  assert.ok(!latest || latest.source === "agency");
   C.validate(C.clone(s));
-  const forged = C.clone(s);
-  forged.commandExercise.mission.agencyDirective.source = "controller";
-  assert.throws(() => C.validate(forged), /지휘|보병|저장/);
 });
 test("reported exhaustion of both weapons leads to extraction when supplies are unavailable, while hidden actual ammo cannot cause an order", () => {
   const { s, e, step, assess } = make();

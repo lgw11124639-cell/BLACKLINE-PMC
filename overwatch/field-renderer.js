@@ -35,6 +35,7 @@
       focusId = null;
     const rangeMeshes = new Map();
     const transportMeshes = new Map();
+    const ordnanceMeshes = new Map();
     const meshes = new Map(),
       materials = new Map(),
       geometries = [],
@@ -267,13 +268,52 @@
       if (disposed) return;
       frame = next;
       frameAt = performance.now();
+      const visibleOrdnance = new Set();
+      for (const o of [
+        ...(next.battle?.ordnance?.smokes || []).map((o) => ({
+          ...o,
+          kind: "smoke",
+          key: o.id,
+        })),
+        ...(next.battle?.ordnance?.effects || [])
+          .filter((o) => o.kind === "frag")
+          .map((o) => ({ ...o, key: o.eventId })),
+      ]) {
+        visibleOrdnance.add(o.key);
+        let mesh = ordnanceMeshes.get(o.key);
+        if (!mesh) {
+          mesh = new T.Mesh(
+            new T.SphereGeometry(o.kind === "smoke" ? o.radius : 10, 16, 10),
+            new T.MeshBasicMaterial({
+              color: o.kind === "smoke" ? 0xcad3cd : 0xf5ad49,
+              transparent: true,
+              opacity: o.kind === "smoke" ? 0.6 : 0.4,
+              depthWrite: false,
+            }),
+          );
+          scene.add(mesh);
+          ordnanceMeshes.set(o.key, mesh);
+        }
+        mesh.position.set(o.x, 4, o.y);
+        mesh.scale.y = o.kind === "smoke" ? 0.3 : 0.1;
+      }
+      for (const [key, mesh] of ordnanceMeshes)
+        if (!visibleOrdnance.has(key)) {
+          scene.remove(mesh);
+          mesh.geometry.dispose();
+          mesh.material.dispose();
+          ordnanceMeshes.delete(key);
+        }
       const cloudy = next.battle?.weather.timeOfDay === "overcast";
       scene.background.setHex(cloudy ? 0xdde4df : 0xeaf0e6);
       scene.fog.color.copy(scene.background);
       if (rangeRing) {
         rangeRing.visible = false;
         for (const mesh of rangeMeshes.values()) mesh.visible = false;
-        for (const [i, u] of next.friends
+        for (const [i, u] of [
+          ...next.friends,
+          ...(next.supportActors || []).filter((u) => u.hqMemberId),
+        ]
           .filter((u) => rangeIds.has(u.id))
           .entries())
           for (const [kind, distance] of [
@@ -459,6 +499,11 @@
         v.line?.geometry.dispose();
         v.line?.material.dispose();
       }
+      for (const mesh of ordnanceMeshes.values()) {
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+      }
+      ordnanceMeshes.clear();
       for (const m of meshes.values()) m.flash.material.dispose();
       for (const ring of rangeMeshes.values()) ring.material.dispose();
       for (const g of geometries) g.dispose();
@@ -723,6 +768,7 @@
             .map(([id]) => id),
           drawCalls: renderer.info.render.calls,
           geometries: renderer.info.memory.geometries,
+          ordnance: ordnanceMeshes.size,
           framesPending: raf === null ? 0 : 1,
         };
       },

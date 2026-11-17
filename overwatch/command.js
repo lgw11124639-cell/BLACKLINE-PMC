@@ -152,6 +152,8 @@
       for (const r of e.radio)
         if (r.route === "agency" && r.status === "queued")
           evidence.add(r.payload?.agencyLead?.sourceMessageId);
+      if (e.mission?.hqInfantry?.directive?.messageId)
+        evidence.add(e.mission.hqInfantry.directive.messageId);
       if (e.mission?.agencyDirective?.messageId)
         evidence.add(e.mission.agencyDirective.messageId);
       const currentCommands = new Set(e.squads.map((q) => q.commandId));
@@ -1727,14 +1729,21 @@
     u.heading = heading;
     if (optics) Battle().chooseStance(e, u, look);
     if (e.battle) {
-      u.visionRange = radius * e.battle.weather.visibility;
-      u.identificationRange = identification * e.battle.weather.visibility;
+      u.visionRange =
+        radius *
+        e.battle.weather.visibility *
+        (1 - (u.suppression || 0) * 0.006);
+      u.identificationRange =
+        identification *
+        e.battle.weather.visibility *
+        (1 - (u.suppression || 0) * 0.006);
       u.visionHalfAngle = optics
         ? u.role === "sniper"
           ? Math.PI * 0.1
           : Math.PI * 0.18
         : Math.PI * 0.42;
       if (optics) u.visionHalfAngle *= Battle().roofAdvantage(u).angle;
+      u.visionHalfAngle *= 1 - (u.suppression || 0) * 0.006;
     }
     u.peripheralRange =
       (u.role === "observer" ? 80 : 50) * e.battle?.weather?.visibility || 50;
@@ -1770,10 +1779,14 @@
         d <= u.peripheralRange &&
         peripheralDelta < Math.PI * 0.42;
       if (
-        ((d > radius * (e.battle ? e.battle.weather.visibility : 1) ||
+        ((d >
+          radius *
+            (e.battle
+              ? e.battle.weather.visibility * (1 - (u.suppression || 0) * 0.006)
+              : 1) ||
           delta > (e.battle ? u.visionHalfAngle : Math.PI * 0.42)) &&
           !peripheral) ||
-        !G.clear(u, actor)
+        !G.visible(u, actor, e)
       )
         continue;
       let seen = q.contacts.find((c) => c.id === actor.id);

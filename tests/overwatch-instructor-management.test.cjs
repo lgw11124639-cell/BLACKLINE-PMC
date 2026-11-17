@@ -195,32 +195,84 @@ test("actual incoming fire causes a mobile sniper pair to leave the exposed posi
   assert.ok(e.squads[0].avoidPositions.length);
 });
 
-test('injured agency infantry transmit actual incoming-fire evidence before treatment and controller orders urgent cover only after delivery', () => {
-  const s=make(2),c=s.contracts.find(c=>c.key==='aid-cover');
-  M.accept(s,c.id);M.launch(s,c.id);const e=s.commandExercise;
-  for(const enemy of e.world.actors.filter(a=>a.side==='red')) enemy.health.conscious=false;
-  for(let i=0;i<150;i++){B.setPaused(s,false);D.step(s,1);}
-  const a=e.world.actors.find(a=>a.id==='agency-guide');
-  a.waitingForDeployment=false;a.lastThreatAt=e.time;
-  B.injure(s,e,a,{eventId:'agency-hit-regression',part:'leftArm',severity:1});
-  e.battle.shots.push({id:'agency-incoming',time:e.time,actorId:'opposition-0',targetId:a.id,from:{x:a.x+80,y:a.y},to:{x:a.x,y:a.y},side:'red',model:'AKM',hit:true,part:'leftArm'});
-  M.actorTaskTick(s,e,a);
-  const report=e.radio.find(r=>r.payload?.supportAlert);
-  assert.ok(report);assert.equal(report.payload.supportAlert.contact,null);
-  assert.equal(e.mission.knowledge.supportAlert,undefined);
-  for(let i=0;i<30;i++){B.setPaused(s,false);D.step(s,1);}
+test("injured agency infantry transmit incoming-fire evidence without giving the HQ controller authority over their independent force", () => {
+  const s = make(2),
+    c = s.contracts.find((c) => c.key === "aid-cover");
+  M.accept(s, c.id);
+  M.launch(s, c.id);
+  const e = s.commandExercise;
+  for (const enemy of e.world.actors.filter((a) => a.side === "red"))
+    enemy.health.conscious = false;
+  for (let i = 0; i < 150; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  const a = e.world.actors.find((a) => a.id === "agency-guide");
+  a.waitingForDeployment = false;
+  a.lastThreatAt = e.time;
+  B.injure(s, e, a, {
+    eventId: "agency-hit-regression",
+    part: "leftArm",
+    severity: 1,
+  });
+  e.battle.shots.push({
+    id: "agency-incoming",
+    time: e.time,
+    actorId: "opposition-0",
+    targetId: a.id,
+    from: { x: a.x + 80, y: a.y },
+    to: { x: a.x, y: a.y },
+    side: "red",
+    model: "AKM",
+    hit: true,
+    part: "leftArm",
+  });
+  M.actorTaskTick(s, e, a);
+  const report = e.radio.find((r) => r.payload?.supportAlert);
+  assert.ok(report);
+  assert.equal(report.payload.supportAlert.contact, null);
+  assert.equal(e.mission.knowledge.supportAlert, undefined);
+  for (let i = 0; i < 30; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
   assert.ok(e.mission.knowledge.supportAlert);
-  assert.ok(e.events.some(ev=>ev.type==='controller-urgent-cover'));
+  assert.ok(!e.events.some((ev) => ev.type === "controller-urgent-cover"));
   C.validate(s);
 });
 
-test('identified agency contact relayed by urgent cover retains a valid confidence record before any local sighting', () => {
-  const s=make(2),c=s.contracts.find(c=>c.key==='aid-cover');M.accept(s,c.id);M.launch(s,c.id);const e=s.commandExercise;
-  for(const enemy of e.world.actors.filter(a=>a.side==='red'))enemy.health.conscious=false;
-  for(let i=0;i<150;i++){B.setPaused(s,false);D.step(s,1);}
-  const authority=S.authority(s,e),cmd=D.issue(s,'ALPHA','cover',{x:554,y:580},null,authority);
-  cmd.supportContact={id:'agency-identified-target',x:554,y:580,lastSeen:e.time,classification:'armed-person',confidence:.9,condition:'standing',reportedAt:e.time};
-  for(let i=0;i<25;i++){B.setPaused(s,false);D.step(s,1);C.validate(s);}
-  const contact=e.squads[0].contacts.find(c=>c.id==='agency-identified-target');
-  assert.ok(contact);assert.equal(contact.reportedConfidence,0);
+test("identified agency contact relayed by urgent cover retains a valid confidence record before any local sighting", () => {
+  const s = make(2),
+    c = s.contracts.find((c) => c.key === "aid-cover");
+  M.accept(s, c.id);
+  M.launch(s, c.id);
+  const e = s.commandExercise;
+  for (const enemy of e.world.actors.filter((a) => a.side === "red"))
+    enemy.health.conscious = false;
+  for (let i = 0; i < 150; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+  }
+  const authority = S.authority(s, e),
+    cmd = D.issue(s, "ALPHA", "cover", { x: 554, y: 580 }, null, authority);
+  cmd.supportContact = {
+    id: "agency-identified-target",
+    x: 554,
+    y: 580,
+    lastSeen: e.time,
+    classification: "armed-person",
+    confidence: 0.9,
+    condition: "standing",
+    reportedAt: e.time,
+  };
+  for (let i = 0; i < 25; i++) {
+    B.setPaused(s, false);
+    D.step(s, 1);
+    C.validate(s);
+  }
+  const contact = e.squads[0].contacts.find(
+    (c) => c.id === "agency-identified-target",
+  );
+  assert.ok(contact);
+  assert.equal(contact.reportedConfidence, 0);
 });

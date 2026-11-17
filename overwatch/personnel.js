@@ -1166,6 +1166,10 @@
         (typeof require === "function" ? require("./missions.js") : null);
       M.updateOffers(s);
     }
+    (
+      root.OverwatchInfantry ||
+      (typeof require === "function" ? require("./infantry.js") : null)
+    )?.update(s);
     return target;
   }
   function refreshMarket(s) {
@@ -1621,7 +1625,9 @@
           "records",
           "storage",
         ].includes(s.ui.tab) &&
-        ["roster", "market", "squads", "archive"].includes(s.ui.personnelTab),
+        ["roster", "infantry", "market", "squads", "archive"].includes(
+          s.ui.personnelTab,
+        ),
       "본부 설정이 잘못되었습니다.",
     );
     ok(
@@ -1671,6 +1677,10 @@
         (typeof require === "function" ? require("./command-staff.js") : null);
       Staff.validate(s);
     }
+    (
+      root.OverwatchInfantry ||
+      (typeof require === "function" ? require("./infantry.js") : null)
+    )?.validate(s);
     return s;
   }
   const api = {

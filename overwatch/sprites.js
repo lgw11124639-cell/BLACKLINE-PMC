@@ -265,7 +265,7 @@
       ? "dead"
       : down
         ? "down"
-        : (wounded && !u.combatActive) ||
+        : (wounded && !moving && u.mobility !== true && !u.combatActive) ||
             (u.mobility === false &&
               u.health?.wounds?.length &&
               !u.combatActive)

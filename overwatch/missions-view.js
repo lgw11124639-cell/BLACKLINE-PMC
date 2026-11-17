@@ -78,9 +78,9 @@
         : "") +
       '<div class="live-money">' +
       [
-        ["출격 예치", r.escrow],
+        ["실제 비용 납부", r.postpaid ? r.paid : r.consumed],
         ["실제 사용·손실", r.consumed],
-        ["예치금 환급", r.refund],
+        ["미지급 비용", r.outstanding || 0],
         ["계약 보수", r.reward],
         ["성과 보너스", r.bonus],
       ]
@@ -94,6 +94,42 @@
         )
         .join("") +
       '</div><div class="live-report-roster">' +
+      (r.headquartersInfantry?.length
+        ? "<section><h3>본부 보병 DELTA</h3>" +
+          r.headquartersInfantry
+            .map(
+              (u) =>
+                "<p>" +
+                esc(u.name) +
+                " · " +
+                esc(
+                  {
+                    leader: "분대장",
+                    rifleman: "소총수",
+                    gunner: "지원화기병",
+                    medic: "의무병",
+                  }[u.role] || u.role,
+                ) +
+                " · " +
+                esc(
+                  {
+                    standby: "복귀 완료",
+                    medical: "진료 필요",
+                    deceased: "전사",
+                    missing: "미회수",
+                  }[u.status] || u.status,
+                ) +
+                " · 사격 " +
+                u.spent +
+                "발 · 연막 " +
+                u.grenades.spent.smoke +
+                " · 수류탄 " +
+                u.grenades.spent.frag +
+                "</p>",
+            )
+            .join("") +
+          "</section>"
+        : "") +
       r.roster
         .map(
           (u) =>
@@ -220,10 +256,10 @@
                 "</label>",
             )
             .join("") +
-          "</fieldset><p>선택하지 않은 저격조는 본부에 대기합니다.</p><p>출격 시 소모품 예치 " +
-          cash(M.reserveFor(s).total) +
-          " · 실제 사용·손실만 차감하고 차액을 환급합니다. 제공 수송·지원의 추가 청구는 없습니다.</p><p>" +
-          esc(M.ready(s, accepted) || "편성·계약·회복·예산 조건 충족") +
+          "</fieldset><p>선택하지 않은 저격조는 본부에 대기합니다.</p><p>예치금 없이 출격합니다. 실제 사용·손실은 귀환 후 보수와 정산하며 부족분은 미지급 비용으로 기록합니다.</p><p>미지급 작전 비용 " +
+          cash(s.operations.payable || 0) +
+          "</p><p>" +
+          esc(M.ready(s, accepted) || "편성·계약·회복 조건 충족") +
           '</p><div class="inline-actions"><button data-live-launch="' +
           esc(accepted.id) +
           '"' +
@@ -369,30 +405,31 @@
       esc(m.issuer) +
       " · <strong data-live-phase>" +
       esc(phases[m.phase] || m.phase) +
-      '</strong></p><p data-agency-control>기관 보병: 현장 투입 대기</p><section class="agency-command-controls"><h3>기관 보병 지휘</h3><p>본부 지시 우선 · 엄폐·대응 사격은 현장 판단</p><div class="inline-actions">' +
-      [
-        ["auto", "자율 수색"],
-        ["hold", "엄폐·엄호"],
-        ["advance", "구역 진출"],
-        ["withdraw", "보병 철수"],
-      ]
-        .map(
-          ([mode, label]) =>
-            '<button data-agency-order="' +
-            mode +
-            '" aria-pressed="' +
-            (m.agencyDirective === mode) +
-            '"' +
-            (s.commandExercise.status !== "running" ? " disabled" : "") +
-            ">" +
-            label +
-            "</button>",
-        )
-        .join("") +
+      '</strong></p><p data-agency-control>기관 보병: 현장 투입 대기</p><section class="agency-command-controls"><h3>기관 작전 지휘</h3><p>기관 자체 지휘 · 본부 부대와 별도 운용</p><div class="inline-actions">' +
+      (m.agencyAutonomous
+        ? "기관 저격조·보병은 기관 지휘망으로 독립 작전 중"
+        : [
+            ["auto", "자율 수색"],
+            ["hold", "엄폐·엄호"],
+            ["advance", "구역 진출"],
+            ["withdraw", "보병 철수"],
+          ]
+            .map(
+              ([mode, label]) =>
+                '<button data-agency-order="' +
+                mode +
+                '" aria-pressed="' +
+                (m.agencyDirective === mode) +
+                '"' +
+                (s.commandExercise.status !== "running" ? " disabled" : "") +
+                ">" +
+                label +
+                "</button>",
+            )
+            .join("")) +
       "</div><p data-agency-order-status></p></section><p data-live-objective></p><p data-live-transport-status></p><p>제공 수송 " +
       { foot: "도보", vehicle: "차량", helicopter: "헬기" }[m.transport] +
-      " · 출격 소모품 예치 " +
-      cash(m.escrow) +
+      " · 귀환 후 실제 사용분 정산" +
       '</p><div class="inline-actions">' +
       [
         ["drone", "UAV 정찰 요청"],
@@ -473,6 +510,30 @@
             "명",
         )
         .join(" / ");
+    const infantry = rootNode.querySelector("[data-infantry-doctrine]");
+    if (infantry && m.hqInfantry)
+      infantry.textContent =
+        "본부 보병 DELTA · 수신 지시: " +
+        ({
+          auto: "통제관 위임",
+          hold: "분산 엄폐",
+          advance: "구역 진출",
+          withdraw: "철수",
+        }[m.hqInfantry.directive?.mode] || "명령 대기") +
+        " · " +
+        (m.hqInfantry.directive?.source === "headquarters"
+          ? "본부 직접"
+          : "작전통제관");
+    for (const b of rootNode.querySelectorAll("[data-infantry-order]")) {
+      b.setAttribute(
+        "aria-pressed",
+        String(b.dataset.infantryOrder === m.hqInfantry?.directive?.mode),
+      );
+      b.disabled = s.commandExercise.status !== "running" || m.returnRequested;
+    }
+    const throwStatus = rootNode.querySelector("[data-infantry-throw-status]");
+    if (throwStatus)
+      throwStatus.textContent = m.hqInfantry?.lastThrowFailure || "";
     const phase = rootNode.querySelector("[data-live-phase]");
     if (phase) phase.textContent = phases[m.phase] || m.phase;
     const agency = rootNode.querySelector("[data-agency-control]");

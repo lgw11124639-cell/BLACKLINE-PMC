@@ -421,15 +421,20 @@
       return '<section class="panel"><h2>2단계 저장 전환이 필요합니다.</h2><p>저장 관리에서 원본을 보존한 뒤 주 저장을 복구하세요.</p></section>';
     const view = s.ui.personnelTab || "roster";
     return (
-      '<section class="page-title"><span class="eyebrow">PERSONNEL & PAIRS</span><h1>대원과 저격조</h1><p>현직 ' +
+      '<section class="page-title"><span class="eyebrow">PERSONNEL & PAIRS</span><h1>대원과 편제</h1><p>저격·관측병 ' +
       s.members.length +
       "/20명 · 편성 " +
       s.squads.length +
-      "/3개 조 · 운영자금 " +
+      "/3개 저격조 · 보병 " +
+      (s.infantry?.members.filter(
+        (m) => !["deceased", "missing"].includes(m.status),
+      ).length || 0) +
+      "/4명 · 운영자금 " +
       money(s.headquarters.funds) +
       '</p></section><nav class="personnel-subnav" aria-label="인원 관리">' +
       [
-        ["roster", "현직 명부"],
+        ["roster", "저격·관측병 명부"],
+        ["infantry", "보병 명부"],
         ["market", "모집 시장"],
         ["squads", "저격조 편성"],
         ["archive", "보관 명부"],
@@ -446,9 +451,10 @@
         )
         .join("") +
       "</nav>" +
-      activities(s, editable) +
+      (view === "infantry" ? "" : activities(s, editable)) +
       (
         {
+          infantry: () => root.OverwatchInfantry.render(s),
           roster: () =>
             s.members.length
               ? '<label class="personnel-search">이름·주특기 검색<input data-personnel-search type="search" placeholder="대원 이름 또는 관측수·저격수"></label><section class="member-grid">' +

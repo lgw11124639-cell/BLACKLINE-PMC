@@ -20,10 +20,8 @@ with sync_playwright() as p:
   q.locator('button[data-inspector=personnel]').click() if q.locator('button[data-inspector=personnel]').count() else None
   assert '기관 식별' in q.locator('[data-field-contacts]').inner_text()
   q.locator('button[data-inspector=support]').click()
-  for mode in ['hold','advance','withdraw','auto']:
-   q.locator('[data-agency-order="'+mode+'"]').click()
-   q.wait_for_function("mode=>document.querySelector('[data-agency-order=\"'+mode+'\"]').getAttribute('aria-pressed')==='true'",arg=mode,timeout=30000)
-   assert '본부 직접 지시' in q.locator('[data-agency-order-status]').inner_text()
+  assert q.locator('[data-agency-order]').count()==0
+  assert '기관 저격조·보병은 기관 지휘망으로 독립 작전 중' in q.locator('body').inner_text()
   q.evaluate("Object.defineProperty(document,'hidden',{value:true,configurable:true});document.dispatchEvent(new Event('visibilitychange'))")
   s=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');f=q.evaluate('OverwatchCommand.frame(OverwatchStorage.create({storage:localStorage}).load().state)')
   assert any(x['source']=='agency' for x in f['contacts'] if x['id']=='opposition-4')

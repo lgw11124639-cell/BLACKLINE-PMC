@@ -15,7 +15,21 @@
     ok = (v, m) => {
       if (!v) throw Error(m);
     };
+  const ordnance = () =>
+    root.OverwatchOrdnance ||
+    (typeof require === "function" ? require("./ordnance.js") : null);
   const WEAPONS = {
+    M249: {
+      name: "FN M249",
+      calibre: "5.56×45mm",
+      capacity: 100,
+      range: 600,
+      cycle: 2,
+      reload: 7,
+      dispersion: 0.0013,
+      power: 2,
+      suppressed: false,
+    },
     AXMC: {
       name: "Accuracy International AXMC",
       calibre: ".338 Lapua Magnum",
@@ -140,7 +154,23 @@
     return u.health.wounds.some((w) => !w.treated);
   }
   function performance(u) {
-    if (u.combatSkills) return u.combatSkills;
+    if (u.combatSkills)
+      return u.hqMemberId
+        ? Object.fromEntries(
+            Object.entries(u.combatSkills).map(([k, v]) => [
+              k,
+              Math.round(
+                v *
+                  Math.max(
+                    0.65,
+                    1 -
+                      (u.fieldFatigue || 0) * 0.003 -
+                      (u.fieldStress || 0) * 0.003,
+                  ),
+              ),
+            ]),
+          )
+        : u.combatSkills;
     const base = Math.max(0, Math.min(100, u.skill ?? 55)),
       regular = u.faction === "regular",
       insurgent = u.faction === "insurgent",
@@ -333,6 +363,10 @@
       combatActive: !!u.combatActive,
       fireBlockReason: u.fireBlockReason || null,
       underFire: now !== null && now - (u.lastThreatAt ?? -100) < 8,
+      suppression: u.suppression || 0,
+      grenades: u.grenades ? copy(u.grenades) : null,
+      hqMemberId: u.hqMemberId || null,
+      agencySniperRole: u.agencySniperRole || null,
       combatSkills: copy(performance(u)),
       fieldFatigue: u.fieldFatigue || 0,
       fieldStress: u.fieldStress || 0,
@@ -379,7 +413,7 @@
                 ? "carrying"
                 : u.stance || (u.prone ? "prone" : "standing"),
       carriedBy: u.carriedBy || null,
-      boardedBy: u.boardedBy || null,
+      boardedBy: u.boardedBy || (u.hqBoarded ? "hq-infantry-transport" : null),
       home: !!u.home,
       altitude: u.altitude || 0,
     };
@@ -678,12 +712,18 @@
     let severity = graze ? Math.max(1, power - 1) : power,
       blocked = false;
     if (
-      part === "chest" &&
+      (part === "chest" ||
+        (armor?.profile === "assault" &&
+          part === "abdomen" &&
+          height >= 0.8)) &&
       armor?.plate > 15 &&
       power <= 2 &&
       Math.abs(lateral) < 0.25
     ) {
-      armor.plate = Math.max(0, armor.plate - power * 18);
+      armor.plate = Math.max(
+        0,
+        armor.plate - power * (armor.profile === "assault" ? 12 : 18),
+      );
       severity = 1;
       blocked = true;
     } else if (part === "chest" && armor?.plate > 15 && power === 3) {
@@ -742,6 +782,7 @@
     );
   }
   function beforeTick(s, e) {
+    ordnance().update(s, e);
     for (const u of all(e)) {
       protectionFor(u);
       u.roofHoldSeconds =
@@ -928,6 +969,8 @@
     }
   }
   function visualAcquire(e, observer, target, range) {
+    if (!G.visible(observer, target, e)) return false;
+    range *= ordnance().factor(observer);
     observer.detectionTracks ??= [];
     let track = observer.detectionTracks.find((t) => t.id === target.id);
     if (!track) {
@@ -1553,7 +1596,10 @@
     }
     const d = G.distance(u, known);
     if (!options.keepStance) chooseStance(e, u, known);
-    if (d > stats.range || !G.clear(u, known)) {
+    if (
+      d > stats.range ||
+      !(options.suppress ? G.clear(u, known) : G.visible(u, known, e))
+    ) {
       u.fireBlockReason = d > stats.range ? "range" : "line-of-sight";
       return;
     }
@@ -1603,6 +1649,7 @@
           (1.55 - performance(u).shooting / 100) *
           roofAdvantage(u).dispersion *
           movement *
+          (1 + (u.suppression || 0) / 70) *
           armPenalty *
           (1 + Math.min(1.5, w.trackingSpeed / 4)) *
           (e.time - u.lastThreatAt < readiness.suppressionSeconds
@@ -1709,6 +1756,7 @@
         distance: d,
       });
     }
+    ordnance().pressure(e, shot);
     e.battle.totalShots++;
     e.battle.shots.push(shot);
     if (e.battle.shots.length > 600) e.battle.shots.shift();
@@ -2700,6 +2748,13 @@
         weather: copy(b.weather),
         objective: b.knowledge.objective,
         returnRequested: b.objective.returnRequested,
+        ordnance: b.ordnance
+          ? {
+              smokes: copy(b.ordnance.smokes),
+              projectiles: copy(b.ordnance.projectiles),
+              effects: copy(b.ordnance.effects),
+            }
+          : null,
         effects: b.knowledge.effects
           .filter((v) => e.time - v.receivedAt <= 5)
           .map(copy),
@@ -2775,6 +2830,7 @@
     );
   }
   function validate(e) {
+    ordnance().validate(e);
     G.activate(e.mapId || "command-range");
     const b = e.battle;
     if (!b) return;

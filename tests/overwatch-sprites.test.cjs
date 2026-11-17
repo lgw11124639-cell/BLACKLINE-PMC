@@ -40,6 +40,10 @@ test("wounded image follows combat cessation; treated mobile people return to no
   assert.equal(Sprites.select(wounded).key, "observer-move");
   assert.equal(
     Sprites.select({ ...wounded, combatActive: false }).key,
+    "observer-move",
+  );
+  assert.equal(
+    Sprites.select({ ...wounded, combatActive: false, mobility: false }).key,
     "observer-wounded",
   );
   const treated = {

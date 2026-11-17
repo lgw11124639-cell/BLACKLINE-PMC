@@ -137,6 +137,30 @@
       ),
     );
   }
+  function visible(a, b, e) {
+    if (!clear(a, b)) return false;
+    for (const smoke of e?.battle?.ordnance?.smokes || []) {
+      if (smoke.startsAt > e.time || smoke.expiresAt <= e.time) continue;
+      if (Math.min(elevation(a), elevation(b)) > 12) continue;
+      const dx = b.x - a.x,
+        dy = b.y - a.y,
+        t = Math.max(
+          0,
+          Math.min(
+            1,
+            ((smoke.x - a.x) * dx + (smoke.y - a.y) * dy) /
+              Math.max(0.001, dx * dx + dy * dy),
+          ),
+        );
+      if (elevation(a) + 1.5 + (elevation(b) - elevation(a)) * t > 8) continue;
+      if (
+        Math.hypot(a.x + dx * t - smoke.x, a.y + dy * t - smoke.y) <
+        smoke.radius
+      )
+        return false;
+    }
+    return true;
+  }
   function clear(a, b, ground = false) {
     if (ground && roofBuilding(a) && a.roofId === b.roofId && roofBuilding(b))
       return true;
@@ -519,6 +543,7 @@
     blocked,
     elevation,
     clear,
+    visible,
     path,
     tacticalPath,
     coverDistance,

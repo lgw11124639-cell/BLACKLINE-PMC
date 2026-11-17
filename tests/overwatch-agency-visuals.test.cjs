@@ -169,98 +169,22 @@ test("agency personnel have one marker and guards and infantry use the same phys
   }
 });
 
-test("the controller acts on delivered agency contacts and selects a clear firing lane before a nearer blocked squad", () => {
+test("received agency contacts remain shared intelligence without redirecting the independent HQ sniper teams", () => {
   const { s, e, enemy, step } = setup("high-value-target", 2);
-  const grid = [];
-  for (let x = 30; x < 1170; x += 20)
-    for (let y = 30; y < 770; y += 20) {
-      const p = { x, y };
-      if (!G.blocked(p)) grid.push(p);
-    }
-  const blocked = grid
-    .filter((p) => G.distance(p, enemy) < 220 && !G.clear(p, enemy))
-    .sort((a, b) => G.distance(a, enemy) - G.distance(b, enemy))[0];
-  const clear = grid.filter(
-    (p) =>
-      G.distance(p, enemy) > 400 &&
-      G.distance(p, enemy) < 900 &&
-      G.clear(p, enemy),
-  )[0];
-  assert.ok(blocked && clear);
-  for (const u of e.world.units) {
-    const p = u.callsign === "ALPHA" ? blocked : clear;
-    Object.assign(u, {
-      ...p,
-      path: [],
-      goal: null,
-      roofId: null,
-      roofTransit: null,
-    });
-  }
-  step.holdAgency = true;
-  for (
-    let i = 0;
-    i < 80 &&
-    !D.frame(s).contacts.some(
-      (c) => c.id === enemy.id && c.source === "agency",
-    );
-    i++
-  )
-    step();
-  assert.ok(
-    D.frame(s).contacts.some((c) => c.id === enemy.id && c.source === "agency"),
-    JSON.stringify({
-      contacts: D.frame(s).contacts,
-      enemy: { x: enemy.x, y: enemy.y },
-      reports: e.world.actors
-        .filter((a) => a.side === "ally")
-        .map((a) => ({ id: a.id, x: a.x, y: a.y, reports: a.agencyReports })),
-    }),
-  );
   S.delegate(s, true);
-  step(15);
-  const decision = e.events.find(
-    (ev) => ev.type === "controller-agency-contact-cover",
-  );
-  assert.ok(decision);
-  assert.equal(decision.callsign, "BRAVO");
-  assert.equal(decision.reposition, false);
-  const orders = e.commands.filter(
-    (c) => c.kind === "cover" && c.supportContact?.id === enemy.id,
-  );
-  assert.equal(orders.length, 1);
-  assert.equal(
-    orders[0].supportContact.lastSeen,
-    orders[0].supportContact.observedAt,
-  );
-  step(12);
-  assert.equal(
-    e.commands.filter(
-      (c) => c.kind === "cover" && c.supportContact?.id === enemy.id,
-    ).length,
-    1,
-  );
-  if (enemy.health.alive)
-    B.ballisticImpact(s, e, enemy, {
-      eventId: "support-threat-ended",
-      model: "AXMC",
-      part: "chest",
-      lateral: 0,
-      height: 1.2,
-      distance: 50,
-    });
-  step(30);
+  step(40);
   assert.ok(
-    e.events.some(
-      (ev) =>
-        ev.type === "controller-support-complete" && ev.contactId === enemy.id,
-    ),
+    !e.events.some((ev) => ev.type === "controller-agency-contact-cover"),
   );
+  assert.equal(e.mission.agencyAutonomous, true);
+  assert.equal(e.world.actors.filter((a) => a.agencySniperRole).length, 2);
   C.validate(s);
 });
 
 test("an unseen opposing muzzle never becomes an exact map marker through agency telemetry", () => {
   const { s, e, u, enemy, step } = setup();
+  for (const a of e.world.actors.filter((a) => a.agencySniperRole))
+    a.health.conscious = false;
   Object.assign(enemy, {
     x: 700,
     y: 775,

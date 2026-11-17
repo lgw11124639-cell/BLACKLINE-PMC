@@ -58,7 +58,7 @@ test("schema 4 migration archives exact saves and never resets money, personnel,
   assert.equal(up.contracts.length, M.TEMPLATES.length);
   assert.equal(st.migrate().contracts.length, M.TEMPLATES.length);
 });
-test("contracts enforce single operation, minimum crew, readiness and real escrow without double launch", () => {
+test("contracts enforce single operation, minimum crew, readiness and postpaid supplies without double launch", () => {
   const { s, c } = make("rescue-cover");
   assert.match(M.ready(s, c), /4~6/);
   assert.throws(() => M.launch(s, c.id));
@@ -67,7 +67,8 @@ test("contracts enforce single operation, minimum crew, readiness and real escro
   const before = x.s.headquarters.funds,
     cost = M.reserveFor(x.s).total;
   M.launch(x.s, x.c.id);
-  assert.equal(x.s.headquarters.funds, before - cost);
+  assert.equal(x.s.headquarters.funds, before);
+  assert.equal(x.s.commandExercise.mission.escrow, 0);
   assert.throws(() => M.launch(x.s, x.c.id));
   assert.throws(() =>
     M.accept(x.s, x.s.contracts.find((c) => c.status === "offered").id),
@@ -95,7 +96,9 @@ for (const key of ["ridge-watch", "aid-cover", "vip-cover", "quiet-watch"])
       assert.equal(s.operations.reports.length, 1);
       const r = s.operations.reports[0];
       assert.equal(r.reward, 0);
-      assert.equal(r.refund + r.consumed, r.escrow);
+      assert.equal(r.escrow, 0);
+      assert.equal(r.refund, 0);
+      assert.ok(r.consumed >= 0);
       assert.ok(r.roster.every((x) => x.disposition === "returned"));
       const cash = s.headquarters.funds;
       M.settle(s, e);
@@ -411,9 +414,29 @@ test("agency assault/rescue personnel use infantry roles and allied sprites rath
     (a) => a.role !== "medic" && a.armed,
   );
   assert.ok(support.length >= 4);
-  assert.ok(support.every((a) => a.role === "infantry"));
+  assert.ok(
+    support
+      .filter((a) => !a.agencySniperRole)
+      .every((a) => a.role === "infantry"),
+  );
+  assert.deepEqual(
+    support
+      .filter((a) => a.agencySniperRole)
+      .map((a) => a.role)
+      .sort(),
+    ["observer", "sniper"],
+  );
   const sprites = require("../overwatch/sprites");
-  assert.ok(support.every((a) => sprites.select(a).role === "allied"));
+  assert.ok(
+    support
+      .filter((a) => !a.agencySniperRole)
+      .every((a) => sprites.select(a).role === "allied"),
+  );
+  assert.ok(
+    support
+      .filter((a) => a.agencySniperRole)
+      .every((a) => sprites.select(a).role === a.agencySniperRole),
+  );
   C.validate(s);
 });
 test("an extraction vehicle cannot take a casualty already carried by an actual medical transport crew", () => {

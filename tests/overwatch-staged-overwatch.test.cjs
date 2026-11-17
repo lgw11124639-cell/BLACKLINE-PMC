@@ -174,7 +174,7 @@ test("ground-level teammates do not obstruct a rooftop path and descent retains 
   assert.equal(u.roofId, undefined);
   assert.ok(G.distance(u, G.MAP.base) < 1);
 });
-test("agency infantry actually replace an incapacitated rescue leader; a lost rescue force reports failure", () => {
+test("agency infantry actually replace an incapacitated rescue leader; a lost agency force reports losses without forcing HQ withdrawal", () => {
   const { s, e } = launch(2);
   for (let i = 0; i < 150; i++) {
     B.setPaused(s, false);
@@ -202,7 +202,8 @@ test("agency infantry actually replace an incapacitated rescue leader; a lost re
     });
   B.setPaused(s, false);
   D.step(s, 1);
-  assert.equal(e.mission.objectiveFailed, true);
+  assert.ok(!e.mission.objectiveFailed);
+  assert.ok(!e.mission.returnRequested);
   assert.ok(e.events.some((ev) => ev.type === "agency-team-incapacitated"));
   C.validate(s);
 });
