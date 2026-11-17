@@ -495,7 +495,7 @@
   // Readability comes from this fixed world magnification, never a pixel-size cap.
   const mapScale = (map, pixelsPerMetre) => 2 * pixelsPerMetre;
   // People need a readable tactical symbol scale, independent of map dimensions.
-  const actorScale = (map, pixelsPerMetre) => 6 * pixelsPerMetre;
+  const actorScale = (map, pixelsPerMetre) => 6.9 * pixelsPerMetre;
   const api = { data, select, mapScale, actorScale };
   root.OverwatchSprites = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
