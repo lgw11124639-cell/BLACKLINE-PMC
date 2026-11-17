@@ -23,6 +23,7 @@ with sync_playwright() as p:
   for mode in ['hold','advance','withdraw','auto']:
    q.locator('[data-agency-order="'+mode+'"]').click()
    q.wait_for_function("mode=>document.querySelector('[data-agency-order=\"'+mode+'\"]').getAttribute('aria-pressed')==='true'",arg=mode,timeout=30000)
+   assert '본부 직접 지시' in q.locator('[data-agency-order-status]').inner_text()
   q.evaluate("Object.defineProperty(document,'hidden',{value:true,configurable:true});document.dispatchEvent(new Event('visibilitychange'))")
   s=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');f=q.evaluate('OverwatchCommand.frame(OverwatchStorage.create({storage:localStorage}).load().state)')
   assert any(x['source']=='agency' for x in f['contacts'] if x['id']=='opposition-4')

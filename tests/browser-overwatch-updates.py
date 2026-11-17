@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 BASE=os.environ.get('BLACKLINE_TEST_URL','http://127.0.0.1:8060')
 CURRENT=json.loads(Path('version.json').read_text())['version']
-NEXT='2026.11.16.99'
+NEXT='.'.join(CURRENT.split('.')[:-1]+[str(int(CURRENT.split('.')[-1])+1).zfill(2)])
 with sync_playwright() as p:
  b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
  for size in [(390,844),(844,390),(320,568),(1920,1080)]:

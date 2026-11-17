@@ -773,7 +773,7 @@
     );
     const protectedPoint = c.protectPosition
       ? copy(c.protectPosition)
-      : allies.length
+      : !c.target && allies.length
         ? {
             x: allies.reduce((n, v) => n + v.x, 0) / allies.length,
             y: allies.reduce((n, v) => n + v.y, 0) / allies.length,
@@ -825,7 +825,10 @@
         continue;
       if (
         (q.avoidPositions || []).some(
-          (old) => e.time - old.at < 300 && G.distance(old, p) < 15,
+          (old) =>
+            e.time - old.at < 300 &&
+            ((old.roofId && p.roofId === old.roofId) ||
+              G.distance(old, p) < 15),
         )
       )
         continue;
@@ -1656,7 +1659,10 @@
             ];
       const index = Math.floor(e.time / 16) % points.length;
       look = {
-        x: G.MAP.width * points[index][0],
+        x:
+          (q.watchSector?.x1 || 0) +
+          ((q.watchSector?.x2 || G.MAP.width) - (q.watchSector?.x1 || 0)) *
+            points[index][0],
         y: G.MAP.height * points[index][1],
       };
       u.scanSector = index;

@@ -993,6 +993,151 @@
       },
     );
   }
+  function assessCombatRisk(s, e, a, c, frame) {
+    const m = e.mission;
+    if (!m || m.returnRequested || m.fieldStartedAt == null) return false;
+    const fresh = frame.friends.filter(
+      (f) =>
+        f.age < 25 &&
+        !f.home &&
+        !f.boardedBy &&
+        !f.waitingForDeployment &&
+        f.health?.alive &&
+        f.health.conscious,
+    );
+    const remaining = (w) =>
+      w ? w.loaded + (w.magazines || []).reduce((n, v) => n + v, 0) : null;
+    const empty = fresh.filter(
+      (f) => remaining(f.weapon) === 0 && remaining(f.sidearm) === 0,
+    );
+    if (fresh.length >= 2 && empty.length >= Math.ceil(fresh.length / 2)) {
+      c.ammoRiskSince ??= e.time;
+      let active = m.transports.some(
+        (t) => t.trip === "supply" && t.state !== "home",
+      );
+      if (
+        s.commandStaff.autoSupport &&
+        m.supports.supply < m.contract.support.supply &&
+        !active
+      ) {
+        try {
+          M().requestSupport(s, "supply", { x: empty[0].x, y: empty[0].y });
+          active = true;
+          note(
+            s,
+            e,
+            a,
+            "controller-ammo-support",
+            "수신 탄약 보고에서 교전 능력 부족 확인. 잔여 계약 재보급을 요청한다.",
+            { memberIds: empty.map((f) => f.id) },
+          );
+        } catch (error) {
+          c.lastSupportFailure = error.message;
+        }
+      }
+      if (
+        !active &&
+        m.supports.supply >= m.contract.support.supply &&
+        e.time - c.ammoRiskSince >= 45
+      ) {
+        note(
+          s,
+          e,
+          a,
+          "controller-ammo-withdraw",
+          "복수 대원의 주·보조무장 탄약 고갈 보고 확인. 가용 재보급이 없어 엄호 철수를 지시한다.",
+          { memberIds: empty.map((f) => f.id) },
+        );
+        M().requestReturn(s, { abort: true, authority: a });
+        return true;
+      }
+    } else c.ammoRiskSince = null;
+    const reported = (frame.supportActors || []).filter(
+      (f) => f.armed && f.health?.alive && e.time - f.observedAt < 25,
+    );
+    const threatened = reported.filter(
+      (f) =>
+        f.underFire ||
+        !f.health.conscious ||
+        f.health.wounds.some((w) => !w.treated && w.severity >= 2),
+    );
+    const d = m.agencyDirective;
+    const playerOrder =
+      (d && d.source !== "controller" && d.mode !== "auto") ||
+      e.radio.some(
+        (r) =>
+          r.route === "agency" &&
+          r.status === "queued" &&
+          r.payload?.agencyDirective &&
+          r.payload.agencyDirective.source !== "controller",
+      );
+    if (playerOrder) return false;
+    const queued = e.radio.some(
+      (r) =>
+        r.route === "agency" &&
+        r.status === "queued" &&
+        r.payload?.agencyDirective?.source === "controller",
+    );
+    if (threatened.length >= 2) {
+      c.agencyPressureSince ??= e.time;
+      c.agencyClearSince = null;
+      if (
+        !queued &&
+        d?.mode !== "hold" &&
+        e.time - (c.lastAgencyRiskOrderAt ?? -100) >= 30
+      ) {
+        M().commandAgency(s, "hold", { source: "controller" });
+        c.lastAgencyRiskOrderAt = e.time;
+        note(
+          s,
+          e,
+          a,
+          "controller-agency-hold",
+          "복수 보병의 피격·부상 보고 확인. 보병 분산 엄폐·대응 사격과 저격조 엄호를 우선한다.",
+          { actorIds: threatened.map((f) => f.id) },
+        );
+      }
+      const unable = threatened.filter(
+        (f) =>
+          !f.health.conscious ||
+          f.health.wounds.some((w) => !w.treated && w.severity === 3),
+      );
+      if (unable.length >= 2 && e.time - c.agencyPressureSince > 90) {
+        note(
+          s,
+          e,
+          a,
+          "controller-agency-withdraw",
+          "기관 보병의 중상·행동 불능 보고가 지속된다. 임무 진출을 중단하고 회수한다.",
+          { actorIds: unable.map((f) => f.id) },
+        );
+        M().requestReturn(s, { abort: true, authority: a });
+        return true;
+      }
+    } else {
+      c.agencyPressureSince = null;
+      if (
+        d?.source === "controller" &&
+        d.mode === "hold" &&
+        reported.length >= 2 &&
+        !threatened.length
+      ) {
+        c.agencyClearSince ??= e.time;
+        if (!queued && e.time - c.agencyClearSince >= 20) {
+          M().commandAgency(s, "auto", { source: "controller" });
+          note(
+            s,
+            e,
+            a,
+            "controller-agency-resume",
+            "보병 안정 보고를 연속 확인했다. 상호 엄호 아래 자체 구역 수색을 재개한다.",
+          );
+          c.agencyClearSince = null;
+        }
+      } else c.agencyClearSince = null;
+    }
+    return false;
+  }
   function tick(s, e) {
     if (!s.commandStaff?.delegated || !e.battle || e.status !== "running")
       return;
@@ -1047,7 +1192,7 @@
             : e.squads.length === 1
               ? [["overwatch", "지역 관측·저격 엄호"]]
               : [
-                  ["counter-sniper", "외곽 고정 관측·대저격"],
+                  ["counter-sniper", "담당 구역 관측·대저격"],
                   ["corridor-cover", "기관 보병 진출로·구출 엄호"],
                   ["flank-security", "측후방·철수로 경계"],
                 ];
@@ -1209,6 +1354,7 @@
         );
       }
     }
+    if (assessCombatRisk(s, e, a, c, frame)) return;
     friendlyCover(s, e, a, c, frame);
     const reportedAlert = e.mission?.knowledge.supportAlert;
     const agencyThreat = known
@@ -1406,14 +1552,23 @@
             [-140, 0],
           ],
           offset = offsets[(search + i) % offsets.length],
-          center =
-            e.mission.knowledge.groundSearch?.point ||
-            e.mission.contract.interest ||
-            G().MAP.sector;
+          center = regions(e)[i];
         const kind = target ? "cover" : "recon",
           point =
             target ||
-            G().project({ x: center.x + offset[0], y: center.y + offset[1] });
+            G().project({
+              x: Math.max(
+                q.watchSector?.x1 ?? 10,
+                Math.min(
+                  q.watchSector?.x2 ?? G().MAP.width - 10,
+                  center.x + offset[0],
+                ),
+              ),
+              y: Math.max(
+                10,
+                Math.min(G().MAP.height - 10, center.y + offset[1]),
+              ),
+            });
         const searchAgain =
           !target &&
           cmd?.status === "completed" &&
