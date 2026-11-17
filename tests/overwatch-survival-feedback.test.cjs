@@ -71,7 +71,7 @@ test("a severe torso injury is incapacitating, has progressive blood loss and re
   assert.equal(u.health.alive, true);
   assert.ok(u.health.bloodMl >= 4700 && u.health.bloodMl < 5000);
   assert.equal(B.moveFactor(u), 0);
-  assert.notEqual(
+  assert.equal(
     Sprites.select({ ...B.snapshot(u), role: u.role }).art.src,
     Sprites.select({
       ...B.snapshot(u),

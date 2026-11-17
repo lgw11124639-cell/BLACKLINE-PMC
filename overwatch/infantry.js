@@ -556,6 +556,10 @@
       "보병 지시 좌표가 잘못되었습니다.",
     );
     ok(!team || callsigns.includes(team), "보병팀 선택이 잘못되었습니다.");
+    ok(
+      !team || units(e).some((u) => teamOf(u) === team),
+      "선택한 보병팀은 이 작전에 투입되지 않았습니다.",
+    );
     const anchor =
       (e.mission.knowledge.actors || []).find(
         (a) => a.hqMemberId && (!team || a.hqTeam === team),
@@ -574,7 +578,10 @@
       source === "controller" && e.commandAuthority?.id
         ? e.commandAuthority.id
         : "HQ",
-      (units(e).find((u) => !team || u.hqTeam === team) || units(e)[0]).id,
+      (team
+        ? leader(e, team) || units(e).find((u) => teamOf(u) === team)
+        : callsigns.map((c) => leader(e, c)).find(Boolean) || units(e)[0]
+      ).id,
       "tasking",
       (team ? teamLabel(team) : "본부 보병 전체") +
         ", " +
@@ -651,7 +658,193 @@
       },
     );
   }
+  function teamOf(u) {
+    return (
+      u.hqTeam ||
+      callsigns[
+        Math.max(
+          0,
+          callsigns.findIndex((c) => u.callsign?.endsWith(c)),
+        )
+      ]
+    );
+  }
+  function leader(e, team) {
+    return units(e)
+      .filter(
+        (u) =>
+          teamOf(u) === team &&
+          u.health.alive &&
+          u.health.conscious &&
+          !u.home &&
+          !u.hqBoarded,
+      )
+      .sort(
+        (a, b) =>
+          Number(b.assignmentRole === "leader") -
+          Number(a.assignmentRole === "leader") +
+          (Number(b.assignmentRole === "leader") ===
+          Number(a.assignmentRole === "leader")
+            ? ((b.combatSkills?.judgment || b.skill) -
+                (a.combatSkills?.judgment || a.skill)) /
+              1000
+            : 0),
+      )[0];
+  }
+  function internal(e, from, to, body, event, payload) {
+    const r = D().internals.radio(
+      null,
+      e,
+      e.squads[0],
+      "agency",
+      from.id,
+      to.id,
+      "instruction",
+      body,
+      event,
+      payload,
+    );
+    r.internal = true;
+    r.hqVisibleAt = null;
+    r.delay = 2;
+    return r;
+  }
+  const duties = {
+    leader: "분대 지휘·선행 확인",
+    rifleman: "전방 수색·근접 경계",
+    gunner: "지원화기 엄호·제압",
+    medic: "후방 경계·부상자 처치",
+  };
+  function memberPlan(e, team, d) {
+    const f = e.mission.hqInfantry,
+      l = leader(e, team);
+    if (!l) return;
+    f.memberOrders ||= {};
+    f.leaderPlans ||= {};
+    if (
+      f.leaderPlans[team]?.parentId === d.messageId &&
+      f.leaderPlans[team]?.leaderId === l.id
+    )
+      return;
+    f.leaderPlans[team] = { parentId: d.messageId, leaderId: l.id, at: e.time };
+    const ev = D().internals.event(e, "infantry-leader-orders", {
+      team,
+      leaderId: l.id,
+      parentId: d.messageId,
+    });
+    for (const u of units(e).filter(
+      (u) => teamOf(u) === team && u.health.alive && !u.home && !u.hqBoarded,
+    )) {
+      const index = ["leader", "rifleman", "gunner", "medic"].indexOf(
+          u.assignmentRole,
+        ),
+        point = G().project({
+          x: d.point.x + [-6, 10, -12, 4][index],
+          y: d.point.y + [-6, -8, 10, 14][index],
+        });
+      const order = {
+        actorId: u.id,
+        team,
+        leaderId: l.id,
+        parentId: d.messageId,
+        mode: d.mode,
+        task: duties[u.assignmentRole],
+        point,
+      };
+      for (const pending of e.radio)
+        if (
+          pending.status === "queued" &&
+          pending.payload?.infantryMemberOrder?.actorId === u.id
+        )
+          pending.status = "cancelled";
+      if (u.id === l.id) {
+        f.memberOrders[u.id] = {
+          ...order,
+          messageId: d.messageId,
+          receivedAt: e.time,
+        };
+        u.infantryTask = order.task;
+      } else internal(e, l, u, order.task, ev, { infantryMemberOrder: order });
+    }
+  }
+  function forwardReport(e, l, kind, body, ev, payload) {
+    const f = e.mission.hqInfantry,
+      team = teamOf(l),
+      key =
+        team +
+        ":" +
+        kind +
+        ":" +
+        (payload.contact?.id || payload.supportAlert?.actorId || body);
+    f.reportLedger ||= {};
+    const old = f.reportLedger[key],
+      condition = payload.contact?.medicalCondition || null,
+      code = payload.contact?.objectiveCode || null;
+    if (
+      old &&
+      e.time - old.at < 60 &&
+      old.condition === condition &&
+      old.code === code
+    )
+      kind = "position";
+    f.reportLedger[key] = {
+      at: e.time,
+      condition: condition || null,
+      code: code || null,
+    };
+    const r = D().internals.radio(
+      null,
+      e,
+      e.squads[0],
+      "agency",
+      l.id,
+      e.commandAuthority?.id || "HQ",
+      kind,
+      teamLabel(team) + ". " + body,
+      ev,
+      payload,
+    );
+    r.route = "up";
+    r.hqVisibleAt = null;
+    r.delay = 2;
+    return r;
+  }
+  function report(s, e, u, kind, body, ev, payload = {}) {
+    const l = leader(e, teamOf(u));
+    if (!l) return null;
+    if (l.id === u.id) return forwardReport(e, l, kind, body, ev, payload);
+    return internal(e, u, l, body, ev, {
+      infantryReport: { kind, body, payload, sourceEventId: ev.id },
+    });
+  }
   function apply(e, r) {
+    const f = e.mission?.hqInfantry;
+    if (!f) return;
+    if (r.internal && r.payload?.infantryMemberOrder) {
+      const o = r.payload.infantryMemberOrder,
+        d = f.teamDirectives?.[o.team] || f.directive,
+        u = units(e).find((u) => u.id === o.actorId);
+      if (
+        u &&
+        d?.messageId === o.parentId &&
+        leader(e, o.team)?.id === o.leaderId
+      ) {
+        f.memberOrders ||= {};
+        f.memberOrders[u.id] = {
+          ...cp(o),
+          messageId: r.id,
+          receivedAt: e.time,
+        };
+        u.infantryTask = o.task;
+      }
+    }
+    if (r.internal && r.payload?.infantryReport) {
+      const p = r.payload.infantryReport,
+        l = units(e).find((u) => u.id === r.to.id);
+      if (l && l.health.alive && l.health.conscious)
+        forwardReport(e, l, p.kind, p.body, { id: p.sourceEventId }, p.payload);
+    }
+
     if (r.route === "agency" && r.payload?.infantryThrow) {
       const p = r.payload.infantryThrow,
         u = units(e).find((u) => u.id === p.actorId);
@@ -681,10 +874,17 @@
         receivedAt: e.time,
       };
       f.teamDirectives ||= {};
-      if (team) f.teamDirectives[team] = received;
-      else {
+      if (team) {
+        f.teamDirectives[team] = received;
+        memberPlan(e, team, received);
+      } else {
         f.directive = received;
-        for (const call of callsigns) f.teamDirectives[call] = cp(received);
+        for (const call of callsigns.filter((c) =>
+          units(e).some((u) => teamOf(u) === c),
+        )) {
+          f.teamDirectives[call] = cp(received);
+          memberPlan(e, call, received);
+        }
       }
     }
   }
@@ -801,11 +1001,20 @@
           )
         ],
       d = f.teamDirectives?.[team] || f.directive;
-    if (e.mission.returnRequested || d?.mode === "withdraw") {
+    if (e.mission.returnRequested) {
       const p =
         f.pickup || e.mission.extractionPoint || e.mission.contract.insertion;
       move(e, u, p);
       return true;
+    }
+    if (d) {
+      memberPlan(e, team, d);
+      const o = f.memberOrders?.[u.id];
+      if (!o || o.parentId !== d.messageId) {
+        u.path = [];
+        u.state = "member-awaiting-order";
+        return true;
+      }
     }
     if (!d) {
       u.path = [];
@@ -814,10 +1023,43 @@
       u.stance = "kneeling";
       return true;
     }
+    if (d?.mode === "withdraw") {
+      move(
+        e,
+        u,
+        f.pickup || e.mission.extractionPoint || e.mission.contract.insertion,
+      );
+      return true;
+    }
+    const localOrder = f.memberOrders?.[u.id];
+    if (
+      localOrder &&
+      leader(e, team)?.id === u.id &&
+      G().distance(u, localOrder.point) < 3 &&
+      f.arrivalReports?.[team] !== d.messageId
+    ) {
+      f.arrivalReports ||= {};
+      f.arrivalReports[team] = d.messageId;
+      const ev = D().internals.event(e, "infantry-team-arrived", {
+        team,
+        actorId: u.id,
+        parentId: d.messageId,
+      });
+      report(
+        s,
+        e,
+        u,
+        "arrival",
+        "선두 지정 구역 도착. 대원 배치·사주 경계한다.",
+        ev,
+        {},
+      );
+    }
     if (u.assignmentRole === "medic" && !B().underFire(e, u)) {
       const patient = units(e).find(
         (a) =>
           a.id !== u.id &&
+          teamOf(a) === team &&
           a.health.alive &&
           a.health.wounds.some((w) => !w.treated),
       );
@@ -873,6 +1115,11 @@
       }
       return true;
     }
+    const memberOrder = f.memberOrders?.[u.id];
+    if (d?.mode === "hold" && memberOrder) {
+      move(e, u, memberOrder.point);
+      return true;
+    }
     if (d?.mode === "hold") {
       move(e, u, {
         x:
@@ -901,6 +1148,10 @@
       d?.mode === "advance"
         ? d.point
         : area?.point || M().searchPoint(e) || e.mission.contract.interest;
+    if (memberOrder && d?.mode === "advance") {
+      move(e, u, memberOrder.point);
+      return true;
+    }
     const index = ["leader", "rifleman", "gunner", "medic"].indexOf(
       u.assignmentRole,
     );
@@ -1381,10 +1632,15 @@
   function live(s) {
     const f = s.commandExercise?.mission?.hqInfantry;
     if (!f) return "";
+    const deployed = callsigns.filter((c) =>
+      units(s.commandExercise).some((u) => teamOf(u) === c),
+    );
     return (
-      '<section class="panel"><h3>본부 1팀·본부 2팀·본부 3팀</h3><p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>' +
+      '<section class="panel"><h3>' +
+      deployed.map(teamLabel).join(" · ") +
+      "</h3><p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>" +
       '<label>명령 대상<select data-infantry-command-team><option value="">보병 전체</option>' +
-      callsigns
+      deployed
         .map(
           (c) =>
             '<option value="' +
@@ -1412,7 +1668,7 @@
             "</button>",
         )
         .join("") +
-      '<p>관심 지점 지정 후 투척 · 최대 32m · 아군 위험 시 보류</p><button data-infantry-throw="smoke">연막탄 투척</button><button data-infantry-throw="frag">수류탄 투척</button><p data-infantry-throw-status></p></section>'
+      '<p>분대장이 대원별 이동·엄호·처치를 지휘합니다. 연막·수류탄은 보병이 위험과 아군 위치를 확인해 자동 판단합니다.</p><details><summary>본부 긴급 투척 개입</summary><p>관심 지점 지정 · 아군 위험 시 보류</p><button data-infantry-throw="smoke">연막탄 투척</button><button data-infantry-throw="frag">수류탄 투척</button><p data-infantry-throw-status></p></details></section>'
     );
   }
   function bind(node, { commit, execute = commit }) {
@@ -1537,6 +1793,8 @@
     update,
     restock,
     renew,
+    leader,
+    report,
     teamLabel,
     formTeams,
     assignTeam,

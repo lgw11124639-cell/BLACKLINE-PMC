@@ -543,6 +543,14 @@
     if (useful) w.bestRemaining = remaining;
     for (const f of [
       ...frame.friends.filter((f) => f.age < 20 && !f.home && !f.boardedBy),
+      ...actors.filter(
+        (f) =>
+          f.hqMemberId &&
+          e.time - f.observedAt < 25 &&
+          f.health.alive &&
+          !f.home &&
+          !f.boardedBy,
+      ),
       anchor,
     ]) {
       const key =
@@ -601,6 +609,46 @@
       const q =
         e.squads.find((q) => q.assignment?.kind === "corridor-cover") ||
         e.squads[0];
+      if (!q) {
+        const Infantry = get("OverwatchInfantry", "infantry.js"),
+          force = m.hqInfantry;
+        note(
+          s,
+          e,
+          a,
+          "controller-infantry-route-stalled",
+          "투입된 저격팀이 없다. 본부 보병팀의 수색·엄호 구역을 재검토해 분대장에게 재지시한다.",
+          { lastProgressAt: w.lastUsefulAt },
+        );
+        if (force)
+          for (const call of ["ALPHA", "BRAVO", "CHARLIE"]) {
+            const d = force.teamDirectives?.[call] || force.directive;
+            if (
+              d?.mode === "withdraw" ||
+              (d?.source === "headquarters" && d.mode !== "auto")
+            )
+              continue;
+            if (
+              actors.some(
+                (a) =>
+                  a.hqMemberId &&
+                  a.hqTeam === call &&
+                  a.health.alive &&
+                  a.health.conscious &&
+                  e.time - a.observedAt < 25,
+              )
+            )
+              Infantry.command(
+                s,
+                "advance",
+                G().project({ x: goal.x, y: goal.y }),
+                "controller",
+                call,
+              );
+          }
+        w.replanAt = e.time;
+        return false;
+      }
       note(
         s,
         e,

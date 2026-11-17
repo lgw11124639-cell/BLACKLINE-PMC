@@ -25,7 +25,7 @@ with sync_playwright() as p:
   assert '본부 직접' in q.locator('[data-infantry-doctrine]').inner_text()
   q.evaluate("Object.defineProperty(document,'hidden',{value:true,configurable:true});document.dispatchEvent(new Event('visibilitychange'))")
   q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,e=s.commandExercise;for(const [i,u]of OverwatchInfantry.units(e).entries())Object.assign(u,{x:100+i*4,y:775,path:[],goal:null,waitingForDeployment:false,roofId:null});OverwatchInfantry.command(s,'hold',{x:100,y:775});for(let i=0;i<12;i++){OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1);}s.ui.fieldInspector='support';st.save(s,s.revision);}""")
-  q.reload(wait_until='networkidle');q.wait_for_function('!!OverwatchIllustratedRenderer.get()');q.locator('[data-infantry-throw="smoke"]').click()
+  q.reload(wait_until='networkidle');q.wait_for_function('!!OverwatchIllustratedRenderer.get()');q.get_by_text('본부 긴급 투척 개입',exact=True).click();q.locator('[data-infantry-throw="smoke"]').click()
   q.wait_for_function('OverwatchIllustratedRenderer.get()?.stats().ordnance.smokes>0',timeout=12000,polling=40)
   q.evaluate("OverwatchIllustratedRenderer.get().focus(OverwatchStorage.create({storage:localStorage}).load().state.infantry.members[0].id)")
   q.wait_for_function('OverwatchAudio.status.ordnancePlayed>0',timeout=5000)

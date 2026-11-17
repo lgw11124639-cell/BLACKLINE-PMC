@@ -363,7 +363,8 @@
               (u.assignmentLabel ? " · " + esc(u.assignmentLabel) : "") +
               "</small></strong><p>" +
               (u.hqMemberId
-                ? esc(u.roleLabel || "본부 보병")
+                ? esc(u.roleLabel || "본부 보병") +
+                  (u.infantryTask ? " · " + esc(u.infantryTask) : "")
                 : u.role === "observer"
                   ? "관측수"
                   : "저격수") +
@@ -378,6 +379,8 @@
                       ? "생체 신호 소실"
                       : {
                           holding: "위치 유지",
+                          "member-awaiting-order": "분대장 지시 수신 대기",
+                          "descending-to-ground": "지상으로 이동",
                           moving: "이동",
                           climbing: "옥상 계단 이동",
                           covering: "경계·사격 준비",
@@ -504,7 +507,11 @@
                 civilian: "민간인",
               }[c.faction] || "소속 확인 중",
             ) +
-            (c.source === "agency" ? " · 기관 식별" : "") +
+            (c.source === "agency"
+              ? " · 기관 식별"
+              : c.source === "infantry"
+                ? " · 본부 보병 식별"
+                : "") +
             " · 신뢰 " +
             Math.round(c.confidence * 100) +
             "% · " +

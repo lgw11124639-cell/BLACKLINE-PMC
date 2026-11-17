@@ -324,6 +324,22 @@
 
   function select(u, { moving = false, mode = "ready" } = {}) {
     if (u.role === "medic" && !u.hqMemberId && !u.agencySniperRole) {
+      if (
+        u.health?.alive === false ||
+        u.health?.conscious === false ||
+        ["down", "dead"].includes(u.pose) ||
+        ["down", "dead"].includes(u.medicalCondition)
+      ) {
+        const art = data["allied-dead"],
+          [x1, y1, x2, y2] = art.bounds;
+        return {
+          key: "allied-dead",
+          art,
+          fallback: false,
+          widthM: (1.8 * (x2 - x1)) / Math.max(x2 - x1, y2 - y1),
+        };
+      }
+
       const key =
         u.pose === "aid" && u.state === "treating" ? "medic-aid" : "medic-move";
       return {
@@ -445,6 +461,21 @@
         key = "allied-prone";
       }
     }
+    if (
+      !dead &&
+      (u.health?.conscious === false ||
+        u.pose === "down" ||
+        u.medicalCondition === "down")
+    ) {
+      const fallen =
+        u.specialty === "sniper" && ["regular", "insurgent"].includes(role)
+          ? "enemy-sniper-dead"
+          : (uniform || role) + "-dead";
+      if (data[fallen]) {
+        art = data[fallen];
+        key = fallen;
+      }
+    }
     // Normalize the longest cropped dimension, not image width: casualty art
     // is wider than walking art and must not enlarge the same person.
     const extentM =
@@ -462,8 +493,7 @@
   }
   // A single map-space scale keeps actors proportional to terrain at every zoom.
   // Readability comes from this fixed world magnification, never a pixel-size cap.
-  const mapScale = (map, pixelsPerMetre) =>
-    (map.height / 80) * 1.5 * pixelsPerMetre;
+  const mapScale = (map, pixelsPerMetre) => 2 * pixelsPerMetre;
   const api = { data, select, mapScale };
   root.OverwatchSprites = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

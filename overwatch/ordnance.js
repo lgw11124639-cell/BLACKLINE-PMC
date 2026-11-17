@@ -111,6 +111,18 @@
       thrownAt: e.time,
       dueAt: e.time + (kind === "smoke" ? 2 : 3),
     });
+    if (s && u.hqMemberId)
+      root.OverwatchInfantry?.report(
+        s,
+        e,
+        u,
+        "combat",
+        kind === "smoke"
+          ? "연막 전개. 이동·부상자 회수를 엄호한다."
+          : "수류탄 투척. 아군 안전을 확인하고 위협을 제압한다.",
+        ev,
+        { ordnanceEvent: ev.id },
+      );
     return ev.id;
   }
   function update(s, e) {
@@ -182,8 +194,23 @@
     try {
       if (
         u.grenades.smoke > 0 &&
-        ((u.suppression || 0) > 35 ||
-          (e.mission.returnRequested && B().underFire(e, u)))
+        ((u.suppression || 0) > 20 ||
+          (B().underFire(e, u) &&
+            (e.mission.returnRequested ||
+              u.health.wounds.some((w) => !w.treated) ||
+              e.world.actors.some(
+                (a) =>
+                  a.hqMemberId &&
+                  a.hqTeam === u.hqTeam &&
+                  a.health.alive &&
+                  (!a.health.conscious ||
+                    a.health.wounds.some((w) => !w.treated)),
+              )))) &&
+        !state(e).smokes.some((p) => G().distance(p, u) < 35) &&
+        !state(e).projectiles.some(
+          (p) =>
+            p.kind === "smoke" && G().distance(p.point || p.to || p, u) < 35,
+        )
       ) {
         const seen = enemies[0],
           a = seen ? Math.atan2(seen.y - u.y, seen.x - u.x) : u.heading || 0;

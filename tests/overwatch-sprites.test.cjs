@@ -140,7 +140,7 @@ test("agency medic only uses treatment art for an actual treating phase and neve
   );
 });
 
-test("observed deaths use corpse art without hidden health, while unconfirmed down contacts remain wounded", () => {
+test("observed unconscious contacts share the fallen image while their down state remains unconfirmed", () => {
   for (const faction of [
     "regular",
     "insurgent",
@@ -156,10 +156,13 @@ test("observed deaths use corpse art without hidden health, while unconfirmed do
     };
     assert.equal(Sprites.select(u).action, "dead");
     assert.ok(Sprites.select(u).key.endsWith("-dead"));
-    assert.notEqual(
-      Sprites.select({ ...u, medicalCondition: "down", pose: "down" }).action,
-      "dead",
-    );
+    const unconscious = Sprites.select({
+      ...u,
+      medicalCondition: "down",
+      pose: "down",
+    });
+    assert.notEqual(unconscious.action, "dead");
+    assert.ok(unconscious.key.endsWith("-dead"));
   }
   assert.equal(
     Sprites.select({
@@ -197,4 +200,13 @@ test("map-space display scale grows exactly with zoom and never plateaus at a vi
       assert.ok(Math.abs(before / ppm - Sprites.mapScale(map, 1)) < 1e-12);
     }
   }
+});
+
+test("map dimensions never inflate a character world scale", () => {
+  for (const ppm of [0.5, 1, 3, 10])
+    assert.equal(
+      Sprites.mapScale({ height: 320 }, ppm),
+      Sprites.mapScale({ height: 2400 }, ppm),
+    );
+  assert.equal(Sprites.mapScale({ height: 800 }, 1), 2);
 });

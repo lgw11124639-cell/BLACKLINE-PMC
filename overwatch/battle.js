@@ -367,6 +367,7 @@
       grenades: u.grenades ? copy(u.grenades) : null,
       hqMemberId: u.hqMemberId || null,
       hqTeam: u.hqTeam || null,
+      infantryTask: u.infantryTask || null,
       agencySniperRole: u.agencySniperRole || null,
       combatSkills: copy(performance(u)),
       fieldFatigue: u.fieldFatigue || 0,
@@ -412,7 +413,9 @@
               ? "aid"
               : u.carrying
                 ? "carrying"
-                : u.stance || (u.prone ? "prone" : "standing"),
+                : u.path?.length || u.motionActive
+                  ? "standing"
+                  : u.stance || (u.prone ? "prone" : "standing"),
       carriedBy: u.carriedBy || null,
       boardedBy: u.boardedBy || (u.hqBoarded ? "hq-infantry-transport" : null),
       home: !!u.home,
@@ -1775,6 +1778,20 @@
       from: shot.from,
       to: shot.to,
     });
+    if (u.hqMemberId && e.time - (u.lastInfantryFireReportAt ?? -100) >= 20) {
+      u.lastInfantryFireReportAt = e.time;
+      root.OverwatchInfantry?.report(
+        s,
+        e,
+        u,
+        "combat",
+        u.assignmentRole === "gunner"
+          ? "지원화기 사격. 분대 이동을 엄호한다."
+          : "식별 위협에 대응 사격 중.",
+        ev,
+        { shotId: shot.id },
+      );
+    }
     u.combatActive = true;
     if (
       qOf(e, u.id) &&

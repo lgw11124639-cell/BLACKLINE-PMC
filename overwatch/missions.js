@@ -599,7 +599,9 @@
     e.mission.log.push(copy(ev));
     return ev;
   }
-  function say(s, e, kind, body, ev, payload = {}) {
+  function say(s, e, kind, body, ev, payload = {}, reporter = null) {
+    if (reporter?.hqMemberId)
+      return Infantry().report(s, e, reporter, kind, body, ev, payload);
     const q = e.squads[0],
       r = I().radio(
         s,
@@ -1395,8 +1397,8 @@
         confidence: identified ? 0.95 : 0.85,
         classification: a.armed ? "armed-person" : "unarmed-person",
         observerId: u.id,
-        source: "agency",
-        callsign: "보병조",
+        source: u.hqMemberId ? "infantry" : "agency",
+        callsign: u.hqMemberId ? u.callsign : "보병조",
         uncertainty: identified ? 2 : 6,
         pose: B().snapshot(a, e.time).pose,
         heading: a.heading || 0,
@@ -1427,6 +1429,7 @@
             : "보병조 무장 위협 식별. 엄폐·분산 후 교전한다.",
         ev,
         { contact: seen },
+        u,
       );
       m.agencyReports[a.id] = { at: e.time, condition, code };
       u.agencyReports[a.id] = { x: a.x, y: a.y, at: e.time, condition, code };
@@ -1801,6 +1804,10 @@
       detectionTracks: [],
       state: "waiting",
     });
+    delete base.roofId;
+    delete base.roofTransit;
+    delete base.overwatchPath;
+    if (p.roofId) base.roofId = p.roofId;
     delete base.suppressionAt;
     delete base.lastShotAt;
     base.health.kit = role === "기관 구출요원" ? 2 : 1;
@@ -2019,12 +2026,23 @@
     return a === d;
   }
   function moveGround(u, goal, speed, e) {
+    if (u.hqMemberId) {
+      if (goal.roofId)
+        goal =
+          G.roofs().find((r) => r.id === goal.roofId)?.access ||
+          G.project({ x: goal.x, y: goal.y });
+      if (u.path?.some((p) => p.roofTransition === "up")) {
+        u.path = [];
+        delete u.agencyBoundPath;
+        delete u.roofTransit;
+      }
+    }
+
     if (
       u.health?.alive &&
       u.health.conscious &&
       !u.health.aid &&
-      B().moveFactor(u) > 0 &&
-      (!e || !B().underFire(e, u))
+      B().moveFactor(u) > 0
     ) {
       u.prone = false;
       u.stance = "standing";
@@ -2624,16 +2642,22 @@
               path: [],
               dueAt: null,
             };
+            const priorNotice = m.log.findLast(
+              (ev) =>
+                ev.type === "transport-recovery-started" &&
+                ev.transportId === t.id,
+            );
             const ev = log(e, "transport-recovery-started", {
               transportId: t.id,
             });
-            say(
-              s,
-              e,
-              "transport",
-              "탑승 대기 인원이 접근하지 못했다. 기존 수송 승무원이 마지막 보고 지점에서 직접 확인·회수한다. 추가 지원 인원이나 헬기를 생성하지 않는다.",
-              ev,
-            );
+            if (!priorNotice || e.time - priorNotice.time >= 180)
+              say(
+                s,
+                e,
+                "transport",
+                "탑승 대기 인원이 접근하지 못했다. 기존 수송 승무원이 마지막 보고 지점에서 직접 확인·회수한다. 추가 지원 인원이나 헬기를 생성하지 않는다.",
+                ev,
+              );
           }
           if (done && t.manifest.length && !t.crew) {
             t.trip = "extraction";
@@ -3079,6 +3103,27 @@
     }
     if (t.state === "medical-work") medicalCrew(s, e, t);
   }
+  function crewMove(e, c, goal, speed) {
+    const signature = goal.x + ":" + goal.y + ":" + (goal.roofId || "ground"),
+      p = c.recoveryProgress;
+    if (
+      !p ||
+      p.goal !== signature ||
+      G.distance(c, p) > 0.5 ||
+      c.roofTransit?.dueAt >= e.time
+    )
+      c.recoveryProgress = { x: c.x, y: c.y, at: e.time, goal: signature };
+    const done = moveGround(c, goal, speed, e);
+    if (!done && !c.path?.length && !c.roofTransit && G.distance(c, goal) > 2) {
+      c.path = G.path(c, goal, 5);
+      if (c.path.length) moveGround(c, goal, speed, e);
+    }
+    if (e.time - c.recoveryProgress.at > 120) c.recoveryBlocked = true;
+    return (
+      done ||
+      (G.distance(c, goal) < 2 && (c.roofId || null) === (goal.roofId || null))
+    );
+  }
   function medicalCrew(s, e, t) {
     const m = e.mission,
       c = t.crew;
@@ -3098,7 +3143,21 @@
         c.state = "search";
         return;
       }
-      moveGround(c, G.project({ x: t.x, y: t.y }), 0.8, e);
+      crewMove(e, c, G.project({ x: t.x, y: t.y }), 0.8);
+      if (c.recoveryBlocked) {
+        u.carriedBy = null;
+        c.patientId = null;
+        c.targetId = null;
+        c.state = "search";
+        c.blockedIds = [...(c.blockedIds || []), u.id];
+        delete c.recoveryBlocked;
+        delete c.recoveryProgress;
+        log(e, "recovery-carry-route-blocked", {
+          transportId: t.id,
+          memberId: u.id,
+        });
+        return;
+      }
       u.x = c.x;
       u.y = c.y;
       if (c.roofId) u.roofId = c.roofId;
@@ -3120,13 +3179,30 @@
     }
     if (c.targetId) {
       const u = blue(e, c.targetId);
-      if (u.home || u.boardedBy || (u.carriedBy && u.carriedBy !== c.id)) {
+      if (
+        !u ||
+        u.home ||
+        u.boardedBy ||
+        (u.carriedBy && u.carriedBy !== c.id)
+      ) {
         c.dueAt = null;
         c.targetId = null;
         return;
       }
       if (G.distance(c, u) > 1.8 || (c.roofId || null) !== (u.roofId || null)) {
-        moveGround(c, u, 1, e);
+        crewMove(e, c, u, 1);
+        if (c.recoveryBlocked) {
+          c.blockedIds = [...(c.blockedIds || []), u.id];
+          c.targetId = null;
+          c.path = [];
+          delete c.recoveryBlocked;
+          delete c.recoveryProgress;
+          log(e, "recovery-patient-route-blocked", {
+            transportId: t.id,
+            memberId: u.id,
+          });
+          return;
+        }
         c.state = "approaching";
         return;
       }
@@ -3180,6 +3256,7 @@
           !m.home.includes(u.id) &&
           !u.boardedBy &&
           !u.carriedBy &&
+          !(c.blockedIds || []).includes(u.id) &&
           G.distance(c, u) < 150 &&
           (G.clear(c, u) ||
             (u.roofId &&
@@ -3204,58 +3281,89 @@
     }
     if (
       t.id === "primary" &&
-      m.memberIds.some(
-        (id) =>
-          !m.home.includes(id) &&
-          !blue(e, id).boardedBy &&
-          blue(e, id).health.alive,
-      )
+      m.memberIds.every((id) => m.home.includes(id) || blue(e, id).boardedBy)
     ) {
-      // A recovery crew must not depart with one patient while mobile teammates are still approaching.
-      t.crew = null;
-      t.loadingSince = e.time;
-      t.state = "loading";
+      beginTravel(e, t, G.MAP.base, "home-unload");
       return;
     }
-    if (t.manifest.length) beginTravel(e, t, G.MAP.base, "home-unload");
-    else {
-      if (t.id === "primary") {
-        c.searchPoints ??= [
+    if (t.id === "primary") {
+      // Search received last-known positions even when buildings hide casualties.
+      // Retain the same crew and search progress while some passengers are already aboard.
+      if (!c.searchPoints || c.recoverySearchVersion !== 2) {
+        c.recoverySearchVersion = 2;
+        const reported = m.memberIds
+          .filter((id) => !m.home.includes(id) && !t.manifest.includes(id))
+          .map((id) => e.knowledge.friends[id])
+          .filter(Boolean);
+        const positions = reported.map((r) => {
+          const roof = r.roofId && G.roofs().find((b) => b.id === r.roofId);
+          return roof
+            ? { x: r.x, y: r.y, roofId: roof.id }
+            : G.project({ x: r.x, y: r.y });
+        });
+        const around = [
           [35, 0],
           [0, 35],
           [-35, 0],
           [0, -35],
         ].map(([dx, dy]) => G.project({ x: t.x + dx, y: t.y + dy }));
-        c.searchIndex ??= 0;
-        if (c.searchIndex < c.searchPoints.length) {
-          const target = c.searchPoints[c.searchIndex];
-          c.state = "searching";
-          if (!c.path.length) {
-            c.path = G.path(c, target);
-            if (!c.path.length) c.path = G.path(c, target, 5);
-          }
-          if (G.distance(c, target) < 2 || !c.path.length) {
-            c.searchIndex++;
-            c.path = [];
-          } else {
-            if (stepToward(c, c.path[0], 1)) c.path.shift();
-          }
+        c.searchPoints = [...positions, ...around].filter(
+          (p, i, all) =>
+            !all
+              .slice(0, i)
+              .some(
+                (old) =>
+                  G.distance(old, p) < 2 &&
+                  (old.roofId || null) === (p.roofId || null),
+              ),
+        );
+        c.searchIndex = 0;
+      }
+      if (c.searchIndex < c.searchPoints.length) {
+        const target = c.searchPoints[c.searchIndex];
+        c.state = "searching";
+        const arrived =
+          G.distance(c, target) < 2 &&
+          (c.roofId || null) === (target.roofId || null);
+        if (arrived) {
+          c.searchIndex++;
+          c.path = [];
+          delete c.recoveryProgress;
           return;
         }
-        const ev = log(e, "recovery-search-completed", {
-          transportId: t.id,
-          checked: c.searchIndex,
-        });
-        say(
-          s,
-          e,
-          "transport",
-          "마지막 보고 위치 주변 구역을 실제 수색했으나 미회수 대원을 찾지 못했다. 사망으로 단정하지 않고 확인한 탑승자와 함께 복귀한다.",
-          ev,
-        );
-        beginTravel(e, t, G.MAP.base, "home-unload");
+        if (crewMove(e, c, target, 1)) {
+          c.searchIndex++;
+          c.path = [];
+          delete c.recoveryProgress;
+        } else if (c.recoveryBlocked) {
+          log(e, "recovery-search-route-blocked", {
+            transportId: t.id,
+            point: copy(target),
+          });
+          c.searchIndex++;
+          c.path = [];
+          delete c.recoveryProgress;
+          delete c.recoveryBlocked;
+        }
         return;
       }
+      const ev = log(e, "recovery-search-completed", {
+        transportId: t.id,
+        checked: c.searchIndex,
+        passengers: t.manifest.length,
+      });
+      say(
+        s,
+        e,
+        "transport",
+        "마지막 보고 위치와 주변 접근로 수색을 마쳤다. 확인한 탑승자와 복귀하며 미확인 인원은 사망으로 단정하지 않는다.",
+        ev,
+      );
+      beginTravel(e, t, G.MAP.base, "home-unload");
+      return;
+    }
+    if (t.manifest.length) beginTravel(e, t, G.MAP.base, "home-unload");
+    else {
       c.waitSince ??= e.time;
       if (e.time - c.waitSince > 30) {
         const ev = log(e, "medical-no-contact", { transportId: t.id });
@@ -3736,6 +3844,14 @@
       u.health.aid
     )
       return;
+    if (u.hqMemberId && u.roofId && B().moveFactor(u) > 0) {
+      const roof = G.roofs().find((r) => r.id === u.roofId);
+      if (roof) {
+        moveGround(u, roof.access, 0.9, e);
+        u.state = "descending-to-ground";
+        return;
+      }
+    }
     const sightRange = u.agencySniperRole ? 1100 : u.hqMemberId ? 350 : 200;
     u.visionRange = sightRange * Ordnance().factor(u);
     u.identificationRange = u.visionRange * 0.65;
@@ -3750,7 +3866,14 @@
         G.visible(u, a, e) &&
         B().visualAcquire(e, u, a, sightRange),
     );
-    if (B().underFire(e, u) && e.time - (m.lastSupportAlertAt ?? -100) >= 20) {
+    if (
+      B().underFire(e, u) &&
+      e.time -
+        (u.hqMemberId
+          ? (m.supportAlertTimes?.[u.hqTeam || "ALPHA"] ?? -100)
+          : (m.lastSupportAlertAt ?? -100)) >=
+        20
+    ) {
       const incoming = e.battle.shots.findLast(
           (shot) =>
             shot.side === "red" &&
@@ -3763,12 +3886,17 @@
           actorId: u.id,
           attackerId: seen?.id || null,
         });
-      m.lastSupportAlertAt = e.time;
+      if (u.hqMemberId) {
+        m.supportAlertTimes ||= {};
+        m.supportAlertTimes[u.hqTeam || "ALPHA"] = e.time;
+      } else m.lastSupportAlertAt = e.time;
       say(
         s,
         e,
         "combat",
-        "기관 인력이 피격 중이다. 저격조 긴급 엄호 요청.",
+        u.hqMemberId
+          ? "본부 보병 피격. 저격팀 긴급 엄호 요청."
+          : "기관 인력이 피격 중이다. 저격조 긴급 엄호 요청.",
         ev,
         {
           supportAlert: {
@@ -3791,6 +3919,7 @@
               : null,
           },
         },
+        u,
       );
     }
     if (u.hqMemberId)
@@ -4419,11 +4548,17 @@
                 primary.state,
               )
             ? "수송 승무원이 접근 구역 위협을 확인해 안전 확보를 기다립니다."
-            : primary.crew?.targetId
-              ? "수송 회수요원이 실제 부상자에게 접근·회수 중입니다."
-              : primary.state === "loading"
-                ? "차량 도착 · 실제 인원 확인과 탑승을 기다립니다."
-                : null;
+            : primary.crew?.state === "searching"
+              ? "회수요원이 마지막 보고 위치·주변 접근로를 수색 중입니다. " +
+                (primary.crew.searchIndex + 1) +
+                "/" +
+                primary.crew.searchPoints.length +
+                "구역"
+              : primary.crew?.targetId
+                ? "수송 회수요원이 실제 부상자에게 접근·회수 중입니다."
+                : primary.state === "loading"
+                  ? "차량 도착 · 실제 인원 확인과 탑승을 기다립니다."
+                  : null;
       m.knowledge.transports = m.transports
         .filter((t) => t.type !== "foot")
         .map((t) => ({
