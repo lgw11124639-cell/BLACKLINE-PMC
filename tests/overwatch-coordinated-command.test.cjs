@@ -212,3 +212,20 @@ test("controller uses an available supply trip before extraction and never dispa
   assert.equal(e.mission.returnRequested, false);
   C.validate(C.clone(s));
 });
+
+test("one exhausted member does not abort a two-person operation while the teammate can still fight", () => {
+  const { s, e, step, assess } = make();
+  for (const w of [e.world.units[0].weapon, e.world.units[0].sidearm]) {
+    w.loaded = 0;
+    w.magazines = [];
+    w.initial = w.spent;
+  }
+  for (let i = 0; i < 9; i++) {
+    reportOwn(s, e);
+    step(7);
+    assess();
+  }
+  assert.equal(e.mission.returnRequested, false);
+  assert.equal(e.control.ammoRiskSince, null);
+  C.validate(C.clone(s));
+});
