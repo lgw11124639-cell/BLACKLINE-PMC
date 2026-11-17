@@ -26,7 +26,7 @@ with sync_playwright() as p:
   assert initial['viewSpan']<=initial['worldExtent']['height']+.1
   start=[m for m in initial['motions'] if m.get('renderedHeight')];assert len(start)>=3,(w,h,initial)
   ratio={m['id']:max(m['renderedWidth'],m['renderedHeight'])/initial['pixelsPerMetre'] for m in start}
-  assert all(math.isclose(n,10.8,rel_tol=.002) for n in ratio.values()),ratio
+  assert all(math.isclose(n,12.42,rel_tol=.002) for n in ratio.values()),ratio
   prior={m['id']:max(m['renderedWidth'],m['renderedHeight']) for m in start}
   for i in range(4):
    q.locator('[data-field-zoom=".65"]').click();q.wait_for_timeout(140);current=stats()

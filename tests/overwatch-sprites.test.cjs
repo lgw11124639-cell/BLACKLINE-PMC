@@ -211,13 +211,23 @@ test("map dimensions never inflate a character world scale", () => {
   assert.equal(Sprites.mapScale({ height: 800 }, 1), 2);
 });
 
-test("readable people use a fixed threefold boost without map-dependent growth", () => {
+test("readable people use a fixed readable boost without map-dependent growth", () => {
   for (const height of [160, 800, 2400]) {
     const map = { height };
     for (const ppm of [0.2, 0.5, 1, 2, 8]) {
-      assert.equal(Sprites.actorScale(map, ppm), Sprites.mapScale(map, ppm) * 3);
-      assert.equal(Sprites.actorScale(map, ppm * 2), Sprites.actorScale(map, ppm) * 2);
-      assert.equal(Sprites.actorScale(map, ppm), Sprites.actorScale({ height: 800 }, ppm));
+      assert.ok(
+        Math.abs(
+          Sprites.actorScale(map, ppm) - Sprites.mapScale(map, ppm) * 3.45,
+        ) < 1e-10,
+      );
+      assert.equal(
+        Sprites.actorScale(map, ppm * 2),
+        Sprites.actorScale(map, ppm) * 2,
+      );
+      assert.equal(
+        Sprites.actorScale(map, ppm),
+        Sprites.actorScale({ height: 800 }, ppm),
+      );
     }
   }
 });
