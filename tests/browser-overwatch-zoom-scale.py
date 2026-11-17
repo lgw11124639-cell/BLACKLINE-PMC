@@ -26,6 +26,7 @@ with sync_playwright() as p:
   assert initial['viewSpan']<=initial['worldExtent']['height']+.1
   start=[m for m in initial['motions'] if m.get('renderedHeight')];assert len(start)>=3,(w,h,initial)
   ratio={m['id']:max(m['renderedWidth'],m['renderedHeight'])/initial['pixelsPerMetre'] for m in start}
+  assert all(math.isclose(n,10.8,rel_tol=.002) for n in ratio.values()),ratio
   prior={m['id']:max(m['renderedWidth'],m['renderedHeight']) for m in start}
   for i in range(4):
    q.locator('[data-field-zoom=".65"]').click();q.wait_for_timeout(140);current=stats()
@@ -33,6 +34,7 @@ with sync_playwright() as p:
     extent=max(m['renderedWidth'],m['renderedHeight']);assert extent>prior[m['id']]*1.45,(w,h,i,m,prior)
     assert math.isclose(extent/current['pixelsPerMetre'],ratio[m['id']],rel_tol=.002),(w,h,i,m,ratio)
     prior[m['id']]=extent
+   if i==1:q.screenshot(path=f'/tmp/overwatch-readable-{w}x{h}.png')
    for t in current['transportSizes']:
     before=next(x for x in initial['transportSizes'] if x['id']==t['id']);assert math.isclose(t['pixels']/current['pixelsPerMetre'],before['pixels']/initial['pixelsPerMetre'],rel_tol=.002)
   q.locator('[data-field-fit]').click();q.wait_for_timeout(150);q.screenshot(path=f'/tmp/overwatch-fill-{w}x{h}.png')

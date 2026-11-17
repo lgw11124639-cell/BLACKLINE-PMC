@@ -446,7 +446,7 @@
             m.to,
             motion.mode === "walk",
           ),
-          entityScale = root.OverwatchSprites.mapScale(frame.map, v.scale),
+          entityScale = root.OverwatchSprites.actorScale(frame.map, v.scale),
           height = 1.8 * entityScale,
           width = height * 0.75,
           direction = (Math.round(facing / (Math.PI / 2)) + 4) % 4;
