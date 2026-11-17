@@ -325,6 +325,7 @@
         capacity: WEAPONS[u.weapon.model].capacity,
         range: WEAPONS[u.weapon.model].range,
       },
+      sidearm: u.sidearm ? copy(u.sidearm) : null,
       waitingForDeployment: !!u.waitingForDeployment,
       protection: u.protection ? copy(u.protection) : null,
       heading: u.heading || 0,
@@ -2026,11 +2027,17 @@
     const danger = G.project({
         x: Math.max(
           12,
-          Math.min(G.MAP.width - 12, Math.round(incoming.from.x / 80) * 80),
+          Math.min(
+            G.MAP.width - 12,
+            hurt.x + Math.cos(soundBearing(incoming, hurt).bearing) * 120,
+          ),
         ),
         y: Math.max(
           12,
-          Math.min(G.MAP.height - 12, Math.round(incoming.from.y / 80) * 80),
+          Math.min(
+            G.MAP.height - 12,
+            hurt.y + Math.sin(soundBearing(incoming, hurt).bearing) * 120,
+          ),
         ),
       }),
       options = [];
@@ -2057,7 +2064,20 @@
     q.emergencyRepositionUntil = e.time + 45;
     q.avoidPositions = [
       ...(q.avoidPositions || []),
-      { x: hurt.x, y: hurt.y, at: e.time },
+      {
+        x: hurt.x,
+        y: hurt.y,
+        at: e.time,
+        ...(hurt.roofId &&
+        e.battle.shots.filter(
+          (shot) =>
+            shot.side === "red" &&
+            e.time - shot.time < 30 &&
+            pair.some((u) => G.distance(shot.to, u) < 12),
+        ).length >= 2
+          ? { roofId: hurt.roofId }
+          : {}),
+      },
     ].slice(-6);
     const mover = hurt,
       other = pair.find((u) => u.id !== mover.id),

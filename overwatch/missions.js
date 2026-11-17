@@ -1544,11 +1544,17 @@
       g.goals[id] = G.project({
         x: Math.max(
           10,
-          Math.min(G.MAP.width - 10, anchor.x + Math.cos(angle) * 10),
+          Math.min(
+            G.MAP.width - 10,
+            anchor.x + Math.cos(angle) * (i < 2 ? 16 : 24),
+          ),
         ),
         y: Math.max(
           10,
-          Math.min(G.MAP.height - 10, anchor.y + Math.sin(angle) * 10),
+          Math.min(
+            G.MAP.height - 10,
+            anchor.y + Math.sin(angle) * (i < 2 ? 16 : 24),
+          ),
         ),
       });
     }
@@ -3561,7 +3567,7 @@
       point: copy(choice.p),
     });
   }
-  function commandAgency(s, mode) {
+  function commandAgency(s, mode, { source = "headquarters" } = {}) {
     const e = s.commandExercise,
       m = e?.mission;
     ok(
@@ -3571,6 +3577,10 @@
     ok(
       ["auto", "hold", "advance", "withdraw"].includes(mode),
       "기관 보병 명령이 잘못되었습니다.",
+    );
+    ok(
+      ["headquarters", "controller"].includes(source),
+      "기관 보병 지휘 출처가 잘못되었습니다.",
     );
     const anchors = Object.fromEntries(
       (m.knowledge.actors || [])
@@ -3593,7 +3603,7 @@
         withdraw: "기관 보병, 상호 엄호하며 회수 지점으로 철수하라.",
       }[mode],
       ev,
-      { agencyDirective: { mode, anchors } },
+      { agencyDirective: { mode, anchors, source } },
     );
   }
   function agencyManualMove(e, u) {
@@ -3854,7 +3864,13 @@
           e,
         );
       }
-      u.state = "securing";
+      u.state = u.path.length ? "securing" : "all-round-guard";
+      if (!u.path.length) {
+        const slot = Number(u.id.split("-").at(-1)) || 0;
+        u.heading = (anchor?.heading || 0) + (slot * Math.PI) / 2;
+        u.stance = "kneeling";
+        u.prone = false;
+      }
       return;
     }
     if (m.contract.task === "rescue") {
@@ -4598,6 +4614,7 @@
       mission: {
         id: m.id,
         agencyDirective: m.agencyDirective?.mode || "auto",
+        agencyDirectiveSource: m.agencyDirective?.source || null,
         agencyControl: m.agencyControl
           ? {
               phase: m.agencyControl.phase,
@@ -4840,6 +4857,10 @@
         ["auto", "hold", "advance", "withdraw"].includes(
           m.agencyDirective.mode,
         ) &&
+          (m.agencyDirective.source == null ||
+            ["headquarters", "controller"].includes(
+              m.agencyDirective.source,
+            )) &&
           n(m.agencyDirective.receivedAt, 0, e.time) &&
           Object.values(m.agencyDirective.anchors || {}).every(point) &&
           e.radio.some(
@@ -4847,7 +4868,8 @@
               r.id === m.agencyDirective.messageId &&
               r.route === "agency" &&
               r.status === "delivered" &&
-              r.payload?.agencyDirective?.mode === m.agencyDirective.mode,
+              r.payload?.agencyDirective?.mode === m.agencyDirective.mode &&
+              r.payload.agencyDirective.source === m.agencyDirective.source,
           ),
         "기관 보병 지시의 수신 기록이 잘못되었습니다.",
       );

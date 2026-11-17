@@ -509,7 +509,12 @@
           hold: "분산 엄폐·엄호",
           advance: "담당 구역 진출",
           withdraw: "보병 회수 지점 철수",
-        }[m.agencyDirective] || "현장 자율 수색");
+        }[m.agencyDirective] || "현장 자율 수색") +
+        (m.agencyDirectiveSource === "controller"
+          ? " · 작전통제관 지시"
+          : m.agencyDirectiveSource === "headquarters"
+            ? " · 본부 직접 지시"
+            : "");
     const goal = rootNode.querySelector("[data-live-objective]");
     if (goal)
       goal.textContent =
