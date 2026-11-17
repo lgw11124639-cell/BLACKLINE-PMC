@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.17.02",
+  const VERSION = "2026.11.17.03",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -23,7 +23,7 @@
     );
   const tabs = [
     ["headquarters", "본부", "01"],
-    ["personnel", "대원·저격조", "02"],
+    ["personnel", "대원·편제", "02"],
     ["command", "훈련 관제", "03"],
     ["field", "작전 관제", "04"],
     ["contracts", "작전 승인", "05"],
@@ -896,6 +896,7 @@
       editable: source === "primary" && !stale,
       commit,
     });
+    OverwatchInfantry.bind(root, { commit, execute: executeField });
     PersonnelUI.bind(root, {
       state,
       editable:

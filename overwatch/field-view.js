@@ -55,7 +55,10 @@
         : "시야·사거리: 대원 패널에서 여러 명 선택 가능";
   }
   function rangeMarkup(f) {
-    return f.friends
+    return [
+      ...f.friends,
+      ...(f.supportActors || []).filter((u) => u.hqMemberId),
+    ]
       .filter((u) => rangeIds.has(u.id))
       .map((u, i) => {
         const color = [
@@ -279,11 +282,23 @@
             ')"><rect x="-6" y="-2" width="12" height="4" fill="#647961"/><title>' +
             esc(t.type) +
             " · " +
-            t.manifest.length +
+            (t.manifest?.length || t.passengers || 0) +
             "명</title></g>",
         )
         .join("") +
       rangeMarkup(f) +
+      (f.battle?.ordnance?.smokes || [])
+        .map(
+          (p) =>
+            '<circle cx="' +
+            p.x +
+            '" cy="' +
+            p.y +
+            '" r="' +
+            p.radius +
+            '" fill="#ccd5ce" opacity=".7"/>',
+        )
+        .join("") +
       "</svg>"
     );
   }
@@ -309,8 +324,18 @@
     );
   }
   function roster(f) {
-    return f.friends.length
-      ? f.friends
+    const own = [
+      ...f.friends,
+      ...(f.supportActors || [])
+        .filter((u) => u.hqMemberId)
+        .map((u) => ({
+          ...u,
+          age: f.time - u.observedAt,
+          stale: f.time - u.observedAt > 30,
+        })),
+    ];
+    return own.length
+      ? own
           .map(
             (u) =>
               '<article class="field-person" data-field-person="' +
@@ -328,7 +353,11 @@
               esc(u.callsign) +
               (u.assignmentLabel ? " · " + esc(u.assignmentLabel) : "") +
               "</small></strong><p>" +
-              (u.role === "observer" ? "관측수" : "저격수") +
+              (u.hqMemberId
+                ? esc(u.roleLabel || "본부 보병")
+                : u.role === "observer"
+                  ? "관측수"
+                  : "저격수") +
               " · " +
               (u.stale ? "최종 보고: " : "") +
               esc(
@@ -343,6 +372,7 @@
                           moving: "이동",
                           climbing: "옥상 계단 이동",
                           covering: "경계·사격 준비",
+                          suppressing: "제압 사격",
                           spacing: "간격 조정",
                           "first-aid": "응급처치",
                           carrying: "조원 운반",
@@ -412,7 +442,9 @@
                 : "") +
               "</small><small>탐지 시야 " +
               Math.round(u.visionRange || 0) +
-              "m · 식별 " +
+              "m · 제압 " +
+              Math.round(u.suppression || 0) +
+              "% · 식별 " +
               Math.round(u.identificationRange || 0) +
               "m</small><small>" +
               (u.health
@@ -583,7 +615,7 @@
           stamp(f.time) +
           '</span><div class="field-map-actions"><button data-field-zoom=".65" aria-label="지도 확대">+</button><button data-field-zoom="1.5" aria-label="지도 축소">−</button><button data-field-fit aria-label="지도를 화면에 채우기">화면 채움</button><button data-field-fullscreen aria-label="지도 전체화면 전환">전체화면</button><button class="mobile-map-control field-hud-toggle" data-field-hud aria-expanded="false" aria-label="하단 작전 조작부 열기">관제</button><button class="mobile-map-control" data-field-tools aria-expanded="false" aria-controls="field-map-settings" aria-label="지도 설정 열기">설정</button><button class="mobile-map-control" data-field-panel-toggle aria-expanded="true" aria-label="옆 무전·대원 패널 접기">패널</button><div class="field-map-settings" id="field-map-settings"><button data-field-overview aria-label="지도 전체 지역 보기">전체 지역 보기</button><select data-field-view-select aria-label="지도 표현"><option value="illustrated">입체 지도</option><option value="2d">전술도</option><option value="3d">3D 보기</option></select><button data-overwatch-audio aria-pressed="false">소리 켜기</button><button data-field-follow>추적 고정</button><button class="field-map-save" data-save-now>지금 저장</button></div></div></div><div class="field-viewport" data-field-id="' +
           esc(s.campaignId + ":" + f.id) +
-          '"></div><div class="field-range-tools"><span class="field-range-summary" data-range-summary></span><button data-field-range-clear>범위 해제</button></div><div class="field-stage-caption">본부는 임무 지시 · 세부 이동은 관측수 판단</div>' +
+          '"></div><div class="field-range-tools"><span class="field-range-summary" data-range-summary></span><button data-field-range-clear>범위 해제</button></div><div class="field-stage-caption">본부 임무 지시 · 저격조는 관측수, 보병은 분대장 현장 지휘</div>' +
           (active
             ? '<div class="field-quick-orders"><select data-field-quick-team aria-label="저격조 선택">' +
               f.squads
@@ -671,6 +703,7 @@
     if (radio) html = html.replace(radio, "");
     const support =
       (root.OverwatchStaffUI?.field(s) || "") +
+      (root.OverwatchInfantry?.live(s) || "") +
       (e.mission ? root.OverwatchMissionUI.livePanel(s) : "");
     html = html.replace(
       "<aside>",
@@ -862,6 +895,7 @@
         if (
           ![
             ...(lastFrame?.friends || []),
+            ...(lastFrame?.supportActors || []).filter((u) => u.hqMemberId),
             ...(lastFrame?.contacts || []).filter((c) => !c.expired),
           ].some((u) => u.id === id)
         )

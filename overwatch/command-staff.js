@@ -474,6 +474,7 @@
   }
   function missionProgress(s, e, a, c, frame) {
     const m = e.mission;
+    if (m?.agencyLeaderUnavailable && !m.hqInfantry) return false;
     if (
       (!m?.agencyControl && !m?.groundSearch) ||
       m.fieldStartedAt == null ||
@@ -996,7 +997,12 @@
   function assessCombatRisk(s, e, a, c, frame) {
     const m = e.mission;
     if (!m || m.returnRequested || m.fieldStartedAt == null) return false;
-    const fresh = frame.friends.filter(
+    const fresh = [
+      ...frame.friends,
+      ...(frame.supportActors || [])
+        .filter((f) => f.hqMemberId)
+        .map((f) => ({ ...f, age: e.time - f.observedAt })),
+    ].filter(
       (f) =>
         f.age < 25 &&
         !f.home &&
@@ -1055,90 +1061,7 @@
         return true;
       }
     } else c.ammoRiskSince = null;
-    const reported = (frame.supportActors || []).filter(
-      (f) => f.armed && f.health?.alive && e.time - f.observedAt < 25,
-    );
-    const threatened = reported.filter(
-      (f) =>
-        f.underFire ||
-        !f.health.conscious ||
-        f.health.wounds.some((w) => !w.treated && w.severity >= 2),
-    );
-    const d = m.agencyDirective;
-    const playerOrder =
-      (d && d.source !== "controller" && d.mode !== "auto") ||
-      e.radio.some(
-        (r) =>
-          r.route === "agency" &&
-          r.status === "queued" &&
-          r.payload?.agencyDirective &&
-          r.payload.agencyDirective.source !== "controller",
-      );
-    if (playerOrder) return false;
-    const queued = e.radio.some(
-      (r) =>
-        r.route === "agency" &&
-        r.status === "queued" &&
-        r.payload?.agencyDirective?.source === "controller",
-    );
-    if (threatened.length >= 2) {
-      c.agencyPressureSince ??= e.time;
-      c.agencyClearSince = null;
-      if (
-        !queued &&
-        d?.mode !== "hold" &&
-        e.time - (c.lastAgencyRiskOrderAt ?? -100) >= 30
-      ) {
-        M().commandAgency(s, "hold", { source: "controller" });
-        c.lastAgencyRiskOrderAt = e.time;
-        note(
-          s,
-          e,
-          a,
-          "controller-agency-hold",
-          "복수 보병의 피격·부상 보고 확인. 보병 분산 엄폐·대응 사격과 저격조 엄호를 우선한다.",
-          { actorIds: threatened.map((f) => f.id) },
-        );
-      }
-      const unable = threatened.filter(
-        (f) =>
-          !f.health.conscious ||
-          f.health.wounds.some((w) => !w.treated && w.severity === 3),
-      );
-      if (unable.length >= 2 && e.time - c.agencyPressureSince > 90) {
-        note(
-          s,
-          e,
-          a,
-          "controller-agency-withdraw",
-          "기관 보병의 중상·행동 불능 보고가 지속된다. 임무 진출을 중단하고 회수한다.",
-          { actorIds: unable.map((f) => f.id) },
-        );
-        M().requestReturn(s, { abort: true, authority: a });
-        return true;
-      }
-    } else {
-      c.agencyPressureSince = null;
-      if (
-        d?.source === "controller" &&
-        d.mode === "hold" &&
-        reported.length >= 2 &&
-        !threatened.length
-      ) {
-        c.agencyClearSince ??= e.time;
-        if (!queued && e.time - c.agencyClearSince >= 20) {
-          M().commandAgency(s, "auto", { source: "controller" });
-          note(
-            s,
-            e,
-            a,
-            "controller-agency-resume",
-            "보병 안정 보고를 연속 확인했다. 상호 엄호 아래 자체 구역 수색을 재개한다.",
-          );
-          c.agencyClearSince = null;
-        }
-      } else c.agencyClearSince = null;
-    }
+    // The agency commands its own force; only headquarters units affect our risk decisions.
     return false;
   }
   function tick(s, e) {
@@ -1262,7 +1185,12 @@
     }
     const frame = D().frame(s),
       known = frame.contacts.filter((x) => !x.expired),
-      friends = frame.friends.filter((x) => !x.home && !x.boardedBy),
+      friends = [
+        ...frame.friends,
+        ...(frame.supportActors || [])
+          .filter((f) => f.hqMemberId)
+          .map((f) => ({ ...f, age: e.time - f.observedAt })),
+      ].filter((x) => !x.home && !x.boardedBy),
       casualties = friends.filter(
         (x) =>
           x.health?.alive &&
@@ -1373,7 +1301,12 @@
       .map((contact) => ({
         contact,
         near: (frame.supportActors || [])
-          .filter((a) => a.armed && a.health?.alive)
+          .filter(
+            (a) =>
+              a.armed &&
+              a.health?.alive &&
+              (!e.mission.agencyAutonomous || a.hqMemberId),
+          )
           .sort(
             (a, b) =>
               Number(!!b.underFire) - Number(!!a.underFire) ||
@@ -1415,6 +1348,12 @@
             }
           : null;
     if (
+      (!e.mission?.agencyAutonomous ||
+        (frame.supportActors || []).some(
+          (a) =>
+            a.hqMemberId &&
+            (a.id === alert?.actorId || a.id === alert?.position?.id),
+        )) &&
       alert &&
       e.time - alert.receivedAt < 30 &&
       c.handledSupportAlert !== alert.eventId

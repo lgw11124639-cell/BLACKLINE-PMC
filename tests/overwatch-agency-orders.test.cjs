@@ -23,6 +23,7 @@ function make() {
   M.accept(s, c.id);
   M.launch(s, c.id);
   const e = s.commandExercise;
+  e.mission.agencyAutonomous = false; // Legacy manually commanded agency saves remain readable.
   for (const a of e.world.actors.filter((a) => a.side === "red"))
     a.health.conscious = false;
   const step = (n) => {

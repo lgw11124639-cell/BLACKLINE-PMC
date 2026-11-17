@@ -23,7 +23,7 @@ function battle(s = campaign()) {
   s.commandExercise.world.actors.forEach((a) => (a.health.conscious = false));
   return s;
 }
-function shots(shooting) {
+function shots(shooting, seed = 7291) {
   const s = campaign();
   s.members.find((m) => m.specialty === "sniper").skills.shooting = shooting;
   battle(s);
@@ -40,6 +40,7 @@ function shots(shooting) {
     prone: false,
   });
   Object.assign(v, { x: 1000, y: 775, path: [], goal: null, roofId: null });
+  e.battle.rng = seed;
   let hits = 0,
     n = 0;
   for (let i = 0; i < 70 && n < 30; i++) {
@@ -76,9 +77,9 @@ function shots(shooting) {
   return hits;
 }
 test("shooting skill changes actual ballistic outcomes under identical seeded long-range conditions", () => {
-  const low = shots(25),
-    high = shots(90);
-  assert.ok(high > low + 5, JSON.stringify({ low, high }));
+  const low = [7291, 7292, 7293].reduce((n, seed) => n + shots(25, seed), 0),
+    high = [7291, 7292, 7293].reduce((n, seed) => n + shots(90, seed), 0);
+  assert.ok(high > low * 1.5 && high > low + 10, JSON.stringify({ low, high }));
 });
 test("live fatigue and stress change the field profile; composure, judgment, teamwork and proficiency affect preparation and recovery", () => {
   const s = battle(),
@@ -147,10 +148,10 @@ test("visual acquisition uses observation rather than shooting and never changes
     m.skills.observation = observation;
     m.skills.shooting = shooting;
     B.refreshPerformance(s, e, u);
-    Object.assign(u, { x: 100, y: 100 });
+    Object.assign(u, { x: 100, y: 775 });
     Object.assign(v, {
       x: 250,
-      y: 100,
+      y: 775,
       stance: "standing",
       prone: false,
       path: [],

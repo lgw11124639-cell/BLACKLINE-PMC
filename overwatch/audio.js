@@ -10,6 +10,7 @@
     lastFrame = null,
     id = null,
     played = 0,
+    ordnancePlayed = 0,
     lastSound = null;
   const playedBySide = { blue: 0, ally: 0, red: 0, unknown: 0 };
   const buffers = new Map(),
@@ -18,6 +19,7 @@
     profiles = {
       AXMC: "precision",
       HK416: "rifle-a",
+      M249: "rifle-a",
       AKM: "ak",
       SVD: "precision",
       G19: "pistol",
@@ -49,7 +51,11 @@
     for (const v of [...voices]) v.finish();
   }
   function remember(f) {
-    for (const fx of f?.battle?.effects || []) seen.add(fx.eventId);
+    for (const fx of [
+      ...(f?.battle?.effects || []),
+      ...(f?.battle?.ordnance?.effects || []),
+    ])
+      seen.add(fx.eventId);
     while (seen.size > 200) seen.delete(seen.values().next().value);
   }
   async function toggle() {
@@ -101,6 +107,49 @@
       stop();
       controls();
     }
+  }
+  function playOrdnance(fx) {
+    if (!context || context.state !== "running" || voices.size >= 12) return;
+    const duration = fx.kind === "frag" ? 0.45 : 1,
+      buffer = context.createBuffer(
+        1,
+        Math.ceil(context.sampleRate * duration),
+        context.sampleRate,
+      ),
+      data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++)
+      data[i] =
+        (Math.random() * 2 - 1) *
+        Math.pow(1 - i / data.length, fx.kind === "frag" ? 3 : 1);
+    const source = context.createBufferSource(),
+      filter = context.createBiquadFilter(),
+      gain = context.createGain();
+    source.buffer = buffer;
+    filter.type = "lowpass";
+    filter.frequency.value = fx.kind === "frag" ? 700 : 2000;
+    gain.gain.value = fx.kind === "frag" ? 0.7 : 0.12;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+    let done = false;
+    const voice = {
+      finish() {
+        if (done) return;
+        done = true;
+        voices.delete(voice);
+        source.onended = null;
+        try {
+          source.stop();
+        } catch {}
+        source.disconnect();
+        filter.disconnect();
+        gain.disconnect();
+      },
+    };
+    source.onended = () => voice.finish();
+    voices.add(voice);
+    ordnancePlayed++;
+    source.start();
   }
   function play(fx, f) {
     if (!context || context.state !== "running" || voices.size >= 12) return;
@@ -231,6 +280,11 @@
       seen.add(fx.eventId);
       if (count++ < 8 && f.time - fx.receivedAt <= 5) play(fx, f);
     }
+    for (const fx of f.battle?.ordnance?.effects || []) {
+      if (seen.has(fx.eventId)) continue;
+      seen.add(fx.eventId);
+      if (f.time - fx.receivedAt <= 5) playOrdnance(fx);
+    }
     while (seen.size > 200) seen.delete(seen.values().next().value);
   }
   function setVolume(value) {
@@ -267,6 +321,7 @@
         voices: voices.size,
         contexts: context ? 1 : 0,
         played,
+        ordnancePlayed,
         playedBySide: { ...playedBySide },
         lastSound,
       };
