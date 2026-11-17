@@ -20,8 +20,8 @@ with sync_playwright() as p:
   q.reload(wait_until='networkidle');q.wait_for_function('OverwatchIllustratedRenderer.get()?.stats().assetsReady')
   state=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state')
   units=[a for a in state['commandExercise']['world']['actors'] if a.get('hqMemberId')]
-  assert len(units)==8;assert len([u for u in units if u['callsign']=='본부 보병 ALPHA'])==4
-  assert len([u for u in units if u['callsign']=='본부 보병 BRAVO'])==4
+  assert len(units)==8;assert len([u for u in units if u['callsign']=='본부 1팀'])==4
+  assert len([u for u in units if u['callsign']=='본부 2팀'])==4
   if not q.locator('[data-field-view-select]').is_visible():q.locator('[data-field-tools]').click()
   q.locator('[data-field-view-select]').select_option('2d')
   assert '기관 저격수' in q.locator('.field-viewport svg').text_content()

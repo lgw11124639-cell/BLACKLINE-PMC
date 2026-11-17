@@ -180,8 +180,8 @@ test("twenty infantry remain separate and three four-person squads can deploy se
   M.launch(s, c.id);
   const units = I.units(s.commandExercise);
   assert.equal(units.length, 8);
-  assert.equal(units.filter((u) => u.callsign === "본부 보병 ALPHA").length, 4);
-  assert.equal(units.filter((u) => u.callsign === "본부 보병 BRAVO").length, 4);
+  assert.equal(units.filter((u) => u.callsign === "본부 1팀").length, 4);
+  assert.equal(units.filter((u) => u.callsign === "본부 2팀").length, 4);
   assert.equal(
     s.infantry.members.filter((m) => m.status === "deployed").length,
     8,

@@ -384,6 +384,14 @@ for (const key of ["high-value-target", "vip-cover", "rescue-cover"])
         }),
       );
       assert.equal(e.mission.knowledge.objective, "complete");
+      if (key !== "high-value-target") {
+        assert.equal(e.mission.protectedHome, true);
+        assert.equal(e.mission.protectedTransport.state, "home");
+        assert.ok(
+          e.mission.protectedTransport.manifest.includes("agency-protected"),
+        );
+        assert.equal(s.operations.reports[0].protectedHome, true);
+      }
       assert.equal(s.operations.reports.length, 1);
       assert.equal(s.operations.reports[0].postpaid, true);
       assert.equal(e.mission.hqInfantry.transport.state, "home");

@@ -45,6 +45,59 @@
     deceased: "전사 확인",
     missing: "미회수·실종 보관",
   };
+  function proposal(c) {
+    const map = root.OverwatchGeometry.maps[c.mapId],
+      stories = {
+        recon: [
+          "현지 연락망의 보고가 서로 엇갈리고 있습니다. 의뢰 기관은 병력을 즉시 투입하기보다, 주요 접근로와 건물 밀집 구역을 확인할 독립 정찰을 요청했습니다.",
+          "구역별 접촉 식별·활동 변화·안전 통로를 종합 보고합니다. 인원 한 명 발견만으로 정찰을 종료하지 않습니다.",
+        ],
+        rescue: [
+          "현장 의료 지원 인원의 정기 연락이 끊겼습니다. 마지막 목격 정보만으로 소재와 경비 상태를 확정할 수 없어, 기관은 수색과 구출을 함께 수행할 본부 지원을 요청했습니다.",
+          "정찰로 대상 신원을 확인하고 현장에서 합류합니다. 구출 대상과 호송 인원의 실제 탑승·본부 도착을 확인해야 합니다.",
+        ],
+        escort: [
+          "위험 지역을 통과해야 하는 연락관의 이동이 예정되어 있습니다. 기존 경로는 노출 가능성이 있어 고정 통로 대신 현장 관측에 따라 호송로를 재평가해야 합니다.",
+          "대상은 호위 인원 뒤에서 이동합니다. 선행 경계·측면 엄호·대상 호송을 분리하고 실제 안전 지역 도착을 확인합니다.",
+        ],
+        eliminate: [
+          "의뢰 기관은 지역 무장 조직의 핵심 인물에 관한 단편적인 동향을 확보했습니다. 오인 교전을 피하기 위해 현장 재식별과 별도의 사격 판단이 필요합니다.",
+          "정찰·영상·관측으로 신원을 확인한 뒤 지정 표적을 저지합니다. 보병은 접근로·사격 후 확인·철수 엄호를 나눠 수행합니다.",
+        ],
+        interdict: [
+          "무장 조직의 인원과 물자가 지역 거점을 따라 이동한다는 보고가 접수되었습니다. 이동 시점과 경로는 유동적이므로 먼저 감시 구역을 분담해야 합니다.",
+          "계약상 지정된 이동·보급 활동을 식별하고 저지합니다. 저격팀은 관측·대저격, 보병팀은 수색·접근로 통제·현장 확인을 담당합니다.",
+        ],
+      },
+      story = stories[c.task] || stories.recon;
+    return (
+      '<details class="contract-proposal"><summary>작전 제안서 상세 · 정보 보고서</summary><article class="operation-report"><header><span class="eyebrow">OPERATIONS / INTELLIGENCE BRIEF</span><h3>' +
+      esc(c.title) +
+      "</h3><p>문서번호 " +
+      esc(c.id) +
+      " · 발신 " +
+      esc(c.issuer) +
+      "</p></header>" +
+      (map?.image
+        ? '<figure><img src="' +
+          esc(map.image) +
+          '" alt="' +
+          esc(map.name) +
+          ' 작전 지역 지도" loading="lazy"><figcaption>' +
+          esc(map.name) +
+          " · 사전 지형 자료 / 적·목표 위치는 현장 확인 필요</figcaption></figure>"
+        : "") +
+      "<section><h4>01 · 배경과 상황</h4><p>" +
+      esc(story[0]) +
+      "</p><p>" +
+      esc(c.brief) +
+      "</p></section><section><h4>02 · 임무와 완료 조건</h4><p>" +
+      esc(story[1]) +
+      "</p></section><section><h4>03 · 편성·운용 구상</h4><p>본부 1팀: 선행 수색·대상 확보. 본부 2팀: 측면 경계·전투 엄호. 본부 3팀: 후방·철수로 확보. 저격 1·2·3팀은 서로 다른 관측 구역과 사격 임무를 부여받습니다.</p><p>최소 인원 제한 없음. 권장 " +
+      c.recommended +
+      "명은 참고 정보이며, 보병 또는 저격팀만 투입할 수도 있습니다. 실제 편성은 본부 승인에 따릅니다.</p></section><section><h4>04 · 지원·유의 사항</h4><p>기관 보병·기관 저격조는 기관 지휘망으로 운용합니다. 본부 작전통제관은 본부 팀별 임무를 지시하고, 관측·정찰 보고에 따라 재배치합니다.</p><p>민간인 식별, 사격각·엄폐 확인, 부상자 회수와 실제 귀환을 별도로 확인하십시오. 지도에 표시되지 않은 적·목표를 이미 파악한 것으로 간주하지 않습니다.</p></section></article></details>"
+    );
+  }
   function result(r) {
     if (!r) return "";
     return (
@@ -93,42 +146,60 @@
             "</strong></div>",
         )
         .join("") +
-      '</div><div class="live-report-roster">' +
+      "</div>" +
+      (r.protectedHome
+        ? "<p>구출·호송 대상: 실제 탑승 및 본부 도착 확인</p>"
+        : "") +
+      '<div class="live-report-roster">' +
       (r.headquartersInfantry?.length
-        ? "<section><h3>본부 보병 DELTA</h3>" +
-          r.headquartersInfantry
-            .map(
-              (u) =>
-                "<p>" +
-                esc(u.name) +
+        ? ["ALPHA", "BRAVO", "CHARLIE"]
+            .map((call) => {
+              const people = r.headquartersInfantry.filter(
+                (u) => (u.team || "ALPHA") === call,
+              );
+              if (!people.length) return "";
+              return (
+                "<section><h3>" +
+                root.OverwatchInfantry.teamLabel(call) +
                 " · " +
-                esc(
-                  {
-                    leader: "분대장",
-                    rifleman: "소총수",
-                    gunner: "지원화기병",
-                    medic: "의무병",
-                  }[u.role] || u.role,
-                ) +
-                " · " +
-                esc(
-                  {
-                    standby: "복귀 완료",
-                    medical: "진료 필요",
-                    deceased: "전사",
-                    missing: "미회수",
-                  }[u.status] || u.status,
-                ) +
-                " · 사격 " +
-                u.spent +
-                "발 · 연막 " +
-                u.grenades.spent.smoke +
-                " · 수류탄 " +
-                u.grenades.spent.frag +
-                "</p>",
-            )
-            .join("") +
-          "</section>"
+                people.length +
+                "명</h3>" +
+                people
+                  .map(
+                    (u) =>
+                      "<p>" +
+                      esc(u.name) +
+                      " · " +
+                      esc(
+                        {
+                          leader: "분대장",
+                          rifleman: "소총수",
+                          gunner: "지원화기병",
+                          medic: "의무병",
+                        }[u.role] || u.role,
+                      ) +
+                      " · " +
+                      esc(
+                        {
+                          standby: "복귀 완료",
+                          medical: "진료 필요",
+                          deceased: "전사",
+                          missing: "미회수",
+                        }[u.status] || u.status,
+                      ) +
+                      " · 사격 " +
+                      u.spent +
+                      "발 · 연막 " +
+                      u.grenades.spent.smoke +
+                      " · 수류탄 " +
+                      u.grenades.spent.frag +
+                      "</p>",
+                  )
+                  .join("") +
+                "</section>"
+              );
+            })
+            .join("")
         : "") +
       r.roster
         .map(
@@ -226,9 +297,7 @@
           esc(accepted.title) +
           "</h2><p>" +
           esc(accepted.issuer) +
-          " · 최소 " +
-          accepted.min +
-          "명 / 권장 " +
+          " · 권장 " +
           accepted.recommended +
           "명 · 현재 편성 " +
           M.selectedSquads(s, accepted).length * 2 +
@@ -256,7 +325,9 @@
                 "</label>",
             )
             .join("") +
-          "</fieldset><p>선택하지 않은 저격조는 본부에 대기합니다.</p><p>예치금 없이 출격합니다. 실제 사용·손실은 귀환 후 보수와 정산하며 부족분은 미지급 비용으로 기록합니다.</p><p>미지급 작전 비용 " +
+          "</fieldset>" +
+          root.OverwatchInfantry.sortie(s) +
+          "<p>선택하지 않은 팀은 본부에 대기합니다. 최소 인원 제한 없이 직접 편성을 결정합니다.</p><p>예치금 없이 출격합니다. 실제 사용·손실은 귀환 후 보수와 정산하며 부족분은 미지급 비용으로 기록합니다.</p><p>미지급 작전 비용 " +
           cash(s.operations.payable || 0) +
           "</p><p>" +
           esc(M.ready(s, accepted) || "편성·계약·회복 조건 충족") +
@@ -296,13 +367,13 @@
             esc(c.region || "능선") +
             " · 위험도 " +
             c.risk +
-            " · 최소 " +
-            c.min +
-            "명 / 권장 " +
+            " · 권장 " +
             c.recommended +
             "명</p><p>" +
             esc(c.brief) +
-            "</p><p>기관 보병 보안조 " +
+            "</p>" +
+            proposal(c) +
+            "<p>기관 보병 보안조 " +
             (c.agencyInfantry || 4) +
             "명 제공 · 저격조 접근로·철수로 경계 / 엄폐·대응 사격</p>" +
             (c.status === "offered"
@@ -513,21 +584,31 @@
     const infantry = rootNode.querySelector("[data-infantry-doctrine]");
     if (infantry && m.hqInfantry)
       infantry.textContent =
-        "본부 보병 DELTA · 수신 지시: " +
-        ({
-          auto: "통제관 위임",
-          hold: "분산 엄폐",
-          advance: "구역 진출",
-          withdraw: "철수",
-        }[m.hqInfantry.directive?.mode] || "명령 대기") +
-        " · " +
-        (m.hqInfantry.directive?.source === "headquarters"
-          ? "본부 직접"
-          : "작전통제관");
+        Object.entries(m.hqInfantry.teamDirectives || {})
+          .map(
+            ([call, d]) =>
+              root.OverwatchInfantry.teamLabel(call) +
+              " · " +
+              (d.assignment ||
+                {
+                  auto: "통제관 위임",
+                  hold: "분산 엄폐",
+                  advance: "구역 진출",
+                  withdraw: "철수",
+                }[d.mode]) +
+              " · " +
+              (d.source === "headquarters" ? "본부 직접" : "작전통제관"),
+          )
+          .join(" / ") || "본부 보병 · 명령 대기";
+    const commandTeam = rootNode.querySelector(
+        "[data-infantry-command-team]",
+      )?.value,
+      currentInfantryDirective =
+        m.hqInfantry?.teamDirectives?.[commandTeam] || m.hqInfantry?.directive;
     for (const b of rootNode.querySelectorAll("[data-infantry-order]")) {
       b.setAttribute(
         "aria-pressed",
-        String(b.dataset.infantryOrder === m.hqInfantry?.directive?.mode),
+        String(b.dataset.infantryOrder === currentInfantryDirective?.mode),
       );
       b.disabled = s.commandExercise.status !== "running" || m.returnRequested;
     }
@@ -665,6 +746,11 @@
     );
     each("[data-live-cancel]", (b) =>
       commit((next) => M.cancel(next, b.dataset.liveCancel)),
+    );
+    rootNode.querySelectorAll(".contract-proposal").forEach((el) =>
+      el.addEventListener("toggle", () => {
+        if (el.open) el.scrollIntoView({ block: "start", behavior: "smooth" });
+      }),
     );
     each("[data-live-launch]", (b) => {
       root.OverwatchAudio?.startOnGesture?.();

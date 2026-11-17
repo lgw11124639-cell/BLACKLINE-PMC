@@ -58,13 +58,13 @@ test("commander selects one of three teams; exactly two actual entities deploy a
     e.commands.some((c) => c.callsign === "BRAVO" && c.kind === "recon"),
   );
 });
-test("zero teams and a contract below its required crew cannot launch; missing and duplicate team names are rejected", () => {
+test("empty sorties are rejected but one chosen team can launch regardless of recommended crew", () => {
   const { s, c } = make("rescue-cover");
   M.setTeams(s, c.id, []);
-  assert.match(M.ready(s, c), /4~6/);
+  assert.match(M.ready(s, c), /하나 이상/);
   assert.throws(() => M.launch(s, c.id));
   M.setTeams(s, c.id, ["CHARLIE"]);
-  assert.match(M.ready(s, c), /4~6/);
+  assert.equal(M.ready(s, c), null);
   M.setTeams(s, c.id, ["ALPHA", "CHARLIE"]);
   assert.equal(M.ready(s, c), null);
   assert.throws(() => M.setTeams(s, c.id, ["ALPHA", "ALPHA"]));

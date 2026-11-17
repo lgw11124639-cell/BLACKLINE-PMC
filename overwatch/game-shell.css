@@ -2394,3 +2394,101 @@ body.mobile-ui.mobile-ui-short .field-stage-toolbar button {
     padding-right: 4px;
   }
 }
+
+.contract-proposal {
+  margin: 1rem 0;
+  border: 1px solid #344851;
+  border-radius: 8px;
+  background: #0b171d;
+}
+.contract-proposal > summary {
+  padding: 12px;
+  cursor: pointer;
+  font-weight: 700;
+  color: #c6d6ac;
+}
+.operation-report {
+  padding: 18px;
+  line-height: 1.75;
+}
+.operation-report header {
+  border-bottom: 1px solid #405459;
+  padding-bottom: 14px;
+}
+.operation-report figure {
+  margin: 18px 0;
+}
+.operation-report img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 340px;
+  object-fit: cover;
+  border: 1px solid #405459;
+  border-radius: 6px;
+}
+.operation-report figcaption {
+  font-size: 0.8rem;
+  color: #9eafa8;
+}
+.operation-report h4 {
+  color: #c6d6ac;
+  margin: 20px 0 8px;
+}
+.operation-report p {
+  margin: 8px 0;
+}
+.operation-report section {
+  border-bottom: 1px solid #263b43;
+  padding-bottom: 12px;
+}
+
+.infantry-portrait {
+  width: 110px;
+  height: 135px;
+  object-fit: contain;
+  object-position: left center;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.live-contract-grid > .panel:has(.contract-proposal[open]) {
+  grid-column: 1 / -1;
+}
+.contract-proposal {
+  scroll-margin-top: 65px;
+}
+.operation-report {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 28px;
+}
+.operation-report header {
+  grid-column: 1 / -1;
+}
+.operation-report figure {
+  grid-row: 2 / 4;
+}
+.operation-report img {
+  max-height: 460px;
+}
+.operation-report section {
+  min-width: 0;
+}
+.live-contract-grid .operation-report h3 {
+  font-size: 24px;
+}
+.live-contract-grid .operation-report p {
+  font-size: 14px;
+}
+@media (max-width: 800px) {
+  .operation-report {
+    display: block;
+  }
+  .operation-report img {
+    max-height: 240px;
+  }
+  .live-contract-grid .operation-report h3 {
+    font-size: 20px;
+  }
+}

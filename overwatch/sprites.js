@@ -229,8 +229,101 @@
     },
   };
 
+  Object.assign(data, {
+    "hq-infantry-move": {
+      src: "images/overwatch/hq-infantry-move.webp",
+      bounds: [0, 0, 1117, 1296],
+      size: [1117, 1296],
+    },
+    "hq-infantry-standing": {
+      src: "images/overwatch/hq-infantry-standing.webp",
+      bounds: [0, 0, 1177, 1297],
+      size: [1177, 1297],
+    },
+    "hq-infantry-kneeling": {
+      src: "images/overwatch/hq-infantry-kneeling.webp",
+      bounds: [0, 0, 1400, 969],
+      size: [1400, 969],
+    },
+    "hq-infantry-observe": {
+      src: "images/overwatch/hq-infantry-observe.webp",
+      bounds: [0, 0, 1400, 692],
+      size: [1400, 692],
+    },
+    "hq-infantry-wounded": {
+      src: "images/overwatch/hq-infantry-wounded.webp",
+      bounds: [0, 0, 1400, 985],
+      size: [1400, 985],
+    },
+    "hq-infantry-dead": {
+      src: "images/overwatch/hq-infantry-dead.webp",
+      bounds: [0, 0, 1400, 693],
+      size: [1400, 693],
+    },
+    "agency-sniper-move": {
+      src: "images/overwatch/agency-sniper-move.webp",
+      bounds: [0, 0, 936, 1400],
+      size: [936, 1400],
+    },
+    "agency-sniper-standing": {
+      src: "images/overwatch/agency-sniper-standing.webp",
+      bounds: [0, 0, 1175, 1273],
+      size: [1175, 1273],
+    },
+    "agency-sniper-kneeling": {
+      src: "images/overwatch/agency-sniper-kneeling.webp",
+      bounds: [0, 0, 1400, 943],
+      size: [1400, 943],
+    },
+    "agency-sniper-observe": {
+      src: "images/overwatch/agency-sniper-observe.webp",
+      bounds: [0, 0, 1400, 552],
+      size: [1400, 552],
+    },
+    "agency-sniper-wounded": {
+      src: "images/overwatch/agency-sniper-wounded.webp",
+      bounds: [0, 0, 1400, 951],
+      size: [1400, 951],
+    },
+    "agency-sniper-dead": {
+      src: "images/overwatch/agency-sniper-dead.webp",
+      bounds: [0, 0, 1400, 680],
+      size: [1400, 680],
+    },
+    "agency-observer-move": {
+      src: "images/overwatch/agency-observer-move.webp",
+      bounds: [0, 0, 945, 1400],
+      size: [945, 1400],
+    },
+    "agency-observer-standing": {
+      src: "images/overwatch/agency-observer-standing.webp",
+      bounds: [0, 0, 928, 1400],
+      size: [928, 1400],
+    },
+    "agency-observer-kneeling": {
+      src: "images/overwatch/agency-observer-kneeling.webp",
+      bounds: [0, 0, 1400, 909],
+      size: [1400, 909],
+    },
+    "agency-observer-observe": {
+      src: "images/overwatch/agency-observer-observe.webp",
+      bounds: [0, 0, 1234, 1229],
+      size: [1234, 1229],
+    },
+    "agency-observer-wounded": {
+      src: "images/overwatch/agency-observer-wounded.webp",
+      bounds: [0, 0, 1254, 1242],
+      size: [1254, 1242],
+    },
+    "agency-observer-dead": {
+      src: "images/overwatch/agency-observer-dead.webp",
+      bounds: [0, 0, 1400, 691],
+      size: [1400, 691],
+    },
+  });
+
   function select(u, { moving = false, mode = "ready" } = {}) {
-    if (u.role === "medic") {
+    if (u.role === "medic" && !u.hqMemberId && !u.agencySniperRole) {
       const key =
         u.pose === "aid" && u.state === "treating" ? "medic-aid" : "medic-move";
       return {
@@ -325,6 +418,33 @@
     }
     const fallback = !art;
     if (!art) art = data[role + (role === "civilian" ? "-walk" : "-move")];
+    const uniform = u.hqMemberId
+      ? "hq-infantry"
+      : u.agencySniperRole
+        ? "agency-" + u.agencySniperRole
+        : null;
+    if (uniform) {
+      const poseAction =
+        (u.pose === "aid" || u.state === "treating") && !dead
+          ? "kneeling"
+          : action === "down"
+            ? "wounded"
+            : action === "prone"
+              ? "observe"
+              : action;
+      const selected = uniform + "-" + poseAction;
+      if (data[selected]) {
+        if ((u.pose === "aid" || u.state === "treating") && !dead)
+          action = "kneeling";
+        art = data[selected];
+        key = selected;
+      }
+      // The observer's binocular pose is distinct from prone firing.
+      if (u.agencySniperRole === "observer" && action === "prone") {
+        art = data["allied-prone"];
+        key = "allied-prone";
+      }
+    }
     // Normalize the longest cropped dimension, not image width: casualty art
     // is wider than walking art and must not enlarge the same person.
     const extentM =

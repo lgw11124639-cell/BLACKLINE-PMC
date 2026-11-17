@@ -366,6 +366,7 @@
       suppression: u.suppression || 0,
       grenades: u.grenades ? copy(u.grenades) : null,
       hqMemberId: u.hqMemberId || null,
+      hqTeam: u.hqTeam || null,
       agencySniperRole: u.agencySniperRole || null,
       combatSkills: copy(performance(u)),
       fieldFatigue: u.fieldFatigue || 0,

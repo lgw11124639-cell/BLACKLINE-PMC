@@ -65,11 +65,15 @@
     function figure(friend) {
       const group = new T.Group();
       const blue = friend.role !== undefined,
-        color = blue
-          ? friend.role === "observer"
-            ? 0x536954
-            : 0x576a78
-          : 0x8d7864;
+        color =
+          friend.agencySniperRole ||
+          (friend.faction === "allied" && !friend.hqMemberId)
+            ? 0xb4a182
+            : blue
+              ? friend.role === "observer"
+                ? 0x536954
+                : 0x536954
+              : 0x8d7864;
       const body = box(0.55, 0.65, 0.32, color, group, 0, 1.02, 0);
       box(0.29, 0.3, 0.28, 0xc0aa8e, group, 0, 1.52, 0);
       box(0.35, 0.12, 0.34, color, group, 0, 1.72, 0);
