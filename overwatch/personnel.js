@@ -1625,9 +1625,14 @@
           "records",
           "storage",
         ].includes(s.ui.tab) &&
-        ["roster", "infantry", "market", "squads", "archive"].includes(
-          s.ui.personnelTab,
-        ),
+        [
+          "roster",
+          "infantry",
+          "infantry-market",
+          "market",
+          "squads",
+          "archive",
+        ].includes(s.ui.personnelTab),
       "본부 설정이 잘못되었습니다.",
     );
     ok(

@@ -85,10 +85,10 @@
       '>훈련·휴식 교관 위임</label><label><input type="checkbox" data-staff-personnel' +
       (c.autoPersonnel !== false ? " checked" : "") +
       (!editable ? " disabled" : "") +
-      ">진료·편성 인사관리관 위임</label></div><p data-personnel-status>" +
+      ">예산 채용·진료·편성 인사관리관 위임</label></div><p data-personnel-status>" +
       esc(
         c.personnelStatus ||
-          "인사관리관 배정 시 진료 대기·가용 대원 편성 자동 관리",
+          "인사관리관 배정 시 예산 내 저격·관측병·보병 채용과 진료·편성 자동 관리",
       ) +
       "</p><p data-instructor-status>" +
       esc(c.trainingPlan?.status || "교관 배정 시 2~4명 훈련·휴식 자동 관리") +

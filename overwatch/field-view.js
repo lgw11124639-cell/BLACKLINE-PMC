@@ -259,14 +259,23 @@
             '" text-anchor="middle" fill="#eff7ef" stroke="#17291e" stroke-width="0.8" paint-order="stroke" font-size="' +
             (f.map.width < 500 ? 3.2 : 7) +
             '">' +
-            esc(u.name) +
-            " · " +
-            (u.role === "sniper"
-              ? "저격수"
-              : u.role === "observer"
-                ? "관측수"
-                : u.roleLabel ||
-                  (u.role === "medic" ? "의무요원" : "기관 보병")) +
+            esc(
+              u.agencySniperRole
+                ? u.agencySniperRole === "sniper"
+                  ? "기관 저격수"
+                  : "기관 관측수"
+                : u.name,
+            ) +
+            (u.agencySniperRole
+              ? ""
+              : " · " +
+                (u.roleLabel ||
+                  (u.role === "sniper"
+                    ? "저격수"
+                    : u.role === "observer"
+                      ? "관측수"
+                      : u.roleLabel ||
+                        (u.role === "medic" ? "의무요원" : "기관 보병")))) +
             "</text></g>",
         )
         .join("") +

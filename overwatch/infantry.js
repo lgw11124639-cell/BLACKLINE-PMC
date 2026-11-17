@@ -80,13 +80,10 @@
     const c = h.market.find((c) => c.id === id);
     ok(
       c &&
-        !h.members.some(
-          (m) =>
-            m.role === c.role &&
-            m.status !== "deceased" &&
-            m.status !== "missing",
-        ),
-      "해당 보직 인원이 이미 있습니다.",
+        h.members.filter((m) => !["deceased", "missing"].includes(m.status))
+          .length < 20 &&
+        h.members.length < 100,
+      "본부 보병 정원은 20명입니다.",
     );
     const cost = c.dailySalary * 30;
     ok(s.headquarters.funds >= cost, "보병 계약금이 부족합니다.");
@@ -108,17 +105,21 @@
       training: null,
     };
     h.members.push(m);
+    c.name = P().newName(s, 6000 + h.members.length, h.members);
     return m;
   }
   function train(s, managed = false) {
     const h = initialize(s),
-      members = h.members.filter(
-        (m) =>
-          m.status === "standby" &&
-          m.health.alive &&
-          m.health.conscious &&
-          m.contract.endsAt > s.clock.elapsedSeconds,
-      );
+      members = h.members
+        .filter(
+          (m) =>
+            m.status === "standby" &&
+            m.health.alive &&
+            m.health.conscious &&
+            m.contract.endsAt > s.clock.elapsedSeconds,
+        )
+        .sort((a, b) => a.experience - b.experience)
+        .slice(0, 4);
     ok(!active(s) && members.length >= 2, "대기 중인 보병 2~4명이 필요합니다.");
     ok(s.headquarters.funds >= 100000, "보병 훈련비가 부족합니다.");
     P().finance(s, -100000, "infantry-training");
@@ -221,26 +222,54 @@
       Math.max(s.clock.elapsedSeconds, m.contract.endsAt) + 30 * 86400;
     if (m.status === "expired") m.status = "standby";
   }
+  const callsigns = ["ALPHA", "BRAVO", "CHARLIE"];
+  function squads(s) {
+    const pool = (s.infantry?.members || []).filter(
+      (m) =>
+        (m.status === "standby" ||
+          (m.status === "training" && m.training?.managed)) &&
+        m.health.alive &&
+        m.health.conscious &&
+        !m.health.wounds.some((w) => !w.treated) &&
+        m.contract.endsAt > s.clock.elapsedSeconds,
+    );
+    const byRole = Object.fromEntries(
+      Object.keys(roles).map((role) => [
+        role,
+        pool
+          .filter((m) => m.role === role)
+          .sort(
+            (a, b) =>
+              b.skills.judgment +
+              b.skills.teamwork +
+              b.skills.shooting -
+              b.fatigue -
+              (a.skills.judgment +
+                a.skills.teamwork +
+                a.skills.shooting -
+                a.fatigue),
+          ),
+      ]),
+    );
+    return callsigns
+      .map((callsign, i) => ({
+        callsign,
+        members: Object.keys(roles)
+          .map((role) => byRole[role][i])
+          .filter(Boolean),
+      }))
+      .filter((q) => q.members.length === 4);
+  }
+  function selected(s) {
+    return squads(s).filter(
+      (q) => !(s.infantry.disabledSquads || []).includes(q.callsign),
+    );
+  }
   function readiness(s) {
     const h = s.infantry;
     if (!h?.deploy || !h.members.length) return null;
-    const living = h.members.filter(
-      (m) => !["deceased", "missing"].includes(m.status),
-    );
-    if (living.length !== 4 || new Set(living.map((m) => m.role)).size !== 4)
-      return "본부 보병은 분대장·소총수·지원화기병·의무병 4인 편제가 필요합니다.";
-    if (
-      living.some(
-        (m) =>
-          (m.status !== "standby" &&
-            !(m.status === "training" && m.training?.managed)) ||
-          !m.health.conscious ||
-          m.health.wounds.some((w) => !w.treated) ||
-          m.contract.endsAt <= s.clock.elapsedSeconds,
-      )
-    )
-      return "보병 훈련·진료·계약 상태를 확인하거나 이번 출격에서 제외하세요.";
-
+    if (!selected(s).length)
+      return "출격 가능한 보병 분대가 없습니다. 4개 보직의 훈련·진료·계약 상태와 분대 선택을 확인하세요.";
     return null;
   }
   function launch(s, e) {
@@ -248,11 +277,8 @@
     if (!h?.deploy || !h.members.length) return;
     ok(!readiness(s), readiness(s));
     // Transport and ammunition are billed after physical return.
-    const members = h.members.filter(
-      (m) =>
-        m.status === "standby" ||
-        (m.status === "training" && m.training?.managed),
-    );
+    const selectedSquads = selected(s),
+      members = selectedSquads.flatMap((q) => q.members);
     const force = (e.mission.hqInfantry = {
       version: 1,
       memberIds: members.map((m) => m.id),
@@ -289,7 +315,10 @@
       u.hqMemberId = m.id;
       u.roleLabel = "본부 " + roles[m.role];
       u.taskDuty = "headquarters-infantry";
-      u.callsign = h.callsign;
+      u.callsign =
+        "본부 보병 " +
+        selectedSquads.find((q) => q.members.some((m) => m.id === u.id))
+          .callsign;
       u.assignmentRole = m.role;
       u.health = cp(m.health);
       u.combatSkills = Object.fromEntries(
@@ -355,7 +384,7 @@
       "HQ",
       "AGENCY",
       "tasking",
-      "DELTA 본부 보병, " +
+      "본부 보병 각 분대, " +
         {
           auto: "구역 수색 재개",
           hold: "분산 엄폐·사주 경계",
@@ -415,7 +444,7 @@
       "HQ",
       "AGENCY",
       "tasking",
-      "DELTA " +
+      "본부 보병 " +
         (kind === "smoke" ? "연막 엄호" : "확인된 위협 수류탄") +
         " 투척 지시",
       ev,
@@ -532,7 +561,20 @@
   function actor(s, e, u, enemies) {
     const f = e.mission.hqInfantry;
     if (!f || u.home || u.hqBoarded) return true;
-    const d = f.directive;
+    const baseDirective = f.directive,
+      squadIndex = Math.max(
+        0,
+        callsigns.findIndex((c) => u.callsign?.endsWith(c)),
+      ),
+      d = baseDirective
+        ? {
+            ...baseDirective,
+            point: {
+              x: baseDirective.point.x + squadIndex * 28,
+              y: baseDirective.point.y + squadIndex * 12,
+            },
+          }
+        : null;
     if (e.mission.returnRequested || d?.mode === "withdraw") {
       const p =
         f.pickup || e.mission.extractionPoint || e.mission.contract.insertion;
@@ -780,6 +822,12 @@
         Array.isArray(h.market) &&
         h.market.length === 4 &&
         typeof h.deploy === "boolean" &&
+        h.members.filter((m) => !["deceased", "missing"].includes(m.status))
+          .length <= 20 &&
+        (h.disabledSquads == null ||
+          (Array.isArray(h.disabledSquads) &&
+            h.disabledSquads.every((c) => callsigns.includes(c)) &&
+            new Set(h.disabledSquads).size === h.disabledSquads.length)) &&
         ["smoke", "frag"].every(
           (k) => Number.isInteger(h.stock[k]) && n(h.stock[k], 0, 10000),
         ),
@@ -846,8 +894,8 @@
     if (!f) return;
     ok(
       f.version === 1 &&
-        f.memberIds.length === 4 &&
-        new Set(f.memberIds).size === 4 &&
+        [4, 8, 12].includes(f.memberIds.length) &&
+        new Set(f.memberIds).size === f.memberIds.length &&
         f.memberIds.every(
           (id) =>
             ids.has(id) && e.world.actors.some((u) => u.hqMemberId === id),
@@ -887,14 +935,30 @@
   function render(s) {
     const h = s.infantry;
     if (!h)
-      return '<section class="panel"><h2>본부 보병 · 별도 편제</h2><p>DELTA 4인 분대: 분대장·소총수·지원화기병·의무병. 저격조 정원과 별도로 채용합니다.</p><button data-infantry-init>보병 모집 시장 개설</button></section>';
+      return '<section class="panel"><h2>본부 보병 · 별도 편제</h2><p>정원 20명 · ALPHA·BRAVO·CHARLIE 각 4인 분대: 분대장·소총수·지원화기병·의무병. 저격조 정원과 별도로 채용합니다.</p><button data-infantry-init>보병 모집 시장 개설</button></section>';
     return (
-      '<details class="panel" open><summary>본부 보병 DELTA · ' +
+      '<details class="panel" open><summary>본부 보병 ALPHA·BRAVO·CHARLIE · ' +
       h.members.filter((m) => !["deceased", "missing"].includes(m.status))
         .length +
-      '/4명</summary><p>기관 보병과 별도 고용·훈련·출격 · 주무장·방탄복·연막탄·수류탄 지급</p><label><input type="checkbox" data-infantry-deploy ' +
+      '/20명</summary><p>기관 보병과 별도 고용·훈련·출격 · 주무장·방탄복·연막탄·수류탄 지급</p><label><input type="checkbox" data-infantry-deploy ' +
       (h.deploy ? "checked" : "") +
       ">편제된 본부 보병 동반 출격</label>" +
+      callsigns
+        .map(
+          (call) =>
+            '<label><input type="checkbox" data-infantry-squad="' +
+            call +
+            '"' +
+            ((h.disabledSquads || []).includes(call) ? "" : " checked") +
+            (active(s) ? " disabled" : "") +
+            ">보병 " +
+            call +
+            (squads(s).some((q) => q.callsign === call)
+              ? " · 4명 편성"
+              : " · 가용 보직 대기") +
+            "</label>",
+        )
+        .join("") +
       '<label><input type="checkbox" data-infantry-auto-training ' +
       (h.autoTraining ? "checked" : "") +
       ">교관 자동 분대 훈련 · 출격 시 자동 중단</label><p>보유 연막탄 " +
@@ -902,58 +966,98 @@
       " · 수류탄 " +
       h.stock.frag +
       '</p><button data-infantry-stock>연막 8·수류탄 8 구매 · 480,000원</button> <button data-infantry-train>2~4인 분대 훈련 · 4시간 / 100,000원</button> <button data-infantry-rest>분대 휴식 · 4시간</button> <button data-infantry-advance>다음 보병 훈련·진료 완료까지 진행</button> <button data-infantry-medical>부상 보병 진료 · 24시간 / 1인 200,000원</button><div class="member-grid">' +
+      h.members
+        .filter((m) => !["deceased", "missing"].includes(m.status))
+        .map(
+          (m) =>
+            '<article class="panel"><h3>' +
+            esc(m.name) +
+            "</h3><p>" +
+            esc(
+              squads(s).find((q) => q.members.some((x) => x.id === m.id))
+                ?.callsign ||
+                (m.status === "deployed"
+                  ? s.commandExercise?.world.actors.find((u) => u.id === m.id)
+                      ?.callsign || "출격 중"
+                  : "예비·활동 중"),
+            ) +
+            "</p><p>본부 " +
+            esc(roles[m.role]) +
+            " · " +
+            esc(
+              {
+                standby: "대기",
+                training: "훈련·진료 중",
+                medical: "진료 필요",
+                deployed: "출격 중",
+                expired: "계약 만료",
+              }[m.status] || m.status,
+            ) +
+            "</p><p>사격 " +
+            m.skills.shooting +
+            " · 판단 " +
+            m.skills.judgment +
+            " · 팀워크 " +
+            m.skills.teamwork +
+            "</p><p>경험 " +
+            m.experience +
+            " · 피로 " +
+            Math.round(m.fatigue) +
+            "%</p><p>일급 " +
+            money(m.dailySalary) +
+            '</p><button data-infantry-renew="' +
+            esc(m.id) +
+            '">30일 계약 연장</button></article>',
+        )
+        .join("") +
+      '</div><button data-personnel-tab="infantry-market">보병 모집 시장 열기</button><p>인사관리관 위임 시 예산 안에서 빈 보직 채용·계약 갱신을 자동 처리합니다.</p></details>'
+    );
+  }
+  function market(s) {
+    const h = s.infantry;
+    if (!h)
+      return '<section class="panel"><h2>보병 모집 시장</h2><p>분대장·소총수·지원화기병·의무병을 별도로 모집합니다.</p><button data-infantry-init>보병 모집 시장 개설</button></section>';
+    return (
+      '<section class="panel"><h2>보병 모집 시장</h2><p>본부 보병 정원 20명 · ALPHA·BRAVO·CHARLIE 3개 분대 · 30일 급여 선지급 · 인사관리관 예산 자동 채용 지원</p><div class="member-grid">' +
       h.market
         .map((c) => {
-          const m = h.members.find(
-            (m) =>
-              m.role === c.role && !["deceased", "missing"].includes(m.status),
-          );
+          const filled =
+            h.members.filter((m) => !["deceased", "missing"].includes(m.status))
+              .length >= 20;
           return (
             '<article class="panel"><h3>' +
-            esc(roles[c.role]) +
-            " · " +
-            esc(m?.name || c.name) +
+            esc(c.name) +
             "</h3><p>" +
-            (m
-              ? esc(
-                  {
-                    standby: "대기",
-                    training: "훈련·진료 중",
-                    medical: "진료 필요",
-                    deployed: "출격 중",
-                    expired: "계약 만료",
-                  }[m.status] || m.status,
-                ) +
-                " · 사격 " +
-                m.skills.shooting +
-                " · 팀워크 " +
-                m.skills.teamwork +
-                " · 경험 " +
-                m.experience +
-                " · 피로 " +
-                Math.round(m.fatigue) +
-                "%"
-              : "30일 계약 " + money(c.dailySalary * 30)) +
-            "</p>" +
-            (m
-              ? '<button data-infantry-renew="' +
-                esc(m.id) +
-                '">30일 계약 연장</button>'
-              : '<button data-infantry-hire="' +
-                esc(c.id) +
-                '">고용</button>') +
-            "</article>"
+            esc(roles[c.role]) +
+            "</p><p>사격 " +
+            c.skills.shooting +
+            " · 판단 " +
+            c.skills.judgment +
+            " · 팀워크 " +
+            c.skills.teamwork +
+            "</p><p>일급 " +
+            money(c.dailySalary) +
+            " · 30일 계약 " +
+            money(c.dailySalary * 30) +
+            '</p><button data-infantry-hire="' +
+            esc(c.id) +
+            '"' +
+            (filled ? " disabled" : "") +
+            ">" +
+            (filled ? "보병 정원 20명" : "30일 계약") +
+            "</button></article>"
           );
         })
         .join("") +
-      "</div></details>"
+      "</div></section>"
     );
   }
+
   function live(s) {
     const f = s.commandExercise?.mission?.hqInfantry;
     if (!f) return "";
     return (
-      '<section class="panel"><h3>본부 보병 DELTA</h3><p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>' +
+      '<section class="panel"><h3>본부 보병 ALPHA·BRAVO·CHARLIE</h3><p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>' +
       ["auto", "hold", "advance", "withdraw"]
         .map(
           (mode) =>
@@ -980,6 +1084,18 @@
           el.addEventListener("click", () => commit((s) => fn(s, el))),
         );
     on("[data-infantry-init]", initialize);
+    node.querySelectorAll("[data-infantry-squad]").forEach((el) =>
+      el.addEventListener("change", () =>
+        commit((s) => {
+          ok(!active(s), "출격 중에는 변경할 수 없습니다.");
+          const h = initialize(s),
+            call = el.dataset.infantrySquad;
+          h.disabledSquads = (h.disabledSquads || []).filter((c) => c !== call);
+          if (!el.checked) h.disabledSquads.push(call);
+        }),
+      ),
+    );
+
     node
       .querySelector("[data-infantry-auto-training]")
       ?.addEventListener("change", (event) =>
@@ -1051,6 +1167,7 @@
     update,
     restock,
     renew,
+    squads,
     readiness,
     launch,
     command,
@@ -1063,6 +1180,7 @@
     medical,
     validate,
     render,
+    market,
     live,
     bind,
     units,

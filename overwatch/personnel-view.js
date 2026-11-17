@@ -429,13 +429,14 @@
       (s.infantry?.members.filter(
         (m) => !["deceased", "missing"].includes(m.status),
       ).length || 0) +
-      "/4명 · 운영자금 " +
+      "/20명 · 운영자금 " +
       money(s.headquarters.funds) +
       '</p></section><nav class="personnel-subnav" aria-label="인원 관리">' +
       [
         ["roster", "저격·관측병 명부"],
         ["infantry", "보병 명부"],
-        ["market", "모집 시장"],
+        ["market", "저격·관측병 모집 시장"],
+        ["infantry-market", "보병 모집 시장"],
         ["squads", "저격조 편성"],
         ["archive", "보관 명부"],
       ]
@@ -455,6 +456,7 @@
       (
         {
           infantry: () => root.OverwatchInfantry.render(s),
+          "infantry-market": () => root.OverwatchInfantry.market(s),
           roster: () =>
             s.members.length
               ? '<label class="personnel-search">이름·주특기 검색<input data-personnel-search type="search" placeholder="대원 이름 또는 관측수·저격수"></label><section class="member-grid">' +
