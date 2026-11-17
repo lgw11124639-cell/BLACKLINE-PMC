@@ -15,25 +15,29 @@
     const alive =
       unit.health?.alive !== false && unit.health?.conscious !== false;
     const disabled =
-      !alive ||
-      ["aid", "down", "dead", "carried", "carrying"].includes(unit.pose);
+      !alive || ["aid", "down", "dead", "carried"].includes(unit.pose);
     const age = now - shotAt;
-    const firing = !paused && !disabled && age >= 0 && age < 1100;
+    const firing =
+      !paused &&
+      !disabled &&
+      unit.pose !== "carrying" &&
+      age >= 0 &&
+      age < 1100;
     const reloading =
       !paused &&
       !disabled &&
       unit.weapon?.reloadUntil != null &&
       unit.weapon.reloadUntil > simulationTime;
-    const walking = !paused && !disabled && moving && unit.pose === "standing";
+    const walking = !paused && !disabled && moving;
     return {
       mode: disabled
         ? unit.pose || "down"
-        : reloading
-          ? "reload"
-          : firing
-            ? "fire"
-            : walking
-              ? "walk"
+        : walking
+          ? "walk"
+          : reloading
+            ? "reload"
+            : firing
+              ? "fire"
               : "ready",
       flash: firing && age < 110,
       recoil: firing ? Math.max(0, 1 - age / 240) * 0.18 : 0,

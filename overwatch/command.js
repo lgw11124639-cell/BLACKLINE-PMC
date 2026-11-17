@@ -81,7 +81,8 @@
       id: u.id,
       name: u.name,
       callsign: u.callsign,
-      role: u.role === "observer" ? "관측수·현장 조장" : "저격수",
+      role:
+        u.roleLabel || (u.role === "observer" ? "관측수·현장 조장" : "저격수"),
     };
   }
   function linked(e, q) {
@@ -158,6 +159,8 @@
         e.mission?.hqInfantry?.teamDirectives || {},
       ))
         if (d.messageId) evidence.add(d.messageId);
+      for (const o of Object.values(e.mission?.hqInfantry?.memberOrders || {}))
+        if (o.messageId) evidence.add(o.messageId);
       if (e.mission?.hqInfantry?.directive?.messageId)
         evidence.add(e.mission.hqInfantry.directive.messageId);
       if (e.mission?.agencyDirective?.messageId)
@@ -1257,8 +1260,19 @@
       )
         r.hqVisibleAt = e.time;
       if (r.status !== "queued") continue;
-      const link =
-        r.route === "agency"
+      const link = r.internal
+        ? (() => {
+            const a = e.world.actors.find((u) => u.id === r.from.id),
+              b = e.world.actors.find((u) => u.id === r.to.id);
+            return (
+              !!a?.health.alive &&
+              !!a.health.conscious &&
+              !!b?.health.alive &&
+              !!b.health.conscious &&
+              G.distance(a, b) <= 600
+            );
+          })()
+        : r.route === "agency"
           ? !!e.mission
           : r.route === "local"
             ? unit(e, r.from.id)?.capable &&
@@ -2409,7 +2423,7 @@
       })),
       radio: e.radio
         .filter((r) => r.hqVisibleAt !== null)
-        .filter((r) => r.route !== "local")
+        .filter((r) => r.route !== "local" && !r.internal)
         .filter((r) => r.kind !== "position")
         .filter((r) => {
           const c = r.payload?.contact;

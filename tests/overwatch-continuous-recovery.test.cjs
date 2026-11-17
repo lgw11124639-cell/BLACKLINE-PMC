@@ -204,3 +204,123 @@ test("an explicit abort ends as missing after two actual unsuccessful recovery s
   assert.ok(s.archive.members.every((v) => v.status === "missing"));
   assert.equal(s.operations.reports[0].reward, 0);
 });
+
+test("partially boarded vehicle preserves its crew and searches reported casualties behind a building instead of restarting notices", () => {
+  const s = C.createCampaign({ id: "PARTIAL-BLOCKED-RECOVERY" }),
+    h = (r) =>
+      P.hire(s, s.market.candidates.find((c) => c.specialty === r).id, 30);
+  for (const call of ["ALPHA", "BRAVO"])
+    P.assign(s, call, h("observer").id, h("sniper").id);
+  const contract = s.contracts.find((c) => c.key === "high-value-target");
+  M.accept(s, contract.id);
+  M.launch(s, contract.id);
+  const e = s.commandExercise,
+    m = e.mission,
+    t = m.transports[0];
+  e.battle.continuous = true;
+  B.setPaused(s, false);
+  for (const a of e.world.actors.filter((a) => a.side === "red"))
+    a.health.conscious = false;
+  run(s, 100);
+  const building = G.MAP.buildings.find(
+      (b) => b[0] > 20 && b[2] < 1180 && b[1] > 20 && b[3] < 780,
+    ),
+    left = G.project({
+      x: building[0] - 5,
+      y: (building[1] + building[3]) / 2,
+    }),
+    right = G.project({
+      x: building[2] + 5,
+      y: (building[1] + building[3]) / 2,
+    });
+  assert.equal(G.clear(left, right), false);
+  Object.assign(t, {
+    x: left.x,
+    y: left.y,
+    state: "loading",
+    trip: "extraction",
+    path: [],
+    target: left,
+    arrival: "pickup-landed",
+    loadingSince: e.time - 20,
+    manifest: e.world.units.slice(0, 2).map((u) => u.id),
+    crew: null,
+  });
+  m.returnRequested = true;
+  m.abortRequested = true;
+  m.recoveryVersion = 2;
+  m.phase = "extracting";
+  m.extractionPoint = left;
+  for (const [i, u] of e.world.units.entries()) {
+    Object.assign(u, {
+      x: i < 2 ? left.x : right.x,
+      y: (i < 2 ? left.y : right.y) + (i % 2) * 4,
+      path: [],
+      goal: null,
+      roofId: null,
+      roofTransit: null,
+      waitingForDeployment: false,
+      boardedBy: i < 2 ? t.id : null,
+    });
+    if (i >= 2) {
+      B.injure(s, e, u, {
+        eventId: "hidden-casualty-" + i,
+        part: "leftLeg",
+        severity: 2,
+      });
+      for (const w of u.health.wounds) w.treated = true;
+      u.health.conscious = false;
+      u.health.kit = 0;
+    }
+    e.knowledge.friends[u.id] = {
+      ...e.knowledge.friends[u.id],
+      ...B.snapshot(u, e.time),
+      observedAt: e.time,
+      receivedAt: e.time,
+    };
+  }
+  for (const q of e.squads) {
+    const ev = D.internals.event(e, "received-casualty-status"),
+      friends = D.internals.friendSnapshots(e, q),
+      r = D.internals.radio(
+        s,
+        e,
+        q,
+        "up",
+        q.leaderId,
+        "HQ",
+        "medical",
+        "마지막 위치·부상 보고",
+        ev,
+        { friends },
+      );
+    Object.assign(r, {
+      status: "delivered",
+      sentAt: e.time,
+      deliveredAt: e.time,
+      hqVisibleAt: e.time,
+    });
+    for (const f of friends)
+      e.knowledge.friends[f.id] = { ...f, receivedAt: e.time };
+  }
+  run(s, 20);
+  const first = t.crew;
+  assert.ok(first);
+  assert.ok(first.searchPoints?.some((p) => G.distance(p, right) < 10));
+  const restored = C.clone(s);
+  run(restored, 2000);
+  const done = restored.commandExercise;
+  assert.equal(
+    done.status,
+    "ended",
+    JSON.stringify({ time: done.time, transport: done.mission.transports[0] }),
+  );
+  assert.equal(done.mission.home.length, 4);
+  assert.equal(
+    done.mission.log.filter((ev) => ev.type === "transport-recovery-started")
+      .length,
+    1,
+  );
+  assert.ok(done.mission.log.some((ev) => ev.type === "medical-boarded"));
+  C.validate(restored);
+});

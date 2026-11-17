@@ -72,3 +72,19 @@ test("walking faces actual displacement while stationary aiming retains target h
     1,
   );
 });
+
+test("actual displacement uses upright walking despite an old kneeling pose or a recent shot", () => {
+  for (const pose of ["standing", "kneeling", "prone", "carrying"])
+    assert.equal(
+      Motion.sample({ ...unit, pose }, { now: 50, shotAt: 0, moving: true })
+        .mode,
+      "walk",
+    );
+  assert.equal(
+    Motion.sample(
+      { ...unit, pose: "kneeling" },
+      { now: 50, shotAt: 0, moving: false },
+    ).mode,
+    "fire",
+  );
+});
