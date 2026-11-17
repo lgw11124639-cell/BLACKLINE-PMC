@@ -18,13 +18,15 @@ with sync_playwright() as p:
   q.wait_for_function('OverwatchStorage.create({storage:localStorage}).load().state.commandExercise?.time >= '+str(start),timeout=15000)
   if not q.locator('[data-tab="field"]').first.is_visible():q.locator('[data-mobile-menu]').click()
   q.locator('[data-tab="field"]').first.click();q.wait_for_function('!!OverwatchIllustratedRenderer.get()',timeout=30000)
-  q.wait_for_function('(n)=>{const s=OverwatchCommand.frame(OverwatchStorage.create({storage:localStorage}).load().state);return !!document.querySelector("[data-field-clock]") && document.querySelector("[data-field-clock]").textContent.split(" / ")[0]!==String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0")}',arg=start,timeout=20000)
+  if original['commandExercise']['status']=='running':
+   q.wait_for_function('(n)=>{const s=OverwatchCommand.frame(OverwatchStorage.create({storage:localStorage}).load().state);return !!document.querySelector("[data-field-clock]") && document.querySelector("[data-field-clock]").textContent.split(" / ")[0]!==String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0")}',arg=start,timeout=20000)
   q.locator('[data-save-now]').first.click()
-  saved=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');assert saved['commandExercise']['time']>start
+  saved=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');assert saved['commandExercise']['time']>=start
+  if original['commandExercise']['status']=='running':assert saved['commandExercise']['time']>start
   assert len(saved['commandExercise']['squads'])==len(original['commandExercise']['squads'])
   assert 'Cannot read' not in q.locator('body').inner_text();assert '전장 저장·진행을 중단' not in q.locator('body').inner_text()
   q.reload(wait_until='networkidle');q.wait_for_function('!!OverwatchIllustratedRenderer.get()')
   assert q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state.commandExercise.time')>=saved['commandExercise']['time']
   assert not errors,errors
-  print('PASS',w,h,': supplied save import, infantry-only simulation advances, manual save and reload without rollback',flush=True);c.close()
+  print('PASS',w,h,': supplied save import, running simulation advances or ended result preserved, manual save and reload without rollback',flush=True);c.close()
  b.close()

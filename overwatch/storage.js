@@ -230,45 +230,56 @@
           }),
         ]);
       rows.push([KEYS.primary, data], [KEYS.backup, data]);
+      let pressure = false;
+      recoveryWarning = "";
+      const quota = (error) =>
+        error.restored &&
+        (error.cause?.name === "QuotaExceededError" ||
+          /quota (?:has been )?exceeded|용량.*초과|공간.*부족/i.test(
+            error.message,
+          ));
       try {
         transaction(rows);
       } catch (error) {
-        if (
-          !error.restored ||
-          !(
-            error.cause?.name === "QuotaExceededError" ||
-            /quota (?:has been )?exceeded|용량.*초과|공간.*부족/i.test(
-              error.message,
-            )
-          )
-        )
-          throw error;
-        const freed = compactArchives();
-        // Compress recovery envelopes and release old oversized main copies first.
-        // All replaced keys are still rolled back together if the retry fails.
-        const retry = rows.map(([key, value]) => [
-          key,
-          key === archiveKey ? encode(JSON.parse(value)) : value,
-        ]);
-        const compressedBytes = rows.reduce(
-          (n, row, i) => n + Math.max(0, row[1].length - retry[i][1].length),
-          0,
-        );
-        if (
-          !freed &&
-          !compressedBytes &&
-          Math.max(0, (before?.length || 0) - data.length) +
-            Math.max(0, (backup?.length || 0) - data.length) <
-            1024
-        )
-          throw error;
+        if (!quota(error)) throw error;
+        pressure = true;
+        compactArchives();
+        // A recovery import needs one exact prior state, not two duplicated envelopes.
+        const retry = rows.map(([key, value]) => {
+          if (key !== archiveKey) return [key, value];
+          let archive;
+          try {
+            archive = parseImport(value);
+          } catch {
+            archive = JSON.parse(value);
+          }
+          return [key, encode(archive)];
+        });
         retry.sort(
           (a, b) => Number(a[0] === archiveKey) - Number(b[0] === archiveKey),
         );
-        transaction(retry);
+        try {
+          // The older automatic checkpoint is optional. Reclaim it atomically;
+          // primary and backup remain protected by rollback if either write fails.
+          transaction([[KEYS.previous, null], ...retry]);
+          recoveryWarning =
+            "현재 진행 저장은 완료했습니다. 공간 확보를 위해 이전 자동 저장 시점은 정리했습니다. 백업 파일을 내려받으세요.";
+        } catch (retryError) {
+          if (!quota(retryError)) throw retryError;
+          // setItem replaces a value atomically. If even two complete copies do
+          // not fit, keep one validated current save instead of halting gameplay.
+          // Never remove legacy data, imported archives or other apps' storage.
+          transaction([
+            [KEYS.previous, null],
+            [KEYS.backup, null],
+            ...retry.filter(([key]) => key !== KEYS.backup),
+          ]);
+          recoveryWarning =
+            "현재 진행 저장은 완료했습니다. 저장 공간이 부족해 자동 백업 사본은 생략했습니다. 백업 파일을 내려받으세요.";
+        }
       }
-      recoveryWarning = "";
       if (
+        !pressure &&
         !allowRecovery &&
         current.source === "primary" &&
         current.state?.campaignId === next.campaignId
