@@ -1010,7 +1010,10 @@
     const empty = fresh.filter(
       (f) => remaining(f.weapon) === 0 && remaining(f.sidearm) === 0,
     );
-    if (fresh.length >= 2 && empty.length >= Math.ceil(fresh.length / 2)) {
+    if (
+      fresh.length >= 2 &&
+      empty.length >= Math.max(2, Math.ceil(fresh.length / 2))
+    ) {
       c.ammoRiskSince ??= e.time;
       let active = m.transports.some(
         (t) => t.trip === "supply" && t.state !== "home",
