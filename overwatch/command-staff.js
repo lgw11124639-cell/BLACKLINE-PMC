@@ -799,6 +799,97 @@
       P().start(s, { kind: "treatment", memberIds: [m.id] });
       changed = true;
     }
+    // Keep operating cash and outstanding mission costs outside the recruitment budget.
+    const I = get("OverwatchInfantry", "infantry.js"),
+      h = I.initialize(s),
+      reserve =
+        Math.max(5000000, Math.ceil(s.headquarters.funds * 0.25)) +
+        (s.operations?.payable || 0),
+      canPay = (cost) => s.headquarters.funds - cost >= reserve;
+    if (h.deploy) {
+      for (const member of h.members.filter((m) => m.status === "expired")) {
+        if (canPay(member.dailySalary * 30)) {
+          I.renew(s, member.id);
+          changed = true;
+        }
+      }
+      // Fill a complete set of missing roles before buying the next squad.
+      for (let team = 1; team <= 3; team++) {
+        const missing = h.market.filter(
+          (c) =>
+            h.members.filter(
+              (m) =>
+                m.role === c.role &&
+                !["deceased", "missing"].includes(m.status),
+            ).length < team,
+        );
+        const cost = missing.reduce((n, c) => n + c.dailySalary * 30, 0);
+        if (
+          !canPay(cost) ||
+          h.members.length + missing.length > 100 ||
+          h.members.filter((m) => !["deceased", "missing"].includes(m.status))
+            .length +
+            missing.length >
+            20
+        )
+          break;
+        for (const c of missing) {
+          I.hire(s, c.id);
+          changed = true;
+        }
+      }
+    }
+    // Complete missing pairs within the remaining budget; busy personnel still count.
+    for (let team = 1; team <= 3; team++) {
+      const plans = [];
+      for (const role of ["observer", "sniper"]) {
+        const existing = s.members.filter(
+          (m) =>
+            m.specialty === role && m.contract?.endsAt > s.clock.elapsedSeconds,
+        ).length;
+        if (existing >= team) continue;
+        const expired = s.members
+          .filter(
+            (m) =>
+              m.specialty === role &&
+              m.contract?.endsAt <= s.clock.elapsedSeconds,
+          )
+          .sort((a, b) => a.dailySalary - b.dailySalary)[0];
+        const candidate = s.market.candidates
+          .filter((m) => m.specialty === role)
+          .sort(
+            (a, b) =>
+              (b.skills[role === "sniper" ? "shooting" : "observation"] +
+                b.skills.judgment) /
+                b.dailySalary -
+              (a.skills[role === "sniper" ? "shooting" : "observation"] +
+                a.skills.judgment) /
+                a.dailySalary,
+          )[0];
+        if (expired || candidate)
+          plans.push({ member: expired || candidate, renew: !!expired });
+      }
+      const needed = ["observer", "sniper"].filter(
+        (role) =>
+          s.members.filter(
+            (m) =>
+              m.specialty === role &&
+              m.contract?.endsAt > s.clock.elapsedSeconds,
+          ).length < team,
+      ).length;
+      if (
+        plans.length !== needed ||
+        !canPay(plans.reduce((n, p) => n + p.member.dailySalary * 30, 0)) ||
+        s.members.length + plans.filter((p) => !p.renew).length >
+          P().MAX_MEMBERS
+      )
+        break;
+      for (const p of plans) {
+        if (p.renew) P().renew(s, p.member.id, 30);
+        else P().hire(s, p.member.id, 30);
+        changed = true;
+      }
+    }
     const assigned = new Set(
       s.squads.flatMap((q) => [q.observerId, q.sniperId]),
     );
@@ -832,7 +923,12 @@
       s.members.filter((m) => P().readiness(s, m) === null).length +
       "명 · " +
       s.squads.length +
-      "개 조 편성";
+      "개 조 편성 · 본부 보병 " +
+      h.members.filter((m) => !["deceased", "missing"].includes(m.status))
+        .length +
+      "/20명 · 보병 " +
+      I.squads(s).length +
+      "/3개 분대 · 운영비 25%(최소 500만원)·미지급금 보존 채용";
     return changed;
   }
   function manageHeadquarters(s, seconds = 0) {

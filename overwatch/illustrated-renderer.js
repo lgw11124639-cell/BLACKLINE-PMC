@@ -558,8 +558,12 @@
           ctx.shadowBlur = 4;
           ctx.textAlign = "center";
           const label =
-              (u.name || u.callsign || "지원요원") +
-              (v.scale < 4
+              (u.agencySniperRole
+                ? u.agencySniperRole === "sniper"
+                  ? "기관 저격수"
+                  : "기관 관측수"
+                : u.name || u.callsign || "지원요원") +
+              (v.scale < 4 || u.agencySniperRole
                 ? ""
                 : " · " +
                   (u.role === "sniper"

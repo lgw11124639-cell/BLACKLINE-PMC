@@ -9,9 +9,11 @@ with sync_playwright() as p:
   q.goto(BASE,wait_until='networkidle')
   if not q.locator('[data-tab="personnel"]').first.is_visible():q.locator('[data-mobile-menu]').click()
   q.locator('[data-tab="personnel"]').first.click();q.locator('[data-personnel-tab="infantry"]').click();q.locator('[data-infantry-init]').click()
+  q.locator('[data-personnel-tab="infantry-market"]').first.click()
   for role in ['leader','rifleman','gunner','medic']:q.locator('[data-infantry-hire="hq-candidate-'+role+'"]').click()
   assert q.locator('[data-profile]').count()==0
   before=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');assert len(before['members'])==0;assert len(before['infantry']['members'])==4
+  q.locator('[data-personnel-tab="infantry"]').click()
   q.locator('[data-infantry-train]').click();q.locator('[data-infantry-advance]').click();q.reload(wait_until='networkidle')
   after=q.evaluate('OverwatchStorage.create({storage:localStorage}).load().state');assert all(a['skills']['teamwork']>z['skills']['teamwork'] for a,z in zip(after['infantry']['members'],before['infantry']['members']))
   q.evaluate("""()=>{const st=OverwatchStorage.create({storage:localStorage}),s=st.load().state,P=OverwatchPersonnel,h=r=>P.hire(s,s.market.candidates.find(m=>m.specialty===r).id,30);P.assign(s,'ALPHA',h('observer').id,h('sniper').id);const chief=OverwatchStaff.hire(s,s.commandStaff.market.find(m=>m.duty==='controller').id);OverwatchStaff.assign(s,'controller',chief.id);const contract=s.contracts.find(c=>c.key==='high-value-target');OverwatchMissions.accept(s,contract.id);OverwatchMissions.launch(s,contract.id);for(const u of s.commandExercise.world.actors.filter(a=>a.side==='red'))u.health.conscious=false;for(let i=0;i<150;i++){OverwatchBattle.setPaused(s,false);OverwatchCommand.step(s,1);}s.ui.tab='field';s.ui.fieldInspector='roster';st.save(s,s.revision);}""")
