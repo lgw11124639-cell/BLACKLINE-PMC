@@ -1629,6 +1629,7 @@
           "roster",
           "infantry",
           "infantry-market",
+          "infantry-squads",
           "market",
           "squads",
           "archive",

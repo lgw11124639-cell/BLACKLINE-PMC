@@ -85,6 +85,7 @@
     };
   }
   function linked(e, q) {
+    if (!q) return !!e.mission;
     const u = leader(e, q);
     return (
       !!u?.capable &&
@@ -100,6 +101,7 @@
     );
   }
   function latency(s, e, q) {
+    if (!q?.leaderId) return 4;
     const m = member(s, q.leaderId),
       v = P.effectiveSkills(m);
     return Math.max(
@@ -152,6 +154,10 @@
       for (const r of e.radio)
         if (r.route === "agency" && r.status === "queued")
           evidence.add(r.payload?.agencyLead?.sourceMessageId);
+      for (const d of Object.values(
+        e.mission?.hqInfantry?.teamDirectives || {},
+      ))
+        if (d.messageId) evidence.add(d.messageId);
       if (e.mission?.hqInfantry?.directive?.messageId)
         evidence.add(e.mission.hqInfantry.directive.messageId);
       if (e.mission?.agencyDirective?.messageId)
@@ -211,7 +217,7 @@
       hqVisibleAt: ["down", "agency"].includes(route) ? e.time : null,
       from: endpoint(e, from),
       to: endpoint(e, to),
-      callsign: q.callsign,
+      callsign: q?.callsign || "HQ",
       route,
       kind,
       body,
@@ -280,7 +286,7 @@
           deploying.length === callsigns.length),
       "출격 저격조 선택이 잘못되었습니다.",
     );
-    ok(deploying.length > 0, "먼저 관측수·저격수 저격조를 편성하세요.");
+    ok(deploying.length > 0 || live, "먼저 관측수·저격수 저격조를 편성하세요.");
     ok(
       !s.activities.some(
         (a) =>
@@ -2403,6 +2409,7 @@
       })),
       radio: e.radio
         .filter((r) => r.hqVisibleAt !== null)
+        .filter((r) => r.route !== "local")
         .filter((r) => r.kind !== "position")
         .filter((r) => {
           const c = r.payload?.contact;
@@ -2468,7 +2475,8 @@
       e.startedAt + e.time <= s.clock.elapsedSeconds &&
         e.world &&
         Array.isArray(e.world.units) &&
-        e.world.units.length >= 2 &&
+        (e.world.units.length >= 2 ||
+          (e.world.units.length === 0 && !!e.mission?.hqInfantry)) &&
         e.world.units.length <= 6 &&
         Array.isArray(e.world.actors) &&
         e.world.actors.length <= 32,
@@ -2544,7 +2552,8 @@
       );
     ok(
       Array.isArray(e.squads) &&
-        e.squads.length >= 1 &&
+        (e.squads.length >= 1 ||
+          (e.squads.length === 0 && !!e.mission?.hqInfantry)) &&
         e.squads.length <= 3 &&
         new Set(e.squads.map((q) => q.callsign)).size === e.squads.length,
       "훈련 저격조 구성이 잘못되었습니다.",
@@ -2653,7 +2662,8 @@
           !radioids.has(r.id) &&
           text(r.body) &&
           text(r.eventId) &&
-          e.squads.some((q) => q.callsign === r.callsign) &&
+          (e.squads.some((q) => q.callsign === r.callsign) ||
+            (r.callsign === "HQ" && !!e.mission)) &&
           ["up", "down", "local", "agency"].includes(r.route) &&
           ["queued", "delivered", "cancelled"].includes(r.status) &&
           num(r.createdAt, 0, e.time) &&

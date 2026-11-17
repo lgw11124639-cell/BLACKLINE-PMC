@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.17.04",
+  const VERSION = "2026.11.17.05",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -9,6 +9,45 @@
     MissionUI = OverwatchMissionUI,
     Battle = OverwatchBattle,
     root = document.getElementById("overwatch-root");
+  // Display names are translated without changing stable save identifiers or form values.
+  const unitLabel = (text) =>
+    String(text)
+      .replace(
+        /본부 보병 (ALPHA|BRAVO|CHARLIE)/g,
+        (_, c) => "본부 " + { ALPHA: 1, BRAVO: 2, CHARLIE: 3 }[c] + "팀",
+      )
+      .replace(/본부 보병 DELTA/g, "본부 보병")
+      .replace(
+        /\b(ALPHA|BRAVO|CHARLIE)\b/g,
+        (c) => "저격 " + { ALPHA: 1, BRAVO: 2, CHARLIE: 3 }[c] + "팀",
+      );
+  function labelNodes(node) {
+    if (node.nodeType === 3) {
+      const next = unitLabel(node.nodeValue);
+      if (
+        next !== node.nodeValue &&
+        !["SCRIPT", "STYLE", "INPUT", "TEXTAREA"].includes(
+          node.parentElement?.tagName,
+        )
+      )
+        node.nodeValue = next;
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    for (const key of ["title", "aria-label"])
+      if (node.hasAttribute(key)) {
+        const old = node.getAttribute(key),
+          next = unitLabel(old);
+        if (next !== old) node.setAttribute(key, next);
+      }
+    for (const child of node.childNodes) labelNodes(child);
+  }
+  new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === "characterData") labelNodes(r.target);
+      else for (const node of r.addedNodes) labelNodes(node);
+    }
+  }).observe(root, { childList: true, subtree: true, characterData: true });
   const esc = (x) =>
     String(x ?? "").replace(
       /[&<>"']/g,

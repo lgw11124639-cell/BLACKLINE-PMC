@@ -58,11 +58,11 @@ test("schema 4 migration archives exact saves and never resets money, personnel,
   assert.equal(up.contracts.length, M.TEMPLATES.length);
   assert.equal(st.migrate().contracts.length, M.TEMPLATES.length);
 });
-test("contracts enforce single operation, minimum crew, readiness and postpaid supplies without double launch", () => {
+test("contracts enforce single operation, player-selected crew, readiness and postpaid supplies without double launch", () => {
   const { s, c } = make("rescue-cover");
-  assert.match(M.ready(s, c), /4~6/);
-  assert.throws(() => M.launch(s, c.id));
-  assert.equal(s.activeMission, null);
+  assert.equal(M.ready(s, c), null);
+  M.launch(s, c.id);
+  assert.ok(s.activeMission);
   const x = make();
   const before = x.s.headquarters.funds,
     cost = M.reserveFor(x.s).total;

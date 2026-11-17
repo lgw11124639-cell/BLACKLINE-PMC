@@ -574,8 +574,17 @@
     if (c.teamCallsigns && teams.length !== c.teamCallsigns.length)
       return "선택한 저격조의 본부 편성이 변경되었습니다. 투입 조를 다시 선택하세요.";
     const ids = teams.flatMap((q) => [q.observerId, q.sniperId]);
-    if (ids.length < c.min || ids.length > 6)
-      return "이 계약은 " + c.min + "~6명의 적정 저격조가 필요합니다.";
+    if (ids.length > 6) return "저격팀은 최대 3개 팀까지 선택할 수 있습니다.";
+    if (
+      !ids.length &&
+      !(
+        s.infantry?.deploy &&
+        Infantry()
+          .squads(s)
+          .some((q) => !(s.infantry.disabledSquads || []).includes(q.callsign))
+      )
+    )
+      return "저격팀 또는 보병팀을 하나 이상 선택하세요.";
     for (const id of ids) {
       const m = member(s, id),
         why = P.readiness(s, m);
@@ -2809,7 +2818,7 @@
     p =
       p ||
       (type === "drone"
-        ? G.project(e.squads[0].sector)
+        ? G.project(e.squads[0]?.sector || G.MAP.sector || m.contract.interest)
         : copy(m.extractionPoint));
     ok(point(p) && !G.blocked(p), "지원 지점이 잘못되었습니다.");
     m.supports[type]++;
@@ -2858,7 +2867,9 @@
     );
     ok(t, "운용 중인 UAV가 없습니다.");
     ok(!t.until || e.time < t.until - 10, "잔여 체공 시간이 부족합니다.");
-    target = target || G.project(e.squads[0].sector);
+    target =
+      target ||
+      G.project(e.squads[0]?.sector || G.MAP.sector || m.contract.interest);
     ok(
       target && point(target) && !G.blocked(target),
       "지도에서 관측할 구역을 선택하세요.",
@@ -3189,6 +3200,21 @@
     if (found) {
       c.targetId = found.id;
       c.path = [];
+      return;
+    }
+    if (
+      t.id === "primary" &&
+      m.memberIds.some(
+        (id) =>
+          !m.home.includes(id) &&
+          !blue(e, id).boardedBy &&
+          blue(e, id).health.alive,
+      )
+    ) {
+      // A recovery crew must not depart with one patient while mobile teammates are still approaching.
+      t.crew = null;
+      t.loadingSince = e.time;
+      t.state = "loading";
       return;
     }
     if (t.manifest.length) beginTravel(e, t, G.MAP.base, "home-unload");
@@ -3695,6 +3721,7 @@
     return true;
   }
   function actorTaskTick(s, e, u) {
+    if (u.protectedBoarded || u.home) return;
     if (u.waitingForDeployment) {
       if (e.mission.fieldStartedAt == null) return;
       u.waitingForDeployment = false;
@@ -3823,7 +3850,12 @@
     if (
       u.hqMemberId &&
       (m.returnRequested ||
-        ["withdraw", "hold"].includes(m.hqInfantry?.directive?.mode))
+        ["withdraw", "hold"].includes(
+          (
+            m.hqInfantry?.teamDirectives?.[u.hqTeam || "ALPHA"] ||
+            m.hqInfantry?.directive
+          )?.mode,
+        ))
     ) {
       if (
         !enemies.length ||
@@ -4096,6 +4128,128 @@
       u.state = "escorting";
     }
   }
+  function protectedRecovery(s, e) {
+    const m = e.mission,
+      u = e.world.actors.find((a) => a.id === "agency-protected");
+    if (
+      !u ||
+      !u.health.alive ||
+      !["rescue", "escort", "vip"].includes(m.contract.task)
+    )
+      return;
+    let t = m.protectedTransport;
+    if (!t) {
+      if (
+        G.distance(u, m.taskGoal) > 20 ||
+        (m.contract.task === "rescue" && !m.taskLinked)
+      )
+        return;
+      if (
+        !e.world.actors.some(
+          (a) =>
+            a.armed &&
+            a.side === "ally" &&
+            a.health.alive &&
+            a.health.conscious &&
+            G.distance(a, u) < 30,
+        )
+      )
+        return;
+      t = m.protectedTransport = {
+        id: "protected-transport",
+        kind: "vehicle",
+        name: "기관 구출·호송 차량",
+        x: G.MAP.base.x,
+        y: G.MAP.base.y,
+        state: "pickup",
+        path: G.path(G.MAP.base, G.project(m.taskGoal)),
+        manifest: [],
+        capacity: 6,
+        startedAt: e.time,
+      };
+      say(
+        s,
+        e,
+        "transport",
+        "구출·호송 대상이 회수 지점에 도착했다. 제공 수송 차량이 실제 합류·탑승 후 본부까지 이송한다.",
+        log(e, "protected-recovery-dispatched"),
+      );
+    }
+    const travel = (goal) => {
+      if (!t.path.length) t.path = G.path(t, goal);
+      const p = t.path[0];
+      if (!p) return G.distance(t, goal) < 4;
+      const d = G.distance(t, p),
+        n = Math.min(6, d);
+      if (d) {
+        t.x += ((p.x - t.x) * n) / d;
+        t.y += ((p.y - t.y) * n) / d;
+      }
+      if (d <= 6) t.path.shift();
+      return G.distance(t, goal) < 4;
+    };
+    if (t.state === "pickup" && travel(G.project(m.taskGoal))) {
+      t.state = "boarding";
+      t.boardAt = e.time + 6;
+    }
+    if (
+      t.state === "boarding" &&
+      e.time >= t.boardAt &&
+      G.distance(u, t) < 22
+    ) {
+      const near = e.world.actors
+        .filter(
+          (a) =>
+            a.side === "ally" &&
+            !a.hqMemberId &&
+            a.health.alive &&
+            !a.home &&
+            G.distance(a, t) < 22 &&
+            (a.id === "agency-protected" || a.armed),
+        )
+        .slice(0, 6);
+      if (!near.includes(u)) near.unshift(u);
+      t.manifest = near.slice(0, 6).map((a) => a.id);
+      for (const a of near.slice(0, 6)) {
+        a.boardedBy = t.id;
+        a.protectedBoarded = true;
+        a.path = [];
+      }
+      t.state = "returning";
+      t.path = [];
+      say(
+        s,
+        e,
+        "transport",
+        "구출·호송 대상과 동행 인원 " +
+          t.manifest.length +
+          "명 실제 탑승 확인. 본부로 이송한다.",
+        log(e, "protected-boarded", { memberIds: t.manifest.slice() }),
+      );
+    }
+    if (t.state === "returning" && travel(G.MAP.base)) {
+      t.state = "home";
+      for (const id of t.manifest) {
+        const a = e.world.actors.find((a) => a.id === id);
+        a.home = true;
+        a.state = "returned";
+        a.boardedBy = null;
+      }
+      m.protectedHome = true;
+      say(
+        s,
+        e,
+        "objective",
+        "구출·호송 대상 본부 도착 확인. 대상 실제 귀환을 기록한다.",
+        log(e, "protected-home"),
+      );
+    }
+    for (const id of t.manifest) {
+      const a = e.world.actors.find((a) => a.id === id);
+      a.x = t.x;
+      a.y = t.y;
+    }
+  }
   function harvest(e) {
     const m = e.mission;
     for (const ev of e.events) {
@@ -4219,15 +4373,13 @@
     const protectedUnit = e.world.actors.find(
       (a) => a.id === "agency-protected",
     );
+    protectedRecovery(s, e);
     const targetResult = targeted(m) ? targetOutcome(s, e) : null;
     const complete = targetResult
       ? targetResult.complete
       : m.contract.task === "recon"
         ? !!reconPlan(e)?.areas.every((a) => a.checkedAt != null)
-        : !!protectedUnit?.health.alive &&
-          G.distance(protectedUnit, m.taskGoal) <
-            (G.MAP.width < 500 ? 8 : 20) &&
-          (m.contract.task !== "rescue" || m.taskLinked);
+        : !!protectedUnit?.health.alive && !!m.protectedHome;
     const failed = targetResult
       ? targetResult.failed
       : protectedUnit &&
@@ -4365,7 +4517,12 @@
       m.finalizing = true;
       if (living.length && living.every((u) => m.home.includes(u.id)))
         e.battle.phase = "returned";
-      D().end(s, living.length ? "returned" : "casualties");
+      D().end(
+        s,
+        living.length || e.world.actors.some((u) => u.hqMemberId && u.home)
+          ? "returned"
+          : "casualties",
+      );
     }
   }
   function applyPayload(e, r) {
@@ -4594,6 +4751,7 @@
         totalCost += (u.medicalUses || 0) * 30000;
       }
     }
+    report.protectedHome = !!m.protectedHome;
     report.consumed = m.postpaid ? totalCost : Math.min(m.escrow, totalCost);
     report.refund = m.postpaid ? 0 : m.escrow - report.consumed;
     const anyLoss =
@@ -4811,7 +4969,8 @@
         agencyAutonomous: !!m.agencyAutonomous,
         hqInfantry: m.hqInfantry
           ? {
-              callsign: "DELTA",
+              callsign: "본부 보병",
+              teamDirectives: copy(m.hqInfantry.teamDirectives || {}),
               directive: copy(m.hqInfantry.directive),
               transport: copy(m.hqInfantry.transport),
               lastThrowFailure: m.hqInfantry.lastThrowFailure || null,
@@ -4867,6 +5026,15 @@
         report: r ? { ...copy(r), radio: undefined, events: undefined } : null,
       },
       transports: [
+        ...(m.protectedTransport && m.protectedTransport.state !== "home"
+          ? [
+              {
+                ...copy(m.protectedTransport),
+                type: "vehicle",
+                passengers: m.protectedTransport.manifest.length,
+              },
+            ]
+          : []),
         ...(m.hqInfantry &&
         !["waiting", "home", "failed"].includes(m.hqInfantry.transport.state)
           ? [
@@ -5024,7 +5192,8 @@
         m.contract &&
         typeof m.id === "string" &&
         Array.isArray(m.memberIds) &&
-        m.memberIds.length >= 2 &&
+        (m.memberIds.length >= 2 ||
+          (m.memberIds.length === 0 && !!m.hqInfantry)) &&
         m.memberIds.length <= 6 &&
         new Set(m.memberIds).size === m.memberIds.length &&
         m.memberIds.every((id) => e.world.units.some((u) => u.id === id)) &&
@@ -5243,6 +5412,27 @@
               typeof row.eventId === "string",
           ),
         "기관 보병 진출 통제 저장이 잘못되었습니다.",
+      );
+    }
+    if (m.protectedTransport) {
+      const t = m.protectedTransport;
+      ok(
+        ["pickup", "boarding", "returning", "home"].includes(t.state) &&
+          point(t) &&
+          Array.isArray(t.path) &&
+          t.path.every(point) &&
+          Array.isArray(t.manifest) &&
+          t.manifest.length <= 6 &&
+          new Set(t.manifest).size === t.manifest.length &&
+          t.manifest.every((id) =>
+            e.world.actors.some(
+              (a) => a.id === id && a.side === "ally" && !a.hqMemberId,
+            ),
+          ) &&
+          (!["returning", "home"].includes(t.state) ||
+            t.manifest.includes("agency-protected")) &&
+          (t.state !== "home" || m.protectedHome === true),
+        "구출·호송 대상 수송 기록이 잘못되었습니다.",
       );
     }
     if (m.taskLeaderId)

@@ -268,8 +268,7 @@
   }
   function regions(e) {
     const g = G().MAP,
-      center =
-        e.mission?.knowledge.groundSearch?.point ||
+      center = e.mission?.knowledge.groundSearch?.point ||
         (e.mission?.contract.task === "recon" &&
         e.mission.knowledge.reconProgress?.currentId != null
           ? e.mission.reconPlan?.areas.find(
@@ -278,7 +277,8 @@
           : null) ||
         e.mission?.contract.interest ||
         g.sector ||
-        e.squads[0].sector;
+        e.squads[0]?.sector ||
+        G().MAP.sector || { x: 500, y: 150 };
     if (e.control?.watchSectors)
       return e.squads.map((q) => {
         const band = e.control.watchSectors[q.callsign];
@@ -517,7 +517,10 @@
         ? m.taskGoal
         : m.groundSearch
           ? M().searchPoint(e)
-          : m.contract.interest || G().MAP.sector || e.squads[0].sector;
+          : m.contract.interest ||
+            G().MAP.sector ||
+            e.squads[0]?.sector ||
+            G().MAP.sector || { x: 500, y: 150 };
     let last = anchor,
       remaining = 0;
     const route = G().path(anchor, goal);
@@ -890,6 +893,7 @@
         changed = true;
       }
     }
+    changed = I.formTeams(s) || changed;
     const assigned = new Set(
       s.squads.flatMap((q) => [q.observerId, q.sniperId]),
     );
@@ -1215,7 +1219,7 @@
               ? [["overwatch", "지역 관측·저격 엄호"]]
               : [
                   ["counter-sniper", "담당 구역 관측·대저격"],
-                  ["corridor-cover", "기관 보병 진출로·구출 엄호"],
+                  ["corridor-cover", "본부 보병 진출로·구출 엄호"],
                   ["flank-security", "측후방·철수로 경계"],
                 ];
           q.assignment = {

@@ -58,7 +58,7 @@
       market[i].name = P().newName(s, 5000 + i, market.slice(0, i));
     return (s.infantry = {
       version: 1,
-      callsign: "DELTA",
+      callsign: "본부 보병",
       members: [],
       market,
       deploy: true,
@@ -223,7 +223,189 @@
     if (m.status === "expired") m.status = "standby";
   }
   const callsigns = ["ALPHA", "BRAVO", "CHARLIE"];
+  const teamLabel = (call) => "본부 " + (callsigns.indexOf(call) + 1) + "팀";
+  function eligible(s, m) {
+    return (
+      m &&
+      m.status === "standby" &&
+      m.health.alive &&
+      m.health.conscious &&
+      !m.health.wounds.some((w) => !w.treated) &&
+      m.contract.endsAt > s.clock.elapsedSeconds
+    );
+  }
+  function formTeams(s) {
+    const h = initialize(s);
+    ok(!active(s), "출격 중에는 편제를 변경할 수 없습니다.");
+    const before = JSON.stringify(h.teams);
+    h.teams ||= callsigns.map((callsign) => ({ callsign, memberIds: [] }));
+    const used = new Set();
+    for (const q of h.teams)
+      q.memberIds = q.memberIds.filter((id) => {
+        const m = h.members.find((m) => m.id === id);
+        if (
+          !m ||
+          ["deceased", "missing", "expired"].includes(m.status) ||
+          used.has(id)
+        )
+          return false;
+        used.add(id);
+        return true;
+      });
+    for (const q of h.teams)
+      for (const role of Object.keys(roles)) {
+        if (
+          q.memberIds.some(
+            (id) => h.members.find((m) => m.id === id)?.role === role,
+          )
+        )
+          continue;
+        const m = h.members
+          .filter((m) => m.role === role && !used.has(m.id) && eligible(s, m))
+          .sort(
+            (a, b) =>
+              b.skills.judgment +
+              b.skills.teamwork -
+              a.skills.judgment -
+              a.skills.teamwork,
+          )[0];
+        if (m) {
+          q.memberIds.push(m.id);
+          used.add(m.id);
+        }
+      }
+    return before !== JSON.stringify(h.teams);
+  }
+  function assignTeam(s, call, ids) {
+    const h = initialize(s);
+    ok(
+      !active(s) && callsigns.includes(call),
+      "출격 중에는 편제를 변경할 수 없습니다.",
+    );
+    ok(
+      ids.length === 4 && new Set(ids).size === 4,
+      "서로 다른 보병 4명을 배정하세요.",
+    );
+    const ms = ids.map((id) => h.members.find((m) => m.id === id));
+    ok(
+      ms.every((m) => eligible(s, m)) &&
+        new Set(ms.map((m) => m.role)).size === 4,
+      "훈련·진료 중인 인원을 제외하고 4개 보직을 하나씩 선택하세요.",
+    );
+    const teams =
+      h.teams ||
+      squads(s).map((q) => ({
+        callsign: q.callsign,
+        memberIds: q.members.map((m) => m.id),
+      }));
+    ok(
+      !teams.some(
+        (q) =>
+          q.callsign !== call && q.memberIds.some((id) => ids.includes(id)),
+      ),
+      "다른 보병팀에 배정된 인원이 있습니다.",
+    );
+    h.teams = callsigns.map((c) => ({
+      callsign: c,
+      memberIds:
+        c === call
+          ? [...ids]
+          : [...(teams.find((q) => q.callsign === c)?.memberIds || [])],
+    }));
+  }
+  function formation(s) {
+    const h = s.infantry;
+    if (!h)
+      return '<section class="panel"><h2>보병팀 편성</h2><p>보병 모집 시장을 먼저 개설하세요.</p><button data-infantry-init>보병 모집 시장 개설</button></section>';
+    const teams =
+      h.teams ||
+      squads(s).map((q) => ({
+        callsign: q.callsign,
+        memberIds: q.members.map((m) => m.id),
+      }));
+    return (
+      '<section class="panel"><h2>보병팀 편성 · 각 4명</h2><p>분대장·소총수·지원화기병·의무병을 배정합니다. 훈련·진료 중인 인원과 중복 배정은 제외합니다.</p><button data-infantry-form>인사관리관 자동 편성 적용</button><div class="member-grid">' +
+      callsigns
+        .map((call) => {
+          const q = teams.find((q) => q.callsign === call);
+          return (
+            '<form class="panel" data-infantry-formation="' +
+            call +
+            '"><h3>' +
+            teamLabel(call) +
+            "</h3>" +
+            Object.entries(roles)
+              .map(
+                ([role, label]) =>
+                  "<label>" +
+                  esc(label) +
+                  '<select name="' +
+                  role +
+                  '"><option value="">대원 선택</option>' +
+                  h.members
+                    .filter(
+                      (m) =>
+                        m.role === role &&
+                        eligible(s, m) &&
+                        !teams.some(
+                          (t) =>
+                            t.callsign !== call && t.memberIds.includes(m.id),
+                        ),
+                    )
+                    .map(
+                      (m) =>
+                        '<option value="' +
+                        esc(m.id) +
+                        '"' +
+                        (q?.memberIds.includes(m.id) ? " selected" : "") +
+                        ">" +
+                        esc(m.name) +
+                        " · 판단 " +
+                        m.skills.judgment +
+                        " · 사격 " +
+                        m.skills.shooting +
+                        "</option>",
+                    )
+                    .join("") +
+                  "</select></label>",
+              )
+              .join("") +
+            '<button type="submit"' +
+            (active(s) ? " disabled" : "") +
+            '>팀 편성 적용</button><button type="button" data-infantry-clear="' +
+            call +
+            '"' +
+            (active(s) ? " disabled" : "") +
+            ">편성 해제</button></form>"
+          );
+        })
+        .join("") +
+      "</div></section>"
+    );
+  }
   function squads(s) {
+    if (s.infantry?.teams)
+      return s.infantry.teams
+        .map((q) => ({
+          callsign: q.callsign,
+          members: q.memberIds.map((id) =>
+            s.infantry.members.find((m) => m.id === id),
+          ),
+        }))
+        .filter(
+          (q) =>
+            q.members.length === 4 &&
+            q.members.every(
+              (m) =>
+                m &&
+                (eligible(s, m) ||
+                  (m.status === "training" &&
+                    m.training?.managed &&
+                    m.health.alive &&
+                    m.health.conscious &&
+                    m.contract.endsAt > s.clock.elapsedSeconds)),
+            ),
+        );
     const pool = (s.infantry?.members || []).filter(
       (m) =>
         (m.status === "standby" ||
@@ -315,10 +497,10 @@
       u.hqMemberId = m.id;
       u.roleLabel = "본부 " + roles[m.role];
       u.taskDuty = "headquarters-infantry";
-      u.callsign =
-        "본부 보병 " +
-        selectedSquads.find((q) => q.members.some((m) => m.id === u.id))
-          .callsign;
+      u.hqTeam = selectedSquads.find((q) =>
+        q.members.some((m) => m.id === u.id),
+      ).callsign;
+      u.callsign = teamLabel(u.hqTeam);
       u.assignmentRole = m.role;
       u.health = cp(m.health);
       u.combatSkills = Object.fromEntries(
@@ -344,7 +526,13 @@
     }
     return force;
   }
-  function command(s, mode, point = null, source = "headquarters") {
+  function command(
+    s,
+    mode,
+    point = null,
+    source = "headquarters",
+    team = null,
+  ) {
     const e = s.commandExercise;
     ok(
       e?.mission?.hqInfantry &&
@@ -367,9 +555,11 @@
           point.y <= 790),
       "보병 지시 좌표가 잘못되었습니다.",
     );
+    ok(!team || callsigns.includes(team), "보병팀 선택이 잘못되었습니다.");
     const anchor =
-      (e.mission.knowledge.actors || []).find((a) => a.hqMemberId) ||
-      e.mission.contract.insertion;
+      (e.mission.knowledge.actors || []).find(
+        (a) => a.hqMemberId && (!team || a.hqTeam === team),
+      ) || e.mission.contract.insertion;
     if (!point && mode === "advance")
       point =
         e.mission.hqInfantry.areas?.find((a) => !a.checked)?.point ||
@@ -381,10 +571,13 @@
       e,
       e.squads[0],
       "agency",
-      "HQ",
-      "AGENCY",
+      source === "controller" && e.commandAuthority?.id
+        ? e.commandAuthority.id
+        : "HQ",
+      (units(e).find((u) => !team || u.hqTeam === team) || units(e)[0]).id,
       "tasking",
-      "본부 보병 각 분대, " +
+      (team ? teamLabel(team) : "본부 보병 전체") +
+        ", " +
         {
           auto: "구역 수색 재개",
           hold: "분산 엄폐·사주 경계",
@@ -394,6 +587,7 @@
       ev,
       {
         infantryDirective: {
+          team,
           mode,
           source,
           point: point
@@ -479,11 +673,19 @@
       r.payload?.infantryDirective &&
       e.mission.hqInfantry
     ) {
-      e.mission.hqInfantry.directive = {
+      const f = e.mission.hqInfantry,
+        team = r.payload.infantryDirective.team;
+      const received = {
         ...cp(r.payload.infantryDirective),
         messageId: r.id,
         receivedAt: e.time,
       };
+      f.teamDirectives ||= {};
+      if (team) f.teamDirectives[team] = received;
+      else {
+        f.directive = received;
+        for (const call of callsigns) f.teamDirectives[call] = cp(received);
+      }
     }
   }
   function units(e) {
@@ -501,41 +703,70 @@
       e.time - (f.lastOrderAt ?? -100) < 25
     )
       return;
-    const d = f.directive,
-      queued = e.radio.some(
-        (r) =>
-          r.route === "agency" &&
-          r.status === "queued" &&
-          r.payload?.infantryDirective,
+    f.teamDirectives ||= {};
+    const lead = e.mission.knowledge.groundSearch?.lead,
+      task = e.mission.contract.task;
+    for (const [index, team] of callsigns.entries()) {
+      const people = units(e).filter(
+        (u) =>
+          (u.hqTeam ||
+            callsigns[
+              Math.max(
+                0,
+                callsigns.findIndex((c) => u.callsign?.endsWith(c)),
+              )
+            ]) === team,
       );
-    if (queued || (d && d.source !== "controller" && d.mode !== "auto")) return;
-    const reports = (e.mission.knowledge.actors || []).filter(
-        (a) => a.hqMemberId && e.time - a.observedAt < 25,
-      ),
-      hurt = reports.filter((a) => a.underFire || !a.health.conscious),
-      loss = reports.filter((a) => !a.health.alive || !a.health.conscious);
-    let mode =
-      loss.length >= 2 ? "withdraw" : hurt.length >= 2 ? "hold" : "auto";
-    let point = null;
-    const lead = e.mission.knowledge.groundSearch?.lead;
-    if (mode === "auto" && lead?.point) {
-      mode = "advance";
-      point = lead.point;
-    } else if (mode === "auto") {
-      const recon = e.mission.knowledge.reconProgress;
-      point =
-        e.mission.reconPlan?.areas.find((a) => a.id === recon?.currentId)
-          ?.point ||
-        e.mission.knowledge.groundSearch?.point ||
-        f.areas?.find((a) => !a.checked)?.point ||
-        e.mission.contract.interest;
-      mode = "advance";
+      if (!people.length) continue;
+      const d = f.teamDirectives[team] || f.directive;
+      if (
+        e.radio.some(
+          (r) =>
+            r.route === "agency" &&
+            r.status === "queued" &&
+            r.payload?.infantryDirective?.team === team,
+        ) ||
+        (d && d.source === "headquarters" && d.mode !== "auto")
+      )
+        continue;
+      const reports = (e.mission.knowledge.actors || []).filter(
+          (a) =>
+            people.some((u) => u.id === a.id) && e.time - a.observedAt < 25,
+        ),
+        hurt = reports.filter((a) => a.underFire || !a.health.conscious),
+        loss = reports.filter((a) => !a.health.alive || !a.health.conscious);
+      let mode =
+        loss.length >= 2 ? "withdraw" : hurt.length >= 2 ? "hold" : "advance";
+      const ownArea = f.areas
+        ?.filter((a) => a.id % 3 === index)
+        .find((a) => !a.checked);
+      let point = ownArea?.point || reports[0] || e.mission.contract.insertion;
+      if (lead?.point && mode === "advance")
+        point =
+          index === 0
+            ? lead.point
+            : G().project({
+                x: lead.point.x + (index === 1 ? 65 : -65),
+                y: lead.point.y + 45,
+              });
+      if (mode === "hold") point = reports[0] || point;
+      if (mode === "withdraw")
+        point = e.mission.extractionPoint || e.mission.contract.insertion;
+      const assignment =
+        task === "recon"
+          ? ["구역 수색·접촉 식별", "동측 구역 수색", "서측·철수로 수색"][index]
+          : [
+              "목표 접근·확보",
+              "측면 엄호·접근로 확보",
+              "후방 경계·철수로 확보",
+            ][index];
+      if (d?.mode === mode && G().distance(d.point, point) < 25) continue;
+      const r = command(s, mode, point, "controller", team);
+      r.payload.infantryDirective.assignment = assignment;
     }
-    if (d?.mode === mode && (!point || G().distance(d.point, point) < 30))
-      return;
-    command(s, mode, point, "controller");
     f.lastOrderAt = e.time;
   }
+
   function move(e, u, p, speed = 0.85) {
     M().moveGround(u, G().project(p), speed * B().moveFactor(u), e);
     if (u.path.length && u.health.conscious && !u.health.aid) {
@@ -561,20 +792,15 @@
   function actor(s, e, u, enemies) {
     const f = e.mission.hqInfantry;
     if (!f || u.home || u.hqBoarded) return true;
-    const baseDirective = f.directive,
-      squadIndex = Math.max(
-        0,
-        callsigns.findIndex((c) => u.callsign?.endsWith(c)),
-      ),
-      d = baseDirective
-        ? {
-            ...baseDirective,
-            point: {
-              x: baseDirective.point.x + squadIndex * 28,
-              y: baseDirective.point.y + squadIndex * 12,
-            },
-          }
-        : null;
+    const team =
+        u.hqTeam ||
+        callsigns[
+          Math.max(
+            0,
+            callsigns.findIndex((c) => u.callsign?.endsWith(c)),
+          )
+        ],
+      d = f.teamDirectives?.[team] || f.directive;
     if (e.mission.returnRequested || d?.mode === "withdraw") {
       const p =
         f.pickup || e.mission.extractionPoint || e.mission.contract.insertion;
@@ -687,23 +913,37 @@
   function recovery(s, e) {
     const f = e.mission.hqInfantry;
     if (!f) return true;
-    const t = f.transport;
-    if (!e.mission.returnRequested && f.directive?.mode !== "withdraw")
-      return false;
+    const t = f.transport,
+      returning = units(e).filter(
+        (u) =>
+          e.mission.returnRequested ||
+          (f.teamDirectives?.[u.hqTeam || "ALPHA"] || f.directive)?.mode ===
+            "withdraw",
+      );
+    if (!returning.length) return false;
+    const left = returning.filter(
+      (u) => u.health.alive && !u.hqBoarded && !u.home,
+    );
+    if (t.state === "home" && left.length) {
+      t.state = "waiting";
+      t.path = [];
+      t.manifest = [];
+      f.returnAt = null;
+      f.pickup = null;
+    }
     f.returnAt ??= e.time;
     if (!f.pickup) {
       const reports = (e.mission.knowledge.actors || []).filter(
-          (a) => a.hqMemberId && a.health.alive && e.time - a.observedAt < 25,
-        ),
-        patient = reports.find((a) => !a.health.conscious || !a.mobility);
+        (a) =>
+          left.some((u) => u.id === a.id) &&
+          a.health.alive &&
+          e.time - a.observedAt < 60,
+      );
       f.pickup = G().project(
-        patient ||
-          (reports.length
-            ? {
-                x: reports.reduce((n, a) => n + a.x, 0) / reports.length,
-                y: reports.reduce((n, a) => n + a.y, 0) / reports.length,
-              }
-            : e.mission.extractionPoint || e.mission.contract.insertion),
+        reports.find((a) => !a.health.conscious || !a.mobility) ||
+          reports[0] ||
+          e.mission.extractionPoint ||
+          e.mission.contract.insertion,
       );
     }
     const goal = f.pickup;
@@ -726,14 +966,27 @@
     };
     if (t.state === "pickup" && travel(goal)) t.state = "boarding";
     if (t.state === "boarding") {
-      for (const u of units(e))
+      for (const u of returning)
         if (u.health.alive && !u.hqBoarded && G().distance(u, t) < 14) {
           u.hqBoarded = true;
           u.path = [];
           t.manifest.push(u.id);
         }
-      const left = units(e).filter((u) => u.health.alive && !u.hqBoarded);
-      if (!left.length || e.time - f.returnAt > 600) {
+      const left = returning.filter(
+        (u) => u.health.alive && !u.hqBoarded && !u.home,
+      );
+      if (left.length && e.time - (f.lastPickupReview ?? f.returnAt) > 45) {
+        const known = (e.mission.knowledge.actors || []).find(
+          (a) => left.some((u) => u.id === a.id) && e.time - a.observedAt < 60,
+        );
+        if (known && G().distance(known, t) > 12) {
+          f.pickup = G().project(known);
+          t.state = "pickup";
+          t.path = G().path(t, f.pickup);
+        }
+        f.lastPickupReview = e.time;
+      }
+      if (!left.length) {
         t.state = "returning";
         t.path = [];
       }
@@ -749,7 +1002,14 @@
       u.x = t.x;
       u.y = t.y;
     }
-    if (e.time - f.returnAt > 1500 && t.state !== "home") {
+    if (
+      e.time - f.returnAt > 3600 &&
+      t.state !== "home" &&
+      !returning.some(
+        (u) =>
+          u.health.alive && !u.home && e.time - (u.lastThreatAt || -100) < 30,
+      )
+    ) {
       t.state = "failed";
       return true;
     }
@@ -787,6 +1047,7 @@
       report.headquartersInfantry.push({
         id: m.id,
         name: m.name,
+        team: u.hqTeam || "ALPHA",
         role: m.role,
         status: m.status,
         health: cp(m.health),
@@ -889,6 +1150,31 @@
           "보병 훈련 시간이 잘못되었습니다.",
         );
     }
+    if (h.teams) {
+      const assigned = new Set();
+      ok(
+        Array.isArray(h.teams) &&
+          h.teams.length === 3 &&
+          new Set(h.teams.map((q) => q.callsign)).size === 3,
+        "보병팀 편제가 잘못되었습니다.",
+      );
+      for (const q of h.teams) {
+        ok(
+          callsigns.includes(q.callsign) &&
+            Array.isArray(q.memberIds) &&
+            q.memberIds.length <= 4 &&
+            q.memberIds.every((id) => ids.has(id) && !assigned.has(id)),
+          "보병팀 중복·누락 배정이 있습니다.",
+        );
+        q.memberIds.forEach((id) => assigned.add(id));
+        ok(
+          new Set(
+            q.memberIds.map((id) => h.members.find((m) => m.id === id).role),
+          ).size === q.memberIds.length,
+          "보병팀 보직이 중복되었습니다.",
+        );
+      }
+    }
     const e = s.commandExercise,
       f = e?.mission?.hqInfantry;
     if (!f) return;
@@ -902,6 +1188,17 @@
         ),
       "보병 출격 명부가 잘못되었습니다.",
     );
+    for (const d of Object.values(f.teamDirectives || {}))
+      ok(
+        ["auto", "hold", "advance", "withdraw"].includes(d.mode) &&
+          e.radio.some(
+            (r) =>
+              r.id === d.messageId &&
+              r.status === "delivered" &&
+              r.payload?.infantryDirective,
+          ),
+        "보병팀 명령 수신 근거가 잘못되었습니다.",
+      );
     if (f.directive)
       ok(
         ["auto", "hold", "advance", "withdraw"].includes(f.directive.mode) &&
@@ -935,9 +1232,9 @@
   function render(s) {
     const h = s.infantry;
     if (!h)
-      return '<section class="panel"><h2>본부 보병 · 별도 편제</h2><p>정원 20명 · ALPHA·BRAVO·CHARLIE 각 4인 분대: 분대장·소총수·지원화기병·의무병. 저격조 정원과 별도로 채용합니다.</p><button data-infantry-init>보병 모집 시장 개설</button></section>';
+      return '<section class="panel"><h2>본부 보병 · 별도 편제</h2><p>정원 20명 · 본부 1·2·3팀 각 4인 분대: 분대장·소총수·지원화기병·의무병. 저격조 정원과 별도로 채용합니다.</p><button data-infantry-init>보병 모집 시장 개설</button></section>';
     return (
-      '<details class="panel" open><summary>본부 보병 ALPHA·BRAVO·CHARLIE · ' +
+      '<details class="panel" open><summary>본부 1팀·본부 2팀·본부 3팀 · ' +
       h.members.filter((m) => !["deceased", "missing"].includes(m.status))
         .length +
       '/20명</summary><p>기관 보병과 별도 고용·훈련·출격 · 주무장·방탄복·연막탄·수류탄 지급</p><label><input type="checkbox" data-infantry-deploy ' +
@@ -951,8 +1248,8 @@
             '"' +
             ((h.disabledSquads || []).includes(call) ? "" : " checked") +
             (active(s) ? " disabled" : "") +
-            ">보병 " +
-            call +
+            ">" +
+            teamLabel(call) +
             (squads(s).some((q) => q.callsign === call)
               ? " · 4명 편성"
               : " · 가용 보직 대기") +
@@ -970,7 +1267,7 @@
         .filter((m) => !["deceased", "missing"].includes(m.status))
         .map(
           (m) =>
-            '<article class="panel"><h3>' +
+            '<article class="panel"><img class="infantry-portrait" src="images/overwatch/hq-infantry-move.webp" alt="본부 녹색 위장복 보병" loading="lazy"><h3>' +
             esc(m.name) +
             "</h3><p>" +
             esc(
@@ -1018,14 +1315,14 @@
     if (!h)
       return '<section class="panel"><h2>보병 모집 시장</h2><p>분대장·소총수·지원화기병·의무병을 별도로 모집합니다.</p><button data-infantry-init>보병 모집 시장 개설</button></section>';
     return (
-      '<section class="panel"><h2>보병 모집 시장</h2><p>본부 보병 정원 20명 · ALPHA·BRAVO·CHARLIE 3개 분대 · 30일 급여 선지급 · 인사관리관 예산 자동 채용 지원</p><div class="member-grid">' +
+      '<section class="panel"><h2>보병 모집 시장</h2><p>본부 보병 정원 20명 · 본부 1·2·3팀 3개 분대 · 30일 급여 선지급 · 인사관리관 예산 자동 채용 지원</p><div class="member-grid">' +
       h.market
         .map((c) => {
           const filled =
             h.members.filter((m) => !["deceased", "missing"].includes(m.status))
               .length >= 20;
           return (
-            '<article class="panel"><h3>' +
+            '<article class="panel"><img class="infantry-portrait" src="images/overwatch/hq-infantry-move.webp" alt="본부 녹색 위장복 보병 후보" loading="lazy"><h3>' +
             esc(c.name) +
             "</h3><p>" +
             esc(roles[c.role]) +
@@ -1053,11 +1350,53 @@
     );
   }
 
+  function sortie(s) {
+    const h = s.infantry;
+    return (
+      '<fieldset class="sortie-teams"><legend>본부 보병 출격 선택 · 팀당 4명</legend>' +
+      (h
+        ? '<label><input type="checkbox" data-infantry-deploy' +
+          (h.deploy ? " checked" : "") +
+          ">본부 보병 투입</label>" +
+          callsigns
+            .map(
+              (c) =>
+                '<label><input type="checkbox" data-infantry-squad="' +
+                c +
+                '"' +
+                ((h.disabledSquads || []).includes(c) ? "" : " checked") +
+                ">" +
+                teamLabel(c) +
+                " · " +
+                (squads(s).some((q) => q.callsign === c)
+                  ? "4명 편성"
+                  : "가용 편성 없음") +
+                "</label>",
+            )
+            .join("")
+        : "<p>편성된 보병이 없습니다. 저격팀만 출격할 수 있습니다.</p>") +
+      "</fieldset>"
+    );
+  }
   function live(s) {
     const f = s.commandExercise?.mission?.hqInfantry;
     if (!f) return "";
     return (
-      '<section class="panel"><h3>본부 보병 ALPHA·BRAVO·CHARLIE</h3><p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>' +
+      '<section class="panel"><h3>본부 1팀·본부 2팀·본부 3팀</h3><p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>' +
+      '<label>명령 대상<select data-infantry-command-team><option value="">보병 전체</option>' +
+      callsigns
+        .map(
+          (c) =>
+            '<option value="' +
+            c +
+            '"' +
+            (s.ui.infantryCommandTeam === c ? " selected" : "") +
+            ">" +
+            teamLabel(c) +
+            "</option>",
+        )
+        .join("") +
+      "</select></label>" +
       ["auto", "hold", "advance", "withdraw"]
         .map(
           (mode) =>
@@ -1084,6 +1423,35 @@
           el.addEventListener("click", () => commit((s) => fn(s, el))),
         );
     on("[data-infantry-init]", initialize);
+    node
+      .querySelector("[data-infantry-command-team]")
+      ?.addEventListener("change", (event) =>
+        commit((s) => {
+          s.ui.infantryCommandTeam = event.target.value;
+        }),
+      );
+    on("[data-infantry-form]", formTeams);
+    on("[data-infantry-clear]", (s, el) => {
+      ok(!active(s), "출격 중에는 변경할 수 없습니다.");
+      formTeams(s);
+      const q = s.infantry.teams.find(
+        (q) => q.callsign === el.dataset.infantryClear,
+      );
+      q.memberIds = [];
+    });
+    node.querySelectorAll("[data-infantry-formation]").forEach((form) =>
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const data = new FormData(form);
+        commit((s) =>
+          assignTeam(
+            s,
+            form.dataset.infantryFormation,
+            Object.keys(roles).map((r) => data.get(r)),
+          ),
+        );
+      }),
+    );
     node.querySelectorAll("[data-infantry-squad]").forEach((el) =>
       el.addEventListener("change", () =>
         commit((s) => {
@@ -1154,6 +1522,8 @@
               el.dataset.infantryOrder === "advance"
                 ? root.OverwatchFieldUI?.selectedPoint?.()
                 : null,
+              "headquarters",
+              node.querySelector("[data-infantry-command-team]")?.value || null,
             ),
           ),
         ),
@@ -1167,6 +1537,10 @@
     update,
     restock,
     renew,
+    teamLabel,
+    formTeams,
+    assignTeam,
+    formation,
     squads,
     readiness,
     launch,
@@ -1181,6 +1555,7 @@
     validate,
     render,
     market,
+    sortie,
     live,
     bind,
     units,
