@@ -386,8 +386,9 @@
   const targeted = (m) =>
     ["eliminate", "interdict"].includes(m?.contract?.task);
   function upgrade(s) {
+    const repaired = repairInfantryResult(s);
     if (s.schemaVersion !== 5 || s.operations.contentVersion === 5)
-      return false;
+      return repaired;
     const missing = TEMPLATES.filter(
       (t) => !s.contracts.some((c) => c.key === t.key),
     );
@@ -4749,6 +4750,65 @@
     m.finalizing = true;
     D().end(s, "unrecovered");
   }
+  function returnedForce(e) {
+    const own = [
+      ...e.world.units.map((u) => ({
+        alive: u.health.alive,
+        home: e.mission.home.includes(u.id),
+      })),
+      ...Infantry()
+        .units(e)
+        .map((u) => ({ alive: u.health.alive, home: !!u.home })),
+    ];
+    return (
+      own.every((u) => !u.alive || u.home) && own.some((u) => u.alive && u.home)
+    );
+  }
+  // Correct only the retained, physically verifiable infantry-only result.
+  // Successful reports are ineligible, making payment and trust repair idempotent.
+  function repairInfantryResult(s) {
+    const e = s.commandExercise,
+      m = e?.mission;
+    if (
+      !m?.settled ||
+      e.status !== "ended" ||
+      m.memberIds.length ||
+      !m.hqInfantry ||
+      m.abortRequested ||
+      m.objectiveFailed ||
+      !m.objective ||
+      m.missing.length ||
+      !returnedForce(e)
+    )
+      return false;
+    const r = s.operations.reports.find((r) => r.id === m.id);
+    if (
+      !r ||
+      r.success ||
+      r.returnComplete ||
+      !r.objective ||
+      r.reward ||
+      r.bonus
+    )
+      return false;
+    r.returnComplete = true;
+    r.success = true;
+    r.reward = m.contract.reward;
+    r.bonus =
+      Infantry()
+        .units(e)
+        .every((u) => u.home) && e.time <= m.contract.bonusWindow
+        ? m.contract.bonus
+        : 0;
+    P.finance(s, r.reward + r.bonus, "mission-result-correction", {
+      missionId: m.id,
+    });
+    const client = s.operations.clients[m.contract.issuer];
+    client.trust = Math.min(100, client.trust + 14);
+    r.clientTrust = client.trust;
+    r.resultCorrected = true;
+    return true;
+  }
   function settle(s, e) {
     const m = e.mission;
     if (!m) return;
@@ -4766,6 +4826,7 @@
     harvest(e);
     const report = {
       id: m.id,
+      infantryDeployment: copy(m.hqInfantry?.teamDeployment || []),
       recon: m.reconPlan ? copy(m.reconPlan) : null,
       targets: targeted(m) ? copy(m.targetProgress) : null,
       agencySecurity: e.world.actors
@@ -4788,10 +4849,7 @@
       endedAt: s.clock.elapsedSeconds,
       fieldSeconds: e.time,
       objective: m.objective && !m.objectiveFailed,
-      returnComplete:
-        m.memberIds.every(
-          (id) => m.home.includes(id) || !blue(e, id).health.alive,
-        ) && e.world.units.some((u) => u.health.alive && m.home.includes(u.id)),
+      returnComplete: returnedForce(e),
       missing: m.memberIds.filter((id) => !m.home.includes(id)),
       roster: [],
       radio: e.radio

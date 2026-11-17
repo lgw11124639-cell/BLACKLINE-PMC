@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.17.07",
+  const VERSION = "2026.11.17.08",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
@@ -339,14 +339,10 @@
         OverwatchStaff.upgrade(next);
         state = store.save(next, state.revision);
       }
-      if (
-        source === "primary" &&
-        state?.schemaVersion === 5 &&
-        state.operations.contentVersion !== 5
-      ) {
+      if (source === "primary" && state?.schemaVersion === 5) {
         const next = Core.clone(state);
-        OverwatchMissions.upgrade(next);
-        state = store.save(next, state.revision);
+        if (OverwatchMissions.upgrade(next))
+          state = store.save(next, state.revision);
       }
       lastSaved = state ? Core.clone(state) : null;
       tab = state?.ui.tab || "storage";

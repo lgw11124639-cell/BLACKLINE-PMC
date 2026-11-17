@@ -442,6 +442,47 @@
       }))
       .filter((q) => q.members.length === 4);
   }
+  function deployment(s) {
+    const h = s.infantry,
+      ready = squads(s);
+    return callsigns.map((callsign) => {
+      const q = h?.teams?.find((q) => q.callsign === callsign);
+      const available = ready.some((q) => q.callsign === callsign);
+      const disabled =
+        !h?.deploy || (h.disabledSquads || []).includes(callsign);
+      const unavailable = (q?.memberIds || [])
+        .map((id) => h.members.find((m) => m.id === id))
+        .filter(
+          (m) =>
+            m &&
+            !eligible(s, m) &&
+            !(m.status === "training" && m.training?.managed),
+        )
+        .map(
+          (m) =>
+            m.name +
+            " · " +
+            ({
+              training: "훈련 중",
+              medical: "진료 필요",
+              deceased: "전사",
+              missing: "미회수",
+              expired: "계약 만료",
+            }[m.status] || "건강·계약 확인 필요"),
+        );
+      return {
+        callsign,
+        deployed: !disabled && available,
+        reason: disabled
+          ? "출격 선택 해제"
+          : available
+            ? "4명 출격"
+            : unavailable.length
+              ? unavailable.join(", ")
+              : "4개 보직 편성 미완료",
+      };
+    });
+  }
   function selected(s) {
     return squads(s).filter(
       (q) => !(s.infantry.disabledSquads || []).includes(q.callsign),
@@ -463,6 +504,7 @@
       members = selectedSquads.flatMap((q) => q.members);
     const force = (e.mission.hqInfantry = {
       version: 1,
+      teamDeployment: deployment(s),
       memberIds: members.map((m) => m.id),
       directive: null,
       areas: [0, 1, 2, 3, 4, 5].map((i) => ({
@@ -1619,9 +1661,7 @@
                 ">" +
                 teamLabel(c) +
                 " · " +
-                (squads(s).some((q) => q.callsign === c)
-                  ? "4명 편성"
-                  : "가용 편성 없음") +
+                esc(deployment(s).find((q) => q.callsign === c).reason) +
                 "</label>",
             )
             .join("")
@@ -1638,7 +1678,22 @@
     return (
       '<section class="panel"><h3>' +
       deployed.map(teamLabel).join(" · ") +
-      "</h3><p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>" +
+      "</h3>" +
+      callsigns
+        .filter((c) => !deployed.includes(c))
+        .map(
+          (c) =>
+            "<p>" +
+            teamLabel(c) +
+            " · 미출격 · " +
+            esc(
+              f.teamDeployment?.find((q) => q.callsign === c)?.reason ||
+                "당시 상세 기록 없음",
+            ) +
+            "</p>",
+        )
+        .join("") +
+      "<p data-infantry-doctrine>작전통제관 지휘 · 기관 보병과 별도 편제</p>" +
       '<label>명령 대상<select data-infantry-command-team><option value="">보병 전체</option>' +
       deployed
         .map(
@@ -1800,6 +1855,7 @@
     assignTeam,
     formation,
     squads,
+    deployment,
     readiness,
     launch,
     command,

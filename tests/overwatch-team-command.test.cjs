@@ -343,3 +343,70 @@ test("stalled infantry-only escort replans through infantry leaders without dere
   assert.equal(e.squads.length, 0);
   C.validate(s);
 });
+
+test("infantry-only rescue settlement counts the deployed force and repairs a legacy false failure once", () => {
+  const { s, c } = make(false, 2, "rescue-cover");
+  M.launch(s, c.id);
+  const e = s.commandExercise,
+    m = e.mission;
+  assert.equal(e.world.units.length, 0);
+  for (const u of I.units(e)) u.home = true;
+  m.objective = true;
+  m.protectedHome = true;
+  m.finalizing = true;
+  e.status = "ended";
+  const r = M.settle(s, e);
+  assert.equal(r.returnComplete, true);
+  assert.equal(r.success, true);
+  assert.equal(r.reward, c.reward);
+  const cash = s.headquarters.funds;
+  M.settle(s, e);
+  assert.equal(s.headquarters.funds, cash);
+  const payment = r.reward + r.bonus;
+  P.finance(s, -payment, "test-legacy-result");
+  Object.assign(r, {
+    returnComplete: false,
+    success: false,
+    reward: 0,
+    bonus: 0,
+  });
+  assert.equal(M.upgrade(s), true);
+  assert.equal(r.success, true);
+  assert.equal(r.returnComplete, true);
+  assert.equal(s.headquarters.funds, cash);
+  M.upgrade(s);
+  assert.equal(s.headquarters.funds, cash);
+});
+
+test("a living infantry member left behind prevents success even when snipers returned", () => {
+  const { s, c } = make(true, 1, "rescue-cover");
+  M.launch(s, c.id);
+  const e = s.commandExercise,
+    m = e.mission;
+  m.home = e.world.units.map((u) => u.id);
+  for (const u of I.units(e)) u.home = true;
+  I.units(e)[0].home = false;
+  m.objective = true;
+  m.finalizing = true;
+  e.status = "ended";
+  const r = M.settle(s, e);
+  assert.equal(r.returnComplete, false);
+  assert.equal(r.success, false);
+  assert.equal(r.reward, 0);
+  M.upgrade(s);
+  assert.equal(r.success, false);
+});
+
+test("undeployed first team stays visible with its launch reason while teams two and three deploy", () => {
+  const { s, c } = make(false, 3, "rescue-cover");
+  s.infantry.disabledSquads = ["ALPHA"];
+  const choices = I.deployment(s);
+  assert.equal(choices[0].reason, "출격 선택 해제");
+  assert.equal(choices[0].deployed, false);
+  M.launch(s, c.id);
+  const e = s.commandExercise;
+  assert.equal(I.units(e).length, 8);
+  assert.ok(I.units(e).every(u => u.hqTeam !== "ALPHA"));
+  assert.match(I.live(s), /본부 1팀 · 미출격 · 출격 선택 해제/);
+  assert.equal(e.mission.hqInfantry.teamDeployment.length, 3);
+});

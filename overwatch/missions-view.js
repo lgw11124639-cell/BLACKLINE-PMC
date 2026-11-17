@@ -157,7 +157,17 @@
               const people = r.headquartersInfantry.filter(
                 (u) => (u.team || "ALPHA") === call,
               );
-              if (!people.length) return "";
+              if (!people.length)
+                return (
+                  "<section><h3>" +
+                  root.OverwatchInfantry.teamLabel(call) +
+                  " · 미출격</h3><p>" +
+                  esc(
+                    r.infantryDeployment?.find((q) => q.callsign === call)
+                      ?.reason || "당시 상세 기록 없음",
+                  ) +
+                  "</p></section>"
+                );
               return (
                 "<section><h3>" +
                 root.OverwatchInfantry.teamLabel(call) +
