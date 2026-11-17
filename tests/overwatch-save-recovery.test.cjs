@@ -151,3 +151,65 @@ test("new HQ clears prior personnel, activities, deployment and every owned reco
   );
   C.validate(current);
 });
+
+test("quota on the mirrored save releases only the optional checkpoint and keeps both current copies", () => {
+  const { memory, store, s } = make();
+  const before = store.raw(Store.KEYS.primary);
+  memory.setItem(Store.KEYS.previous, before);
+  memory.setItem(Store.KEYS.legacy, "untouched");
+  memory.limit = before.length * 2 + 100 + "untouched".length;
+  s.settings.reducedMotion = true;
+  const saved = store.save(s, s.revision);
+  assert.equal(saved.settings.reducedMotion, true);
+  assert.deepEqual(store.load().state, saved);
+  assert.deepEqual(store.parseImport(store.raw(Store.KEYS.backup)), saved);
+  assert.equal(store.raw(Store.KEYS.previous), null);
+  assert.equal(memory.getItem(Store.KEYS.legacy), "untouched");
+  assert.match(store.status().recoveryWarning, /현재 진행 저장은 완료/);
+});
+
+test("when only one copy fits an atomic current save survives and the next save can restore the mirror", () => {
+  const { memory, store, s } = make();
+  const before = store.raw(Store.KEYS.primary);
+  memory.limit = before.length * 2 + 100;
+  const content = require("node:crypto")
+    .randomBytes(Math.ceil(before.length / 2))
+    .toString("hex");
+  for (let i = 0; i < content.length; i += 500)
+    s.records.push({
+      id: "larger-real-record-" + i,
+      time: 0,
+      type: "hq-established",
+      message: content.slice(i, i + 500),
+    });
+  const saved = store.save(s, s.revision);
+  assert.deepEqual(store.load().state, saved);
+  assert.equal(store.raw(Store.KEYS.backup), null);
+  assert.match(store.status().recoveryWarning, /자동 백업 사본은 생략/);
+  memory.limit = Infinity;
+  const again = store.save(saved, saved.revision);
+  assert.deepEqual(store.parseImport(store.raw(Store.KEYS.backup)), again);
+});
+
+test("a rejected primary write restores removed checkpoint and backup instead of losing the last good save", () => {
+  const { memory, store, s } = make();
+  const before = store.raw(Store.KEYS.primary);
+  memory.setItem(Store.KEYS.previous, before);
+  const set = memory.setItem.bind(memory);
+  memory.setItem = (key, value) => {
+    if (key === Store.KEYS.primary && value !== before) {
+      const error = Error("quota exceeded");
+      error.name = "QuotaExceededError";
+      throw error;
+    }
+    set(key, value);
+  };
+  s.settings.reducedMotion = true;
+  assert.throws(() => store.save(s, s.revision), /이전 저장을 복원/);
+  for (const key of [
+    Store.KEYS.primary,
+    Store.KEYS.backup,
+    Store.KEYS.previous,
+  ])
+    assert.equal(store.raw(key), before);
+});

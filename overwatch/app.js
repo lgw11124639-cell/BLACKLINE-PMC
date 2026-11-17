@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const VERSION = "2026.11.17.09",
+  const VERSION = "2026.11.17.10",
     Core = OverwatchCore,
     P = OverwatchPersonnel,
     PersonnelUI = OverwatchPersonnelUI,
